@@ -1,6 +1,6 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import cors_origin_regex, cors_origins
@@ -10,6 +10,8 @@ from .admin_routes import router as admin_router
 from .auth_routes import router as auth_router
 from .config_routes import router as config_router
 from .media_routes import admin_media_router, public_media_router
+from .audit_repository import write_audit
+from .user_repository import get_user_by_token
 
 
 @asynccontextmanager
@@ -32,6 +34,28 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def audit_mutations(request: Request, call_next):
+    response = await call_next(request)
+    path = request.url.path
+    should_log = request.method in {"POST", "PUT", "PATCH", "DELETE"} and (
+        path.startswith("/api/v1/admin/") or path.startswith("/api/v1/quotes")
+    )
+    if should_log and response.status_code < 400:
+        authorization = request.headers.get("authorization", "")
+        token = authorization.split(" ", 1)[1].strip() if authorization.lower().startswith("bearer ") else ""
+        user = get_user_by_token(token) if token else None
+        if user and user.get("role") in ("admin", "sales"):
+            parts = [part for part in path.split("/") if part]
+            entity_type = parts[3] if len(parts) > 3 else "operation"
+            entity_id = parts[-1] if len(parts) > 4 else ""
+            try:
+                write_audit(user["id"], request.method, entity_type, entity_id, {"path": path, "status": response.status_code})
+            except Exception:
+                pass
+    return response
 
 app.include_router(auth_router)
 app.include_router(admin_router)

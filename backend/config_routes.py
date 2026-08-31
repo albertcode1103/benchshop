@@ -1,9 +1,4 @@
 from typing import Any, Dict
-from io import BytesIO
-from html import escape
-from pathlib import Path
-import subprocess
-import tempfile
 from fastapi.responses import Response
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -22,6 +17,7 @@ from .config_repository import (
 )
 from .rate_limit import enforce
 from .quote_repository import save_quote, list_quotes, get_quote, delete_quote, list_reference_prices
+from .pdf_service import configuration_pdf, quote_pdf as render_quote_pdf
 
 
 router = APIRouter(prefix="/api/v1", tags=["configurations"])
@@ -32,6 +28,7 @@ class SaveConfigRequest(BaseModel):
     product_id: str
     color: str
     selections: Dict[str, Any]
+    lang: str = "zh"
 
 class QuoteRequest(BaseModel):
     config_id: str
@@ -62,10 +59,20 @@ def configs(user=Depends(registered_user)):
 @router.post("/configs", status_code=status.HTTP_201_CREATED)
 def add_config(payload: SaveConfigRequest, user=Depends(registered_user)):
     try:
-        snapshot = build_snapshot(payload.product_id, payload.color, payload.selections)
+        snapshot = build_snapshot(payload.product_id, payload.color, payload.selections, payload.lang)
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error))
     return save_config(user["id"], payload.name, payload.product_id, snapshot)
+
+
+@router.post("/configs/pdf")
+def current_config_pdf(payload: SaveConfigRequest, user=Depends(current_user)):
+    try:
+        snapshot = build_snapshot(payload.product_id, payload.color, payload.selections, payload.lang)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error))
+    title = payload.name.strip() or ("Configuration List" if payload.lang == "en" else "设备配置清单")
+    return _pdf_response(configuration_pdf(snapshot, title), "configuration-current.pdf")
 
 
 @router.get("/configs/{config_id}")
@@ -74,6 +81,15 @@ def config(config_id: str, user=Depends(registered_user)):
     if result is None:
         raise HTTPException(status_code=404, detail="Saved configuration not found")
     return result
+
+
+@router.get("/configs/{config_id}/pdf")
+def saved_config_pdf(config_id: str, user=Depends(registered_user)):
+    result = get_saved_config(config_id, user["id"])
+    if result is None:
+        raise HTTPException(status_code=404, detail="Saved configuration not found")
+    content = configuration_pdf(result["snapshot"], result["name"], "配置编号 / Config: {}".format(config_id[:8]))
+    return _pdf_response(content, "configuration-{}.pdf".format(config_id[:8]))
 
 
 @router.delete("/configs/{config_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -123,23 +139,7 @@ def quote(quote_id: str, user=Depends(staff_user)):
 def quote_pdf(quote_id: str, user=Depends(staff_user)):
     result = get_quote(quote_id, None if user["role"] == "admin" else user["id"])
     if result is None: raise HTTPException(status_code=404, detail="Quote not found")
-    currency = result.get("currency", "CNY"); symbol = "¥" if currency == "CNY" else "$"
-    rows = "".join("<tr><td>{}</td><td>{}</td><td>{}</td><td>{}{:,.2f}</td><td>{}{:,.2f}</td></tr>".format(escape(str(i.get("code", ""))), escape(str(i.get("name", ""))), int(i.get("quantity", 1)), symbol, float(i.get("price", 0)), symbol, float(i.get("price", 0)) * int(i.get("quantity", 1))) for i in result.get("items", []))
-    html = """<!doctype html><meta charset='utf-8'><style>@page{size:A4;margin:18mm}body{font-family:'Microsoft YaHei','Noto Sans CJK SC',sans-serif;color:#17202a}h1{font-size:24px}table{width:100%;border-collapse:collapse;margin-top:24px}th,td{padding:9px;border-bottom:1px solid #ddd;text-align:left}th{background:#f5f6f7}.total{text-align:right;font-size:20px;font-weight:700;margin-top:22px}</style><h1>{}</h1><p>报价编号：{}　币种：{}</p><table><thead><tr><th>编号</th><th>项目</th><th>数量</th><th>单价</th><th>小计</th></tr></thead><tbody>{}</tbody></table><div class='total'>总计：{}{:,.2f}</div>""".format(escape(result["title"]), escape(quote_id[:8]), currency, rows, symbol, float(result["total_price"]))
-    edge = Path(r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe")
-    if edge.exists():
-        with tempfile.TemporaryDirectory(prefix="boten-quote-") as folder:
-            html_path = Path(folder) / "quote.html"; pdf_path = Path(folder) / "quote.pdf"; html_path.write_text(html, encoding="utf-8")
-            subprocess.run([str(edge), "--headless", "--disable-gpu", "--no-pdf-header-footer", "--print-to-pdf={}".format(pdf_path), html_path.as_uri()], check=True, timeout=30, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            if pdf_path.exists(): return Response(pdf_path.read_bytes(), media_type="application/pdf", headers={"Content-Disposition": 'attachment; filename="quote-{}.pdf"'.format(quote_id[:8])})
-    lines = [result["title"]] + ["{} {} x{}    {:.2f}".format(i.get("code", ""), i.get("name", ""), i.get("quantity", 1), float(i.get("price", 0))) for i in result.get("items", [])] + ["Total: {:.2f} {}".format(float(result["total_price"]), currency)]
-    stream = BytesIO(); objects = []
-    content = "BT /F1 12 Tf 50 780 Td " + " ".join("({}) Tj 0 -20 Td".format(str(line).replace("(", "[").replace(")", "]")) for line in lines) + " ET"
-    objects.append("<< /Type /Catalog /Pages 2 0 R >>"); objects.append("<< /Type /Pages /Kids [3 0 R] /Count 1 >>"); objects.append("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>"); objects.append("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"); objects.append("<< /Length %d >>\nstream\n%s\nendstream" % (len(content.encode("latin-1", "replace")), content))
-    pdf = "%PDF-1.4\n"; offsets = [0]
-    for index, obj in enumerate(objects, 1): offsets.append(len(pdf.encode("latin-1"))); pdf += "{} 0 obj\n{}\nendobj\n".format(index, obj)
-    start = len(pdf.encode("latin-1")); pdf += "xref\n0 {}\n0000000000 65535 f \n".format(len(objects)+1) + "".join("%010d 00000 n \n" % off for off in offsets[1:]) + "trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{}\n%%EOF".format(len(objects)+1, start)
-    return Response(pdf.encode("latin-1", "replace"), media_type="application/pdf", headers={"Content-Disposition": 'attachment; filename="quote-{}.pdf"'.format(quote_id[:8])})
+    return _pdf_response(render_quote_pdf(result), "quote-{}.pdf".format(quote_id[:8]))
 
 @router.delete("/quotes/{quote_id}", status_code=status.HTTP_204_NO_CONTENT)
 def remove_quote(quote_id: str, user=Depends(staff_user)):
@@ -160,3 +160,15 @@ def shared_config(code: str, request: Request, user=Depends(registered_user)):
     if result is None:
         raise HTTPException(status_code=404, detail="Share code not found or expired")
     return result
+
+
+@router.get("/shares/{code}/pdf")
+def shared_config_pdf(code: str, request: Request, user=Depends(staff_user)):
+    result = shared_config(code, request, user)
+    title = result.get("name") or "客户配置清单"
+    content = configuration_pdf(result["snapshot"], title, "分享码 / Share: {}".format(code))
+    return _pdf_response(content, "shared-configuration-{}.pdf".format(code))
+
+
+def _pdf_response(content: bytes, filename: str) -> Response:
+    return Response(content, media_type="application/pdf", headers={"Content-Disposition": 'attachment; filename="{}"'.format(filename)})

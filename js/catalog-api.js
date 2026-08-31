@@ -1,8 +1,8 @@
-const CATALOG_API_BASE = window.BOTEN_API_BASE || (
-  window.location.port === "8001"
-    ? ""
-    : `${window.location.protocol}//${window.location.hostname || "127.0.0.1"}:8001`
-);
+// runtime-config.js always loads first. An empty string intentionally means
+// that Nginx proxies the API on this same origin.
+const CATALOG_API_BASE = typeof window.BOTEN_API_BASE === "string"
+  ? window.BOTEN_API_BASE
+  : (window.location.port === "8001" ? "" : `${window.location.protocol}//${window.location.hostname || "127.0.0.1"}:8001`);
 
 async function catalogRequest(path) {
   const response = await fetch(`${CATALOG_API_BASE}${path}`, {

@@ -51,13 +51,17 @@ def require_admin(user=Depends(current_user)):
 
 
 @router.post("/guest")
-def guest_session():
+def guest_session(request: Request):
+    client = request.client.host if request.client else "unknown"
+    enforce("guest:{}".format(client), limit=30, window_seconds=3600)
     user = create_guest()
     return {"user": user, "session": create_session(user)}
 
 
 @router.post("/register", status_code=status.HTTP_201_CREATED)
-def register(payload: RegisterRequest):
+def register(payload: RegisterRequest, request: Request):
+    client = request.client.host if request.client else "unknown"
+    enforce("register:{}".format(client), limit=10, window_seconds=3600)
     email = payload.email.strip().lower() if payload.email else None
     phone = payload.phone.strip() if payload.phone else None
     if not email and not phone:

@@ -1,0 +1,23 @@
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
+
+WORKDIR /app
+
+# Noto CJK supplies Chinese glyphs for the server-generated PDF documents.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends fonts-noto-cjk \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY backend/requirements.txt /app/backend/requirements.txt
+RUN pip install --no-cache-dir -r /app/backend/requirements.txt
+
+COPY alembic.ini /app/alembic.ini
+COPY backend /app/backend
+COPY deploy/api-entrypoint.sh /app/deploy/api-entrypoint.sh
+RUN chmod 755 /app/deploy/api-entrypoint.sh
+
+EXPOSE 8001
+ENTRYPOINT ["/app/deploy/api-entrypoint.sh"]

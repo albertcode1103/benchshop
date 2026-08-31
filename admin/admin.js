@@ -1,7 +1,10 @@
-const API_BASE = window.BOTEN_API_BASE || (window.location.port === "8001" ? "" : `${window.location.protocol}//${window.location.hostname || "127.0.0.1"}:8001`);
+// An empty runtime base is deliberate for the NAS Nginx same-origin proxy.
+const API_BASE = typeof window.BOTEN_API_BASE === "string"
+  ? window.BOTEN_API_BASE
+  : (window.location.port === "8001" ? "" : `${window.location.protocol}//${window.location.hostname || "127.0.0.1"}:8001`);
 const TOKEN_KEY = "boten_admin_token";
 
-const state = { user: null, products: [], users: [], shares: [], quotes: [], editingProduct: null, userRoleFilter: "all", catalogLanguage: localStorage.getItem("boten-admin-language") || "zh", configCatalog: [], collapsedCategories: new Set() };
+const state = { user: null, products: [], users: [], shares: [], quotes: [], audits: [], editingProduct: null, userRoleFilter: "all", catalogLanguage: localStorage.getItem("boten-admin-language") || "zh", configCatalog: [], collapsedCategories: new Set() };
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
 
@@ -92,6 +95,12 @@ function formatDate(value) {
   return new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(value));
 }
 
+function formatDateTime(value) {
+  if (!value) return "—";
+  const date = new Date(String(value).includes("T") ? value : `${value.replace(" ", "T")}Z`);
+  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString("zh-CN", { hour12: false });
+}
+
 function roleLabel(role) {
   return { admin: "管理员", sales: "业务员", customer: "客户", guest: "游客" }[role] || role;
 }
@@ -173,14 +182,16 @@ async function loadData() {
     state.quotes = quotes?.items || [];
 
     if (isAdmin) {
-      const [products, users, configCatalog] = await Promise.all([
+      const [products, users, configCatalog, audits] = await Promise.all([
         api("/api/v1/admin/products"),
         api("/api/v1/admin/users"),
-        api("/api/v1/admin/config-catalog")
+        api("/api/v1/admin/config-catalog"),
+        api("/api/v1/admin/audit-logs")
       ]);
       state.products = products.items || [];
       state.users = users.items || [];
       state.configCatalog = configCatalog.items || [];
+      state.audits = audits.items || [];
       renderConfigCatalog(state.configCatalog);
       setTimeout(() => {
         addCatalogLanguageSwitches();
@@ -208,7 +219,7 @@ function renderAll() {
   $("#metric-users").textContent = state.users.length;
   $("#metric-shares").textContent = state.shares.filter((item) => item.active && new Date(item.expires_at) > new Date()).length;
   $("#metric-views").textContent = state.shares.reduce((sum, item) => sum + item.view_count, 0);
-    renderProducts(); renderUsers(); renderShares(); renderQuotes(); renderDashboard();
+    renderProducts(); renderUsers(); renderShares(); renderQuotes(); renderAudits(); renderDashboard();
 }
 
 function renderDashboard() {
@@ -416,9 +427,18 @@ function renderQuotes() {
   target.innerHTML = state.quotes.map((quote) => { const symbol = quote.currency === "USD" ? "$" : "¥"; return `<tr><td><strong>${escapeHtml(quote.title)}</strong><br><small>${escapeHtml(quote.id.slice(0, 8))}</small></td><td>${escapeHtml(quote.display_name || quote.email || quote.phone || "—")}</td><td>${symbol}${Number(quote.total_price || 0).toLocaleString("zh-CN")}</td><td>${formatDate(quote.updated_at)}</td><td class="align-right"><button class="table-action" data-edit-quote="${escapeHtml(quote.id)}">编辑</button> <button class="table-action" data-export-quote="${escapeHtml(quote.id)}">导出PDF</button> <button class="table-action danger" data-delete-quote="${escapeHtml(quote.id)}">删除</button></td></tr>`; }).join("") || '<tr><td colspan="5" class="empty">暂无报价单</td></tr>';
 }
 
+function renderAudits() {
+  const target = $("#audit-table"); if (!target) return;
+  target.innerHTML = state.audits.map((item) => {
+    const actor = item.display_name || item.email || item.phone || "已删除账号";
+    const path = item.details?.path || `${item.entity_type}/${item.entity_id || ""}`;
+    return `<tr><td>${escapeHtml(formatDateTime(item.created_at))}</td><td><strong>${escapeHtml(actor)}</strong><br><small>${escapeHtml(roleLabel(item.role || ""))}</small></td><td><span class="badge">${escapeHtml(item.action)}</span></td><td>${escapeHtml(path)}</td><td>${escapeHtml(item.details?.status || "成功")}</td></tr>`;
+  }).join("") || '<tr><td colspan="5" class="empty">暂无操作记录</td></tr>';
+}
+
 function switchView(view) {
   if (state.user?.role === "sales" && !["shares", "quotes"].includes(view)) view = "shares";
-  const titles = { dashboard: "管理概览", products: "设备目录", "config-catalog": "配置目录", users: "账号管理", shares: "分享记录", quotes: "报价管理" };
+  const titles = { dashboard: "管理概览", products: "设备目录", "config-catalog": "配置目录", users: "账号管理", shares: "分享记录", quotes: "报价管理", audit: "操作审计" };
   $$(".nav-item").forEach((item) => item.classList.toggle("active", item.dataset.view === view));
   $$(".view").forEach((panel) => panel.classList.toggle("active", panel.dataset.viewPanel === view));
   $("#view-title").textContent = titles[view];
@@ -619,14 +639,18 @@ function clearShareResult() {
 }
 
 async function exportSharePdf(code) {
-  const printWindow = window.open("", "_blank", "width=900,height=700");
-  if (!printWindow) { showToast("浏览器阻止了新窗口，请允许弹窗后重试"); return; }
   try {
+    const response = await fetch(`${API_BASE}/api/v1/shares/${encodeURIComponent(code)}/pdf`, { headers: { Authorization: `Bearer ${sessionStorage.getItem(TOKEN_KEY)}` } });
+    if (!response.ok) throw new Error("PDF生成失败");
+    const blob = await response.blob(); const url = URL.createObjectURL(blob); const link = document.createElement("a");
+    link.href = url; link.download = `shared-configuration-${code}.pdf`; link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    return;
     const share = await api(`/api/v1/shares/${code}`);
     printWindow.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>配置单 ${escapeHtml(code)}</title><style>body{font:14px Arial,sans-serif;color:#17202a;padding:32px;max-width:900px;margin:auto}h1{font-size:24px;margin:0 0 8px}h2{font-size:18px;border-bottom:1px solid #ddd;padding-bottom:8px;margin-top:24px}.meta{color:#667085;margin-bottom:18px}.group{margin:14px 0;padding:12px;border:1px solid #ddd;border-radius:8px}.group h3{margin:0 0 8px;font-size:16px}.group li{margin:5px 0}.group small{display:block;color:#667085;margin-left:12px}</style></head><body><h1>${escapeHtml(share.name)}</h1><div class="meta">分享码：${escapeHtml(share.code)}　有效期至：${escapeHtml(formatDate(share.expires_at))}<br>发送用户：${escapeHtml(share.sender_name || "未填写")}（${escapeHtml(share.sender_email || share.sender_phone || "未填写")})<br>设备型号：${escapeHtml(share.snapshot.product.name)}　外观：${escapeHtml(share.snapshot.color.label || share.snapshot.color.code)}</div><h2>配置明细</h2>${renderShareDetail(share).replace(/<header[\s\S]*?<\/header>|<div class="share-device-summary">[\s\S]*?<\/div>/g, "")}</body></html>`);
     printWindow.document.close(); printWindow.focus();
     setTimeout(() => { printWindow.print(); }, 250);
-  } catch (failure) { printWindow.close(); showToast(failure.message); }
+  } catch (failure) { showToast(failure.message); }
 }
 
 async function quoteShare(code) {
@@ -689,6 +713,7 @@ function bindEvents() {
   $("#add-color-button").addEventListener("click", () => $("#color-editor-list").insertAdjacentHTML("beforeend", colorEditorRow()));
   $("#code-search").addEventListener("submit", searchShare);
   $("#clear-share-result").addEventListener("click", clearShareResult);
+  $("#refresh-audit")?.addEventListener("click", loadData);
   addLanguageToggles(); addProductButton(); addCatalogLanguageSwitches();
   $("#menu-button").addEventListener("click", openSidebar);
   $("#sidebar-backdrop").addEventListener("click", closeSidebar);

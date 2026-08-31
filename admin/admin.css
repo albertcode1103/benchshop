@@ -47,7 +47,22 @@ input:focus, select:focus, textarea:focus { border-color: var(--orange); box-sha
 .button-quiet { color: var(--muted); background: rgba(128,128,128,.08); }
 .button-wide { width: 100%; }
 .icon-button { width: 40px; height: 40px; border: 0; border-radius: 9px; background: rgba(128,128,128,.09); }
-.text-button { border: 0; padding: 0; background: none; color: var(--orange); font-weight: 700; }
+/* Compact secondary action used by dashboard and panel headers. */
+.text-button {
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  color: var(--ink);
+  background: #fff;
+  font-size: 13px;
+  font-weight: 700;
+}
+.text-button:hover { border-color: var(--orange); color: var(--orange-dark); background: var(--orange-soft); }
 
 .admin-app { min-height: 100vh; display: grid; grid-template-columns: 250px minmax(0, 1fr); }
 .sidebar { position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; padding: 26px 18px; color: #fff; background: var(--nav); z-index: 30; }
@@ -85,6 +100,9 @@ input:focus, select:focus, textarea:focus { border-color: var(--orange); box-sha
 .panel-header { min-height: 108px; display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; padding: 22px 24px; border-bottom: 1px solid var(--line); }
 .panel-header h2 { margin: 4px 0 0; font-size: 20px; }.panel-header p { margin: 5px 0 0; color: var(--muted); font-size: 13px; }
 .panel-header > div:first-child { flex: 1; min-width: 220px; }
+.dashboard-grid .panel-header { min-height: 94px; align-items: center; }
+.dashboard-grid .panel-header > div:first-child { min-width: 0; }
+.dashboard-grid .panel-header h2 { margin-bottom: 0; }
 .panel-header-actions { order: 3; display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin-left: auto; }
 .panel-header > .code-search { order: 3; margin-left: auto; }
 .role-filter { display: inline-flex; align-items: center; gap: 3px; padding: 3px; border: 1px solid var(--line); border-radius: 9px; background: #fff; }

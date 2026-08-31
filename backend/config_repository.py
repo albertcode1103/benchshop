@@ -13,8 +13,8 @@ from .security import to_iso, utc_now
 SHARE_DAYS = 90
 
 
-def build_snapshot(product_id: str, color: str, selections: Dict[str, Any]) -> Dict[str, Any]:
-    product = get_product(product_id)
+def build_snapshot(product_id: str, color: str, selections: Dict[str, Any], lang: str = "zh") -> Dict[str, Any]:
+    product = get_product(product_id, "en" if lang == "en" else "zh")
     if product is None:
         raise ValueError("Product not found")
 

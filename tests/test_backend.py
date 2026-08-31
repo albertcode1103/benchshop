@@ -32,6 +32,7 @@ from backend.database import get_connection
 from backend.database_maintenance import create_backup, restore_backup, verify_database
 from backend.media_routes import image_extension, store_image
 from backend.main import app
+from backend.pdf_service import configuration_pdf, quote_pdf
 from backend.repository import get_product, list_products
 from backend.seed import seed
 from backend.user_repository import authenticate, create_session, create_user, get_user_by_token
@@ -139,6 +140,37 @@ class BackendWorkflowTests(unittest.TestCase):
             self.assertEqual(200, client.get(media_path).status_code)
             protected = client.delete("/api/v1/admin/config-catalog/options/cri-1016", headers={"Authorization": "Bearer {}".format(token)})
             self.assertEqual(409, protected.status_code)
+            created_category = client.post(
+                "/api/v1/admin/config-catalog/categories",
+                headers={"Authorization": "Bearer {}".format(token)},
+                json={"name": "审计测试分类", "name_en": "Audit test category"},
+            )
+            self.assertEqual(201, created_category.status_code, created_category.text)
+            audit_response = client.get("/api/v1/admin/audit-logs", headers={"Authorization": "Bearer {}".format(token)})
+            self.assertEqual(200, audit_response.status_code, audit_response.text)
+            self.assertTrue(any(item["details"].get("path") == "/api/v1/admin/config-catalog/categories" for item in audit_response.json()["items"]))
+
+    def test_cross_platform_pdf_generation(self) -> None:
+        from io import BytesIO
+        from pypdf import PdfReader
+
+        product = get_product("cr1016")
+        selections = {}
+        for category in product["categories"]:
+            if category["multiple"]:
+                selections[category["id"]] = [option["id"] for option in category["options"]]
+            elif category["options"]:
+                selections[category["id"]] = category["options"][0]["id"]
+        snapshot = build_snapshot(product["id"], product["colors"][0]["code"], selections)
+        config_content = configuration_pdf(snapshot, "中文设备配置清单")
+        config_reader = PdfReader(BytesIO(config_content))
+        self.assertGreaterEqual(len(config_reader.pages), 1)
+        self.assertIn("CR1016", config_reader.pages[0].extract_text())
+
+        quote_content = quote_pdf({"id": "quote-test", "title": "中文报价单", "currency": "CNY", "total_price": 3200, "items": [{"code": "CR1016", "name": "共轨试验台", "quantity": 1, "price": 3200}]})
+        quote_reader = PdfReader(BytesIO(quote_content))
+        self.assertEqual(1, len(quote_reader.pages))
+        self.assertIn("CR1016", quote_reader.pages[0].extract_text())
 
     def test_safe_catalog_deletion(self) -> None:
         mapped = config_option_references("cri-1016")
@@ -174,8 +206,8 @@ class BackendWorkflowTests(unittest.TestCase):
             finally:
                 connection.close()
             self.assertIsNotNone(version_row, process.stdout + process.stderr)
-            self.assertEqual("20260831_0002", version_row[0])
-            self.assertTrue({"products", "options", "users", "quotes"}.issubset(tables))
+            self.assertEqual("20260831_0003", version_row[0])
+            self.assertTrue({"products", "options", "users", "quotes", "audit_logs"}.issubset(tables))
             self.assertIn("description_override_en", columns)
 
 

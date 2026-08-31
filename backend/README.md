@@ -110,6 +110,7 @@ py -m http.server 8080
 | `BOTEN_DATABASE_PATH` | SQLite 文件绝对路径 | `backend/boten.db` |
 | `BOTEN_UPLOAD_DIR` | 后台上传的目录图片保存路径 | `uploads/catalog` |
 | `BOTEN_CORS_ORIGINS` | 允许访问 API 的来源，英文逗号分隔 | 本地 8080 和 `null` |
+| `BOTEN_PDF_FONT_PATH` | 可选的中文 TrueType/OpenType 字体文件路径 | 自动查找系统中文字体 |
 
 本地未设置 CORS 环境变量时，也允许 `localhost/127.0.0.1` 的开发端口。生产环境必须显式设置网站域名，并移除 `null` 来源。
 
@@ -152,7 +153,9 @@ Authorization: Bearer <token>
 
 - `GET /api/v1/configs`
 - `POST /api/v1/configs`
+- `POST /api/v1/configs/pdf`（当前配置直接下载）
 - `GET /api/v1/configs/{config_id}`
+- `GET /api/v1/configs/{config_id}/pdf`
 - `DELETE /api/v1/configs/{config_id}`
 - `POST /api/v1/configs/{config_id}/share`
 
@@ -160,6 +163,7 @@ Authorization: Bearer <token>
 
 - `GET /api/v1/staff/shares`
 - `GET /api/v1/shares/{6位分享码}`
+- `GET /api/v1/shares/{6位分享码}/pdf`
 - `GET /api/v1/staff/reference-prices`
 - `GET /api/v1/quotes`
 - `POST /api/v1/quotes`
@@ -188,6 +192,7 @@ Authorization: Bearer <token>
 - `PATCH /api/v1/admin/users/{user_id}/status`
 - `GET /api/v1/admin/shares`
 - `DELETE /api/v1/admin/shares/{share_id}`
+- `GET /api/v1/admin/audit-logs`
 
 完整请求模型和响应结构以运行中的 `/docs` 为准。
 
@@ -200,7 +205,9 @@ backend/
 ├── migrations/                  Alembic 数据库版本迁移
 ├── database_maintenance.py      校验、备份和确认式恢复
 ├── audit_catalog.py             目录数据质量检查
+├── audit_repository.py          管理员/业务员操作审计
 ├── media_routes.py              管理员图片上传与公开图片读取
+├── pdf_service.py               跨平台中文配置单和报价单
 ├── repository.py                 用户端产品目录查询与语言选择
 ├── auth_routes.py                注册、登录、会话和角色依赖
 ├── config_routes.py              保存配置、分享、报价和 PDF
@@ -220,11 +227,11 @@ backend/
 .\backend\.venv\Scripts\python.exe -m unittest discover -s tests -v
 ```
 
-当前 11 项测试覆盖目录初始化、迁移、登录会话、保存分享、角色边界、机型专属双语说明、图片接口、安全删除和数据库备份恢复。生产服务器若不运行测试，可只安装 `requirements.txt`。
+当前 12 项测试覆盖目录初始化、迁移、登录会话、保存分享、角色边界、机型专属双语说明、PDF、操作审计、图片接口、安全删除和数据库备份恢复。生产服务器若不运行测试，可只安装 `requirements.txt`。
 
-## 报价 PDF
+## PDF 下载
 
-`GET /api/v1/quotes/{quote_id}/pdf` 返回附件下载。Windows 环境中会优先调用 Microsoft Edge 的无头打印以获得较好的中文排版；找不到 Edge 时使用内置简易 PDF 作为降级方案，中文和复杂布局可能不完整。服务器部署建议改用跨平台 HTML-to-PDF 工具并随应用部署中文字体。
+配置清单、分享配置和报价单统一由 ReportLab 在 API 进程内生成附件，不依赖浏览器打印或 Microsoft Edge。服务会优先查找 Windows 微软雅黑/黑体、Linux Noto CJK/WenQuanYi 字体；服务器使用其他字体时可设置 `BOTEN_PDF_FONT_PATH`。配置较多时表格会自动分页并重复表头。
 
 ## 生产部署注意事项
 

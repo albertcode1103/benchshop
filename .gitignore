@@ -12,6 +12,8 @@ backend/*.db-*
 backend/*.db.backup-*
 backups/
 uploads/
+data/
+output/
 *.log
 
 # Local configuration and editor state

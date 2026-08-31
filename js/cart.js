@@ -86,7 +86,7 @@ async function createCurrentSavedConfig() {
   if (!model) throw new Error(cartLocale("未找到设备", "Device not found"));
   return authRequest("/configs", {
     method: "POST",
-    body: JSON.stringify({ name: `${model.name} ${cartLocale("配置", "Configuration")}`, product_id: snapshot.currentModelId, color: snapshot.currentColor, selections: snapshot.selections })
+    body: JSON.stringify({ name: `${model.name} ${cartLocale("配置", "Configuration")}`, product_id: snapshot.currentModelId, color: snapshot.currentColor, selections: snapshot.selections, lang: localStorage.getItem("boten-language") === "en" ? "en" : "zh" })
   });
 }
 

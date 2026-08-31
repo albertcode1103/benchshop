@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from .auth_routes import require_admin
 from .user_repository import create_user, get_user_by_id, list_users, set_user_enabled, update_user
 from .config_repository import deactivate_share, list_shares
+from .audit_repository import list_audit_logs
 from .admin_catalog_repository import (
     get_admin_product,
     list_admin_products,
@@ -132,6 +133,11 @@ class ConfigOptionCreateRequest(ConfigOptionUpdateRequest):
 @router.get("/users")
 def users():
     return {"items": list_users()}
+
+
+@router.get("/audit-logs")
+def audit_logs():
+    return {"items": list_audit_logs()}
 
 
 @router.get("/products")
