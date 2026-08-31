@@ -5,6 +5,7 @@ import os
 BACKEND_DIR = Path(__file__).resolve().parent
 PROJECT_DIR = BACKEND_DIR.parent
 DATABASE_PATH = Path(os.getenv("BOTEN_DATABASE_PATH", str(BACKEND_DIR / "boten.db")))
+UPLOAD_DIR = Path(os.getenv("BOTEN_UPLOAD_DIR", str(PROJECT_DIR / "uploads" / "catalog")))
 
 
 def cors_origins():

@@ -20,6 +20,10 @@ from .admin_catalog_repository import (
     update_config_category,
     update_product_option_override,
     create_product,
+    config_option_references,
+    delete_config_option,
+    config_category_references,
+    delete_config_category,
 )
 
 
@@ -157,6 +161,21 @@ def edit_config_option(option_id: str, payload: ConfigOptionUpdateRequest):
     return result
 
 
+@router.get("/config-catalog/options/{option_id}/references")
+def option_references(option_id: str):
+    result = config_option_references(option_id)
+    if result is None: raise HTTPException(status_code=404, detail="Configuration option not found")
+    return result
+
+
+@router.delete("/config-catalog/options/{option_id}", status_code=status.HTTP_204_NO_CONTENT)
+def remove_config_option(option_id: str):
+    result = delete_config_option(option_id)
+    if result is None: raise HTTPException(status_code=404, detail="Configuration option not found")
+    if result is False: raise HTTPException(status_code=409, detail="Configuration option is still used by one or more devices")
+    return None
+
+
 @router.post("/config-catalog/categories", status_code=status.HTTP_201_CREATED)
 def add_config_category(payload: ConfigCategoryCreateRequest):
     if not payload.name.strip(): raise HTTPException(status_code=422, detail="Category name is required")
@@ -167,6 +186,21 @@ def edit_config_category(category_id: str, payload: ConfigCategoryUpdateRequest)
     result = update_config_category(category_id, payload.model_dump(exclude_unset=True))
     if result is None: raise HTTPException(status_code=404, detail="Configuration category not found")
     return result
+
+
+@router.get("/config-catalog/categories/{category_id}/references")
+def category_references(category_id: str):
+    result = config_category_references(category_id)
+    if result is None: raise HTTPException(status_code=404, detail="Configuration category not found")
+    return result
+
+
+@router.delete("/config-catalog/categories/{category_id}", status_code=status.HTTP_204_NO_CONTENT)
+def remove_config_category(category_id: str):
+    result = delete_config_category(category_id)
+    if result is None: raise HTTPException(status_code=404, detail="Configuration category not found")
+    if result is False: raise HTTPException(status_code=409, detail="Built-in or non-empty categories cannot be deleted")
+    return None
 
 
 @router.post("/config-catalog/options", status_code=status.HTTP_201_CREATED)

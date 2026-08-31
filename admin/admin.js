@@ -5,9 +5,10 @@ const state = { user: null, products: [], users: [], shares: [], quotes: [], edi
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
 
-async function api(path, options = {}) {
+async function api(path, requestOptions = {}) {
   const token = sessionStorage.getItem(TOKEN_KEY);
-  const controller = new AbortController(); const timeout = setTimeout(() => controller.abort(), 6000);
+  const { timeout: timeoutMs = 6000, ...options } = requestOptions;
+  const controller = new AbortController(); const timeout = setTimeout(() => controller.abort(), timeoutMs);
   const response = await fetch(`${API_BASE}${path}`, {
     ...options,
     headers: {
@@ -29,10 +30,47 @@ function escapeHtml(value) {
 function catalogAssetUrl(path) {
   const value = String(path || "").trim();
   if (!value) return "";
+  if (value.startsWith("/api/")) return `${API_BASE}${value}`;
   if (/^(?:[a-z]+:|\/|\.{1,2}\/)/i.test(value)) return value;
   // The administration page is served from /admin/, while catalog asset
   // paths are stored relative to the customer-facing site root.
   return `../${value}`;
+}
+
+async function uploadCatalogImage(file, control) {
+  if (!file) return;
+  if (file.size > 8 * 1024 * 1024) { showToast("图片不能超过 8 MB"); return; }
+  const button = $("[data-pick-image]", control);
+  const pathInput = $('[name="image_path"],[data-color-field="image_path"]', control);
+  if (button) { button.disabled = true; button.textContent = "上传中…"; }
+  try {
+    const result = await api(`/api/v1/admin/media?filename=${encodeURIComponent(file.name)}`, {
+      method: "POST",
+      headers: { "Content-Type": file.type || "application/octet-stream" },
+      body: file,
+      timeout: 30000
+    });
+    if (pathInput) pathInput.value = result.path;
+    showToast("图片上传成功");
+  } catch (failure) {
+    showToast(failure.name === "AbortError" ? "图片上传超时" : failure.message);
+  } finally {
+    if (button) { button.disabled = false; button.textContent = "上传"; }
+  }
+}
+
+function confirmAction(title, message, confirmLabel = "确认删除") {
+  return new Promise((resolve) => {
+    const dialog = document.createElement("dialog");
+    dialog.className = "product-dialog";
+    dialog.dataset.dynamic = "true";
+    dialog.innerHTML = `<form method="dialog" class="dialog-card confirm-card"><header><div><span class="eyebrow">CONFIRM ACTION</span><h2>${escapeHtml(title)}</h2></div><button class="icon-button" value="cancel" aria-label="关闭">×</button></header><p>${escapeHtml(message)}</p><footer><button class="button button-quiet" value="cancel">取消</button><button class="button button-danger" value="confirm">${escapeHtml(confirmLabel)}</button></footer></form>`;
+    document.body.appendChild(dialog);
+    let settled = false;
+    dialog.addEventListener("close", () => { if (!settled) resolve(false); dialog.remove(); });
+    dialog.querySelector("form").addEventListener("submit", (event) => { event.preventDefault(); settled = true; const confirmed = event.submitter?.value === "confirm"; dialog.close(); resolve(confirmed); });
+    dialog.showModal();
+  });
 }
 
 function renderCatalogThumbnail(option) {
@@ -238,10 +276,44 @@ function colorEditorRow(color = { code: "", label: "", image_path: "", is_defaul
   return `<div class="color-editor-row">
     <label><span>颜色代码</span><input data-color-field="code" value="${escapeHtml(color.code)}" placeholder="Green" required /></label>
     <label><span>显示名称</span><input data-color-field="label" value="${escapeHtml(color.label)}" placeholder="Green 绿色" required /></label>
-    <label><span>图片路径</span><input data-color-field="image_path" value="${escapeHtml(color.image_path || "")}" placeholder="tb/tbpic/..." /></label>
+    <label><span>颜色图片</span><div class="image-path-control"><input data-color-field="image_path" value="${escapeHtml(color.image_path || "")}" placeholder="上传图片或填写现有路径" /><button class="button button-secondary" type="button" data-pick-image>上传</button><input type="file" accept="image/png,image/jpeg,image/webp" data-image-file hidden /></div></label>
     <label class="default-color"><input data-color-field="is_default" type="radio" name="default-color" ${color.is_default ? "checked" : ""} /><span>默认</span></label>
     <button class="icon-button" data-remove-color type="button" aria-label="删除颜色">✕</button>
   </div>`;
+}
+
+async function deleteCurrentConfigOption() {
+  const optionId = $("#config-option-form").elements.option_id.value;
+  if (!optionId) return;
+  try {
+    const references = await api(`/api/v1/admin/config-catalog/options/${encodeURIComponent(optionId)}/references`);
+    if (references.mapping_count) {
+      const names = references.products.map((product) => product.name).join("、");
+      showToast(`该配置仍被 ${references.mapping_count} 台设备使用：${names}`);
+      return;
+    }
+    if (!await confirmAction("删除配置", `确定永久删除 ${references.code} ${references.name}？`)) return;
+    await api(`/api/v1/admin/config-catalog/options/${encodeURIComponent(optionId)}`, { method: "DELETE" });
+    $("#config-option-dialog").close();
+    showToast("配置已删除");
+    await loadData();
+  } catch (failure) { showToast(failure.message); }
+}
+
+async function deleteConfigCategory(category) {
+  const references = await api(`/api/v1/admin/config-catalog/categories/${encodeURIComponent(category.id)}/references`);
+  if (references.protected) {
+    showToast("电机和供电属于系统基础分类，不能删除");
+    return false;
+  }
+  if (references.option_count) {
+    showToast(`分类中仍有 ${references.option_count} 项配置，请先处理配置项`);
+    return false;
+  }
+  if (!await confirmAction("删除配置分类", `确定永久删除“${references.name}”？`)) return false;
+  await api(`/api/v1/admin/config-catalog/categories/${encodeURIComponent(category.id)}`, { method: "DELETE" });
+  showToast("配置分类已删除");
+  return true;
 }
 
 function renderMappingEditor(categories) {
@@ -611,6 +683,7 @@ function bindEvents() {
   $("#user-form").addEventListener("submit", createUser);
   $("#product-form").addEventListener("submit", saveProduct);
   $("#config-option-form").addEventListener("submit", saveConfigOption);
+  $("#delete-config-option").addEventListener("click", deleteCurrentConfigOption);
   $("#add-config-category").addEventListener("click", addConfigCategory);
   $$(".editor-tab").forEach((button) => button.addEventListener("click", () => switchEditorTab(button.dataset.editorTab)));
   $("#add-color-button").addEventListener("click", () => $("#color-editor-list").insertAdjacentHTML("beforeend", colorEditorRow()));
@@ -620,6 +693,7 @@ function bindEvents() {
   $("#menu-button").addEventListener("click", openSidebar);
   $("#sidebar-backdrop").addEventListener("click", closeSidebar);
   document.addEventListener("click", (event) => {
+    const imageButton = event.target.closest("[data-pick-image]"); if (imageButton) { imageButton.closest(".image-path-control")?.querySelector("[data-image-file]")?.click(); return; }
     const cancelButton = event.target.closest('button[value="cancel"]'); if (cancelButton) { const dialog = cancelButton.closest("dialog"); if (dialog) { event.preventDefault(); dialog.close(); if (dialog.dataset.dynamic === "true") dialog.remove(); return; } }
     const userButton = event.target.closest("[data-user-status]"); if (userButton) setUserStatus(userButton);
     const editUserButton = event.target.closest("[data-edit-user]"); if (editUserButton) editUser(JSON.parse(editUserButton.dataset.editUser));
@@ -648,21 +722,34 @@ function bindEvents() {
     const catalogLanguageButton = event.target.closest("[data-catalog-lang]"); if (catalogLanguageButton) localStorage.setItem("boten-admin-language", catalogLanguageButton.dataset.catalogLang);
     const colorButton = event.target.closest("[data-remove-color]"); if (colorButton) colorButton.closest(".color-editor-row").remove();
   });
+  document.addEventListener("change", (event) => {
+    const fileInput = event.target.closest("[data-image-file]");
+    if (fileInput) uploadCatalogImage(fileInput.files?.[0], fileInput.closest(".image-path-control"));
+  });
 }
 
 // Unified catalog editor cards.
-function catalogEditorCard({ title, fields, onSave }) {
+function editorFieldControl(field) {
+  if (field.name === "image_path") {
+    return `<div class="image-path-control"><input name="image_path" value="${escapeHtml(field.value || "")}" placeholder="${escapeHtml(field.placeholder || "上传图片或填写现有路径")}"><button class="button button-secondary" type="button" data-pick-image>上传</button><input type="file" accept="image/png,image/jpeg,image/webp" data-image-file hidden></div>`;
+  }
+  if (field.type === "textarea") return `<textarea name="${field.name}" rows="3" placeholder="${escapeHtml(field.placeholder || "")}">${escapeHtml(field.value || "")}</textarea>`;
+  return `<input name="${field.name}" type="${field.type || "text"}" value="${escapeHtml(field.value || "")}" placeholder="${escapeHtml(field.placeholder || "")}" ${field.required ? "required" : ""}>`;
+}
+
+function catalogEditorCard({ title, fields, onSave, onDelete = null }) {
   const dialog = document.createElement("dialog"); dialog.className = "product-dialog";
-  dialog.innerHTML = `<form method="dialog" class="dialog-card" novalidate><header><div><span class="eyebrow">CATALOG EDITOR</span><h2>${escapeHtml(title)}</h2></div><div class="dialog-actions"><div class="catalog-language dialog-language"><button type="button" class="lang-toggle active" data-lang="zh">中文</button><button type="button" class="lang-toggle" data-lang="en">EN</button></div><button class="icon-button" value="cancel" aria-label="关闭">×</button></div></header><div class="form-grid">${fields.map(f => `<label data-card-lang="${f.lang || "all"}"><span>${escapeHtml(f.label)}</span>${f.type === "textarea" ? `<textarea name="${f.name}" rows="3" placeholder="${escapeHtml(f.placeholder || "")}">${escapeHtml(f.value || "")}</textarea>` : `<input name="${f.name}" type="${f.type || "text"}" value="${escapeHtml(f.value || "")}" placeholder="${escapeHtml(f.placeholder || "")}" ${f.required ? "required" : ""}>`}</label>`).join("")}</div><footer><button class="button button-quiet" value="cancel">取消</button><button class="button button-primary" value="default">保存</button></footer></form>`;
+  dialog.innerHTML = `<form method="dialog" class="dialog-card" novalidate><header><div><span class="eyebrow">CATALOG EDITOR</span><h2>${escapeHtml(title)}</h2></div><div class="dialog-actions"><div class="catalog-language dialog-language"><button type="button" class="lang-toggle active" data-lang="zh">中文</button><button type="button" class="lang-toggle" data-lang="en">EN</button></div><button class="icon-button" value="cancel" aria-label="关闭">×</button></div></header><div class="form-grid">${fields.map(f => `<label data-card-lang="${f.lang || "all"}"><span>${escapeHtml(f.label)}</span>${editorFieldControl(f)}</label>`).join("")}</div><footer>${onDelete ? '<button class="button button-danger" type="button" data-delete-card>删除</button>' : ""}<button class="button button-quiet" value="cancel">取消</button><button class="button button-primary" value="default">保存</button></footer></form>`;
   document.body.appendChild(dialog); const form = dialog.querySelector("form");
   const setLang = lang => { dialog.querySelectorAll("[data-card-lang]").forEach(row => row.hidden = !(["all", lang].includes(row.dataset.cardLang))); dialog.querySelectorAll(".lang-toggle").forEach(b => b.classList.toggle("active", b.dataset.lang === lang)); };
   dialog.querySelectorAll(".lang-toggle").forEach(b => b.addEventListener("click", () => setLang(b.dataset.lang))); setLang(state.catalogLanguage || "zh");
+  dialog.querySelector("[data-delete-card]")?.addEventListener("click", async () => { try { if (await onDelete()) { dialog.close(); dialog.remove(); await loadData(); } } catch (error) { showToast(error.message); } });
   form.addEventListener("submit", async event => { event.preventDefault(); if (event.submitter?.value === "cancel") { dialog.close(); dialog.remove(); return; } const data = Object.fromEntries(new FormData(form)); if (!data.name?.trim()) return showToast("请填写名称"); try { await onSave(data); dialog.close(); dialog.remove(); await loadData(); } catch (error) { showToast(error.message); } }); dialog.showModal();
 }
 
-function categoryCard(category = null) { catalogEditorCard({ title: category ? "编辑配置分类" : "添加配置分类", fields: [{name:"name",label:"分类标题",lang:"zh",value:category?.name,placeholder:"例如：CRI 共轨套件",required:true},{name:"description",label:"分类描述",lang:"zh",type:"textarea",value:category?.description,placeholder:"例如：适用于共轨喷油器测试"},{name:"name_en",label:"Category title",lang:"en",value:category?.name_en,placeholder:"e.g. CRI Common Rail Kits"},{name:"description_en",label:"Category description",lang:"en",type:"textarea",value:category?.description_en,placeholder:"e.g. Kits for common rail injector testing"}], onSave: data => api(category ? `/api/v1/admin/config-catalog/categories/${category.id}` : "/api/v1/admin/config-catalog/categories", {method:category?"PATCH":"POST",body:JSON.stringify({...data,multiple:true})}) }); }
+function categoryCard(category = null) { catalogEditorCard({ title: category ? "编辑配置分类" : "添加配置分类", fields: [{name:"name",label:"分类标题",lang:"zh",value:category?.name,placeholder:"例如：CRI 共轨套件",required:true},{name:"description",label:"分类描述",lang:"zh",type:"textarea",value:category?.description,placeholder:"例如：适用于共轨喷油器测试"},{name:"name_en",label:"Category title",lang:"en",value:category?.name_en,placeholder:"e.g. CRI Common Rail Kits"},{name:"description_en",label:"Category description",lang:"en",type:"textarea",value:category?.description_en,placeholder:"e.g. Kits for common rail injector testing"}], onSave: data => api(category ? `/api/v1/admin/config-catalog/categories/${category.id}` : "/api/v1/admin/config-catalog/categories", {method:category?"PATCH":"POST",body:JSON.stringify({...data,multiple:true})}), onDelete: category ? () => deleteConfigCategory(category) : null }); }
 
-async function addConfigOption(categoryId) { catalogEditorCard({ title:"添加配置", fields:[{name:"code",label:"配置编号",lang:"all",placeholder:"例如：BTK-1019",required:true},{name:"name",label:"配置名称",lang:"zh",placeholder:"例如：共轨喷油器测试套件",required:true},{name:"description",label:"配置描述",lang:"zh",type:"textarea",placeholder:"例如：适用于 Bosch CRIN4.2"},{name:"name_en",label:"Configuration name",lang:"en",placeholder:"e.g. Injector Test Kit"},{name:"description_en",label:"Description",lang:"en",type:"textarea",placeholder:"e.g. For Bosch CRIN4.2"},{name:"price",label:"人民币单价",lang:"all",type:"number",placeholder:"例如：1500"},{name:"price_usd",label:"美元单价",lang:"all",type:"number",placeholder:"例如：210"}], onSave:data=>api("/api/v1/admin/config-catalog/options",{method:"POST",body:JSON.stringify({...data,category_id:categoryId,price:Number(data.price||0),price_usd:Number(data.price_usd||0),enabled:true})}) }); }
+async function addConfigOption(categoryId) { catalogEditorCard({ title:"添加配置", fields:[{name:"code",label:"配置编号",lang:"all",placeholder:"例如：BTK-1019",required:true},{name:"name",label:"配置名称",lang:"zh",placeholder:"例如：共轨喷油器测试套件",required:true},{name:"description",label:"配置描述",lang:"zh",type:"textarea",placeholder:"例如：适用于 Bosch CRIN4.2"},{name:"name_en",label:"Configuration name",lang:"en",placeholder:"e.g. Injector Test Kit"},{name:"description_en",label:"Description",lang:"en",type:"textarea",placeholder:"e.g. For Bosch CRIN4.2"},{name:"image_path",label:"配置图片",lang:"all",placeholder:"上传图片或填写现有路径"},{name:"price",label:"人民币单价",lang:"all",type:"number",placeholder:"例如：1500"},{name:"price_usd",label:"美元单价",lang:"all",type:"number",placeholder:"例如：210"}], onSave:data=>api("/api/v1/admin/config-catalog/options",{method:"POST",body:JSON.stringify({...data,category_id:categoryId,price:Number(data.price||0),price_usd:Number(data.price_usd||0),enabled:true})}) }); }
 
 // Unified bilingual add-device editor.
 function addProductButton(){const panel=$('[data-view-panel="products"] .panel-header');if(!panel||$("#add-product-button"))return;const button=document.createElement("button");button.id="add-product-button";button.className="button button-secondary";button.textContent="添加设备";button.addEventListener("click",()=>catalogEditorCard({title:"添加设备",fields:[{name:"id",label:"设备编号",lang:"all",placeholder:"例如：CR999",required:true},{name:"name",label:"设备名称",lang:"zh",placeholder:"例如：BOTEN CR999",required:true},{name:"title_name",label:"产品标题",lang:"zh",placeholder:"例如：共轨喷油器试验台",required:true},{name:"description",label:"产品描述",lang:"zh",type:"textarea",placeholder:"例如：适用于共轨喷油器测试"},{name:"name_en",label:"Device name",lang:"en",placeholder:"e.g. BOTEN CR999"},{name:"title_name_en",label:"Product title",lang:"en",placeholder:"e.g. Common Rail Test Bench"},{name:"description_en",label:"Description",lang:"en",type:"textarea",placeholder:"e.g. Designed for common rail testing"},{name:"base_price",label:"人民币单价",lang:"all",type:"number",placeholder:"例如：158000"},{name:"price_usd",label:"美元单价",lang:"all",type:"number",placeholder:"例如：22000"}],onSave:data=>api("/api/v1/admin/products",{method:"POST",body:JSON.stringify({...data,base_price:Number(data.base_price||0),price_usd:Number(data.price_usd||0)})})}));panel.appendChild(button);}

@@ -31,7 +31,7 @@ function mapApiCategory(category) {
       name: option.name,
       description: option.description_override || option.description || "",
       price: Number(option.price || 0),
-      image: option.image_path || null,
+      image: window.botenAssetUrl(option.image_path) || null,
       mappingId: option.mapping_id || null
     }))
   };
@@ -40,7 +40,7 @@ function mapApiCategory(category) {
 function mapApiProduct(product, localAssets) {
   const colorImages = {};
   product.colors.forEach((color) => {
-    if (color.image_path) colorImages[color.code] = color.image_path;
+    if (color.image_path) colorImages[color.code] = window.botenAssetUrl(color.image_path);
   });
 
   return {

@@ -6,7 +6,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Any, Dict, List
 
-from .config import PROJECT_DIR
+from .config import PROJECT_DIR, UPLOAD_DIR
 from .database import get_connection
 
 
@@ -75,12 +75,16 @@ def audit_catalog() -> Dict[str, Any]:
         image_path = str(row.get("image_path") or "").strip()
         if not image_path:
             findings.append(issue("warning", "missing_image", "Configuration has no image", option_id))
-        elif not image_path.lower().startswith(("http://", "https://")) and not (PROJECT_DIR / Path(image_path)).is_file():
+        elif image_path.startswith("/api/v1/media/") and not (UPLOAD_DIR / Path(image_path).name).is_file():
+            findings.append(issue("error", "broken_image", "Uploaded image does not exist: {}".format(image_path), option_id))
+        elif not image_path.startswith("/api/v1/media/") and not image_path.lower().startswith(("http://", "https://")) and not (PROJECT_DIR / Path(image_path)).is_file():
             findings.append(issue("error", "broken_image", "Image path does not exist: {}".format(image_path), option_id))
 
     for color in colors:
         image_path = str(color.get("image_path") or "").strip()
-        if image_path and not image_path.lower().startswith(("http://", "https://")) and not (PROJECT_DIR / Path(image_path)).is_file():
+        if image_path.startswith("/api/v1/media/") and not (UPLOAD_DIR / Path(image_path).name).is_file():
+            findings.append(issue("error", "broken_image", "Uploaded color image does not exist: {}".format(image_path), "{}:{}".format(color["product_id"], color["code"])))
+        elif image_path and not image_path.startswith("/api/v1/media/") and not image_path.lower().startswith(("http://", "https://")) and not (PROJECT_DIR / Path(image_path)).is_file():
             findings.append(issue("error", "broken_image", "Color image path does not exist: {}".format(image_path), "{}:{}".format(color["product_id"], color["code"])))
 
     for failure in foreign_key_errors:

@@ -63,6 +63,73 @@ def update_config_category(category_id: str, values: Dict[str, Any]) -> Optional
     return next((x for x in list_config_categories() if x["id"] == category_id), None)
 
 
+def config_option_references(option_id: str) -> Optional[Dict[str, Any]]:
+    with get_connection() as connection:
+        option = connection.execute("SELECT id, code, name, category_id FROM options WHERE id = ?", (option_id,)).fetchone()
+        if option is None:
+            return None
+        products = connection.execute(
+            """
+            SELECT p.id, p.name, po.mapping_id
+            FROM product_options po
+            JOIN products p ON p.id = po.product_id
+            WHERE po.option_id = ?
+            ORDER BY p.sort_order, p.name
+            """,
+            (option_id,),
+        ).fetchall()
+    result = dict(option)
+    result["products"] = [dict(row) for row in products]
+    result["mapping_count"] = len(result["products"])
+    return result
+
+
+def delete_config_option(option_id: str) -> Optional[bool]:
+    references = config_option_references(option_id)
+    if references is None:
+        return None
+    if references["mapping_count"]:
+        return False
+    with get_connection() as connection:
+        connection.execute("DELETE FROM options WHERE id = ?", (option_id,))
+    return True
+
+
+def config_category_references(category_id: str) -> Optional[Dict[str, Any]]:
+    with get_connection() as connection:
+        category = connection.execute("SELECT id, name FROM categories WHERE id = ?", (category_id,)).fetchone()
+        if category is None:
+            return None
+        options = connection.execute(
+            """
+            SELECT o.id, o.code, o.name, COUNT(po.product_id) AS mapping_count
+            FROM options o
+            LEFT JOIN product_options po ON po.option_id = o.id
+            WHERE o.category_id = ?
+            GROUP BY o.id, o.code, o.name
+            ORDER BY o.sort_order, o.name
+            """,
+            (category_id,),
+        ).fetchall()
+    result = dict(category)
+    result["protected"] = category_id in ("motor", "voltage")
+    result["options"] = [dict(row) for row in options]
+    result["option_count"] = len(result["options"])
+    result["mapping_count"] = sum(row["mapping_count"] for row in result["options"])
+    return result
+
+
+def delete_config_category(category_id: str) -> Optional[bool]:
+    references = config_category_references(category_id)
+    if references is None:
+        return None
+    if references["protected"] or references["option_count"]:
+        return False
+    with get_connection() as connection:
+        connection.execute("DELETE FROM categories WHERE id = ?", (category_id,))
+    return True
+
+
 def list_admin_products() -> List[Dict[str, Any]]:
     with get_connection() as connection:
         rows = connection.execute(

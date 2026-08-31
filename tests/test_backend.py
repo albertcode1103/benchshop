@@ -9,16 +9,29 @@ from pathlib import Path
 
 TEST_DIRECTORY = tempfile.TemporaryDirectory(prefix="boten-tests-")
 TEST_DATABASE = Path(TEST_DIRECTORY.name) / "boten-test.db"
+TEST_UPLOADS = Path(TEST_DIRECTORY.name) / "uploads"
 os.environ["BOTEN_DATABASE_PATH"] = str(TEST_DATABASE)
+os.environ["BOTEN_UPLOAD_DIR"] = str(TEST_UPLOADS)
 
 from fastapi import HTTPException
+from fastapi.testclient import TestClient
 
-from backend.admin_catalog_repository import update_product_option_override
+from backend.admin_catalog_repository import (
+    config_category_references,
+    config_option_references,
+    create_config_category,
+    create_config_option,
+    delete_config_category,
+    delete_config_option,
+    update_product_option_override,
+)
 from backend.audit_catalog import audit_catalog
 from backend.config_repository import build_snapshot, create_share, get_share, save_config
 from backend.config_routes import staff_user
 from backend.database import get_connection
 from backend.database_maintenance import create_backup, restore_backup, verify_database
+from backend.media_routes import image_extension, store_image
+from backend.main import app
 from backend.repository import get_product, list_products
 from backend.seed import seed
 from backend.user_repository import authenticate, create_session, create_user, get_user_by_token
@@ -100,6 +113,45 @@ class BackendWorkflowTests(unittest.TestCase):
         report = audit_catalog()
         self.assertEqual(7, report["summary"]["products"])
         self.assertEqual(75, report["summary"]["options"])
+
+    def test_catalog_image_storage(self) -> None:
+        upload_dir = Path(TEST_DIRECTORY.name) / "uploads"
+        content = b"\x89PNG\r\n\x1a\n" + b"test-image"
+        self.assertEqual("png", image_extension(content))
+        media_path = store_image(content, upload_dir)
+        self.assertRegex(media_path, r"^/api/v1/media/[a-f0-9]{32}\.png$")
+        self.assertTrue((upload_dir / Path(media_path).name).is_file())
+        with self.assertRaises(ValueError):
+            store_image(b"not-an-image", upload_dir)
+
+    def test_admin_media_and_delete_api(self) -> None:
+        admin = create_user("api-admin@example.com", None, "password123", role="admin", display_name="API Admin")
+        token = create_session(admin)["token"]
+        headers = {"Authorization": "Bearer {}".format(token), "Content-Type": "image/png"}
+        with TestClient(app) as client:
+            uploaded = client.post(
+                "/api/v1/admin/media?filename=test.png",
+                headers=headers,
+                content=b"\x89PNG\r\n\x1a\napi-test",
+            )
+            self.assertEqual(201, uploaded.status_code, uploaded.text)
+            media_path = uploaded.json()["path"]
+            self.assertEqual(200, client.get(media_path).status_code)
+            protected = client.delete("/api/v1/admin/config-catalog/options/cri-1016", headers={"Authorization": "Bearer {}".format(token)})
+            self.assertEqual(409, protected.status_code)
+
+    def test_safe_catalog_deletion(self) -> None:
+        mapped = config_option_references("cri-1016")
+        self.assertGreater(mapped["mapping_count"], 0)
+        self.assertFalse(delete_config_option("cri-1016"))
+
+        category = create_config_category("临时分类", name_en="Temporary category")
+        option = create_config_option(category["id"], "TEST-DELETE", "临时配置", name_en="Temporary option")
+        self.assertEqual(0, config_option_references(option["id"])["mapping_count"])
+        self.assertTrue(delete_config_option(option["id"]))
+        self.assertEqual(0, config_category_references(category["id"])["option_count"])
+        self.assertTrue(delete_config_category(category["id"]))
+        self.assertFalse(delete_config_category("motor"))
 
     def test_alembic_upgrade_on_empty_database(self) -> None:
         with tempfile.TemporaryDirectory(prefix="boten-migration-") as folder:

@@ -9,6 +9,7 @@ from .repository import get_product, list_products
 from .admin_routes import router as admin_router
 from .auth_routes import router as auth_router
 from .config_routes import router as config_router
+from .media_routes import admin_media_router, public_media_router
 
 
 @asynccontextmanager
@@ -35,6 +36,8 @@ app.add_middleware(
 app.include_router(auth_router)
 app.include_router(admin_router)
 app.include_router(config_router)
+app.include_router(admin_media_router)
+app.include_router(public_media_router)
 
 
 @app.get("/api/v1/health")

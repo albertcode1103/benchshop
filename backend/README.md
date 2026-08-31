@@ -10,13 +10,13 @@
 
 ```powershell
 py -3.8 -m venv backend\.venv
-.\backend\.venv\Scripts\python.exe -m pip install -r .\backend\requirements.txt
+.\backend\.venv\Scripts\python.exe -m pip install -r .\backend\requirements-dev.txt
 ```
 
 如果 Windows 系统代理可用于浏览器，但 pip 报 `ProxyError`，可把代理明确写成 HTTP 代理协议（端口按本机软件调整）：
 
 ```powershell
-.\backend\.venv\Scripts\python.exe -m pip install -r .\backend\requirements.txt --proxy http://127.0.0.1:10808
+.\backend\.venv\Scripts\python.exe -m pip install -r .\backend\requirements-dev.txt --proxy http://127.0.0.1:10808
 ```
 
 日常启动 API：
@@ -108,6 +108,7 @@ py -m http.server 8080
 | 环境变量 | 作用 | 默认值 |
 | --- | --- | --- |
 | `BOTEN_DATABASE_PATH` | SQLite 文件绝对路径 | `backend/boten.db` |
+| `BOTEN_UPLOAD_DIR` | 后台上传的目录图片保存路径 | `uploads/catalog` |
 | `BOTEN_CORS_ORIGINS` | 允许访问 API 的来源，英文逗号分隔 | 本地 8080 和 `null` |
 
 本地未设置 CORS 环境变量时，也允许 `localhost/127.0.0.1` 的开发端口。生产环境必须显式设置网站域名，并移除 `null` 来源。
@@ -174,8 +175,14 @@ Authorization: Bearer <token>
 - `PUT /api/v1/admin/products/{product_id}/options`
 - `PATCH /api/v1/admin/products/{product_id}/options/{option_id}`
 - `GET /api/v1/admin/config-catalog`
+- `POST /api/v1/admin/media`（PNG/JPEG/WebP，最大 8 MB）
+- `GET /api/v1/media/{filename}`（公开读取已上传目录图片）
 - `POST|PATCH /api/v1/admin/config-catalog/categories[/{category_id}]`
 - `POST|PATCH /api/v1/admin/config-catalog/options[/{option_id}]`
+- `GET /api/v1/admin/config-catalog/categories/{category_id}/references`
+- `DELETE /api/v1/admin/config-catalog/categories/{category_id}`
+- `GET /api/v1/admin/config-catalog/options/{option_id}/references`
+- `DELETE /api/v1/admin/config-catalog/options/{option_id}`
 - `GET|POST /api/v1/admin/users`
 - `PATCH /api/v1/admin/users/{user_id}`
 - `PATCH /api/v1/admin/users/{user_id}/status`
@@ -193,6 +200,7 @@ backend/
 ├── migrations/                  Alembic 数据库版本迁移
 ├── database_maintenance.py      校验、备份和确认式恢复
 ├── audit_catalog.py             目录数据质量检查
+├── media_routes.py              管理员图片上传与公开图片读取
 ├── repository.py                 用户端产品目录查询与语言选择
 ├── auth_routes.py                注册、登录、会话和角色依赖
 ├── config_routes.py              保存配置、分享、报价和 PDF
@@ -212,7 +220,7 @@ backend/
 .\backend\.venv\Scripts\python.exe -m unittest discover -s tests -v
 ```
 
-当前覆盖目录初始化、登录会话、保存分享、角色边界、机型专属双语说明和数据库备份恢复。
+当前 11 项测试覆盖目录初始化、迁移、登录会话、保存分享、角色边界、机型专属双语说明、图片接口、安全删除和数据库备份恢复。生产服务器若不运行测试，可只安装 `requirements.txt`。
 
 ## 报价 PDF
 
@@ -221,7 +229,7 @@ backend/
 ## 生产部署注意事项
 
 - 不要直接暴露 Uvicorn 开发进程；使用 Nginx/Caddy、HTTPS 和服务管理器。
-- SQLite 和 `tb/` 图片需要独立备份并定期验证恢复。
+- SQLite、`uploads/` 和 `tb/` 图片需要独立备份并定期验证恢复。
 - 同一 SQLite 文件不要由多台服务器共享挂载写入。
 - 设置严格的 CORS、请求体大小、访问日志、错误监控和网关限流。
 - 数据结构变更必须通过 `backend/migrations/` 提交，并在升级前创建数据库备份。
