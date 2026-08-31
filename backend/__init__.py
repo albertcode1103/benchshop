@@ -1,0 +1,1 @@
+"""BOTEN configuration service."""

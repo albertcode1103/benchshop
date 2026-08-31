@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="BOTEN 柴油试验台后台管理" />
+  <title>BOTEN 管理后台</title>
+  <link rel="icon" type="image/png" href="../tb/site/LOGO.png" />
+  <link rel="stylesheet" href="admin.css?v=20260831-6" />
+  <script src="../js/runtime-config.js"></script>
+  <script>window.addEventListener('error',function(e){var s=document.getElementById('api-status');if(s)s.textContent='后台脚本加载失败：'+(e.message||'请按 Ctrl+F5 刷新');});</script>
+  <script src="admin.js?v=20260831-9" defer></script>
+</head>
+<body>
+  <section class="login-page" id="login-page">
+    <div class="login-brand">
+      <img src="../tb/site/BOTEN.png" alt="BOTEN" />
+      <span>Diesel Test Bench</span>
+    </div>
+    <form class="login-card" id="login-form">
+      <div class="eyebrow">BOTEN CONSOLE</div>
+      <h1>登录工作后台</h1>
+      <p>管理员可管理产品和账号，业务员可查看客户分享配置。</p>
+
+      <label>
+        <span>邮箱或手机号</span>
+        <input id="login-identifier" name="identifier" autocomplete="username" required placeholder="admin@example.com" />
+      </label>
+      <label>
+        <span>密码</span>
+        <input id="login-password" name="password" type="password" autocomplete="current-password" required minlength="8" placeholder="请输入密码" />
+      </label>
+
+      <div class="form-error" id="login-error" role="alert" hidden></div>
+      <button class="button button-primary button-wide" type="submit">
+        <span>进入后台</span>
+        <span aria-hidden="true">→</span>
+      </button>
+      <div class="login-status" id="api-status">正在检查服务状态…</div>
+    </form>
+  </section>
+
+  <div class="admin-app" id="admin-app" hidden>
+    <aside class="sidebar" id="sidebar">
+      <a class="sidebar-brand" href="#dashboard" aria-label="BOTEN 管理后台首页">
+        <img src="../tb/site/BOTEN.png" alt="BOTEN" />
+        <span>管理后台</span>
+      </a>
+      <nav class="sidebar-nav" aria-label="后台导航">
+        <button class="nav-item active" data-view="dashboard" data-admin-only type="button"><span class="nav-icon">▦</span>概览</button>
+        <button class="nav-item" data-view="products" data-admin-only type="button"><span class="nav-icon">◇</span>设备目录</button>
+        <button class="nav-item" data-view="config-catalog" data-admin-only type="button"><span class="nav-icon">≡</span>配置目录</button>
+        <button class="nav-item" data-view="shares" type="button"><span class="nav-icon">↗</span>分享记录</button>
+        <button class="nav-item" data-view="quotes" type="button"><span class="nav-icon">¥</span>报价管理</button>
+      </nav>
+      <nav class="sidebar-account-nav" aria-label="账号管理">
+        <button class="nav-item" data-view="users" data-admin-only type="button"><span class="nav-icon">◎</span>账号管理</button>
+      </nav>
+      <div class="sidebar-footer">
+        <div class="admin-profile">
+          <div class="avatar" id="admin-avatar">A</div>
+          <div><strong id="admin-name">Administrator</strong><span id="admin-email">--</span></div>
+        </div>
+        <button class="button button-quiet button-wide" id="logout-button" type="button">退出登录</button>
+      </div>
+    </aside>
+
+    <main class="admin-main">
+      <header class="topbar">
+        <button class="icon-button mobile-only" id="menu-button" type="button" aria-label="打开导航">☰</button>
+        <div>
+          <div class="eyebrow">BOTEN OPERATIONS</div>
+          <h1 id="view-title">管理概览</h1>
+        </div>
+        <div class="topbar-actions">
+          <span class="service-pill"><i></i>API 正常</span>
+        </div>
+      </header>
+
+      <div class="content">
+        <section class="view active" data-view-panel="dashboard">
+          <div class="metric-grid">
+            <article class="metric-card accent"><span>设备型号</span><strong id="metric-products">—</strong><small>当前上架目录</small></article>
+            <article class="metric-card"><span>客户与员工</span><strong id="metric-users">—</strong><small>不含临时游客</small></article>
+            <article class="metric-card"><span>有效分享</span><strong id="metric-shares">—</strong><small>90 天自动失效</small></article>
+            <article class="metric-card"><span>已查看次数</span><strong id="metric-views">—</strong><small>所有分享累计</small></article>
+          </div>
+
+          <div class="dashboard-grid">
+            <section class="panel">
+              <header class="panel-header"><div><span class="eyebrow">CATALOG</span><h2>设备目录</h2></div><button class="text-button" data-go="products">查看全部</button></header>
+              <div class="product-mini-list" id="dashboard-products"></div>
+            </section>
+            <section class="panel">
+              <header class="panel-header"><div><span class="eyebrow">SHARES</span><h2>近期分享</h2></div><button class="text-button" data-go="shares">管理记录</button></header>
+              <div class="share-mini-list" id="dashboard-shares"></div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" data-view-panel="products">
+          <section class="panel">
+            <header class="panel-header"><div><span class="eyebrow">DEVICE CATALOG</span><h2>设备目录</h2><p>调整设备资料、颜色以及该设备允许使用的配置项目。</p></div></header>
+            <div class="table-wrap"><table><thead><tr><th>型号</th><th>产品名称</th><th>基础价格</th><th>状态</th><th class="align-right">操作</th></tr></thead><tbody id="products-table"></tbody></table></div>
+          </section>
+        </section>
+
+        <section class="view" data-view-panel="config-catalog">
+          <section class="panel">
+            <header class="panel-header"><div><span class="eyebrow">CONFIGURATION CATALOG</span><h2>配置目录</h2><p>集中维护 CRI、HEUI、CRP 等配置类别和 BTK/BTE 配置条目。价格仅供业务员参考，不会显示在用户端。</p></div><button class="button button-secondary" id="add-config-category" type="button">添加类别</button></header>
+            <div id="config-catalog-list" class="config-catalog-list"></div>
+          </section>
+        </section>
+
+        <section class="view" data-view-panel="users">
+          <section class="panel">
+            <header class="panel-header"><div><span class="eyebrow">ACCESS CONTROL</span><h2>账号管理</h2><p>创建管理员、业务员或用户账号，并控制账号状态。</p></div><div class="panel-header-actions user-header-actions"><div class="role-filter" id="user-role-filter" role="group" aria-label="账号角色筛选"><button type="button" class="active" data-user-role="all">全部</button><button type="button" data-user-role="admin">管理员</button><button type="button" data-user-role="sales">业务员</button><button type="button" data-user-role="customer">用户</button></div><button class="button button-secondary" id="add-user-button" type="button">新建账号</button></div></header>
+            <div class="table-wrap"><table><thead><tr><th>用户</th><th>联系方式</th><th>角色</th><th>状态</th><th class="align-right">操作</th></tr></thead><tbody id="users-table"></tbody></table></div>
+          </section>
+        </section>
+
+        <section class="view" data-view-panel="shares">
+          <section class="panel">
+          <header class="panel-header"><div><span class="eyebrow">SHARED CONFIGS</span><h2>分享记录</h2><p>查询客户配置、查看使用情况或提前关闭分享码。</p></div><form class="code-search" id="code-search"><input id="share-code" inputmode="numeric" maxlength="6" placeholder="输入6位分享码" /><button class="button button-secondary">查询</button><button type="button" class="button button-quiet" id="clear-share-result">清除</button></form></header>
+            <div class="share-result" id="share-result" hidden></div>
+            <div class="table-wrap"><table><thead><tr><th>分享码</th><th>配置</th><th>发送用户</th><th>访问</th><th>有效期</th><th>状态</th><th class="align-right">操作</th></tr></thead><tbody id="shares-table"></tbody></table></div>
+          </section>
+        </section>
+        <section class="view" data-view-panel="quotes">
+          <section class="panel"><header class="panel-header"><div><span class="eyebrow">QUOTES</span><h2>报价管理</h2><p>查看和管理已保存的报价单。</p></div></header><div class="table-wrap"><table><thead><tr><th>报价单</th><th>业务员</th><th>总价</th><th>更新时间</th><th class="align-right">操作</th></tr></thead><tbody id="quotes-table"></tbody></table></div></section>
+        </section>
+      </div>
+    </main>
+    <button class="sidebar-backdrop" id="sidebar-backdrop" aria-label="关闭导航" hidden></button>
+  </div>
+
+  <dialog id="product-dialog" class="product-dialog">
+    <form id="product-form" method="dialog" class="dialog-card">
+      <header><div><span class="eyebrow">PRODUCT EDITOR</span><h2 id="product-dialog-title">编辑产品</h2></div><button class="icon-button" value="cancel" formmethod="dialog" aria-label="关闭">✕</button></header>
+      <input type="hidden" name="product_id" />
+      <div class="editor-tabs" role="tablist">
+        <button class="editor-tab active" type="button" data-editor-tab="basic">基础资料</button>
+        <button class="editor-tab" type="button" data-editor-tab="colors">外观颜色</button>
+        <button class="editor-tab" type="button" data-editor-tab="options">配置模块</button>
+      </div>
+      <section class="editor-panel active" data-editor-panel="basic">
+        <div class="form-grid">
+          <label><span>设备型号</span><input name="name" required /></label>
+          <label><span>设备型号（English）</span><input name="name_en" /></label>
+          <label><span>产品名称</span><input name="title_name" required /></label>
+          <label><span>产品名称（English）</span><input name="title_name_en" /></label>
+          <label><span>基础价格（元）</span><input name="base_price" type="number" min="0" step="1" /></label>
+          <label><span>基础价格（美元）</span><input name="price_usd" type="number" min="0" step="1" /></label>
+          <label><span>显示顺序</span><input name="sort_order" type="number" step="1" /></label>
+          <label class="full"><span>产品描述</span><textarea name="description" rows="4"></textarea></label>
+          <label class="full"><span>产品描述（English）</span><textarea name="description_en" rows="3"></textarea></label>
+          <label class="toggle-field full"><input name="enabled" type="checkbox" /><span>在用户端启用该产品</span></label>
+        </div>
+      </section>
+      <section class="editor-panel" data-editor-panel="colors">
+        <div class="editor-section-heading"><div><h3>外观颜色</h3><p>每台设备至少保留一种颜色，只能设置一个默认颜色。</p></div><button class="button button-secondary" id="add-color-button" type="button">添加颜色</button></div>
+        <div class="color-editor-list" id="color-editor-list"></div>
+      </section>
+      <section class="editor-panel" data-editor-panel="options">
+        <div class="editor-section-heading"><div><h3>配置模块</h3><p>勾选该机型允许用户选择的规格和工装。</p></div></div>
+        <div class="mapping-editor" id="mapping-editor"></div>
+      </section>
+      <div class="form-error" id="product-error" role="alert" hidden></div>
+      <footer><button class="button button-quiet" value="cancel" formmethod="dialog">取消</button><button class="button button-primary" id="save-product-button" value="default">保存产品</button></footer>
+    </form>
+  </dialog>
+
+  <dialog id="user-dialog">
+    <form id="user-form" method="dialog" class="dialog-card" novalidate>
+      <header><div><span class="eyebrow" id="user-dialog-eyebrow">NEW ACCOUNT</span><h2 id="user-dialog-title">创建账号</h2></div><button class="icon-button" value="cancel" formmethod="dialog" aria-label="关闭">✕</button></header>
+      <input type="hidden" name="user_id" />
+      <div class="form-grid">
+        <label><span>显示名称</span><input name="display_name" required placeholder="例如：销售部 王经理" /></label>
+        <label><span>角色</span><select name="role"><option value="sales">业务员</option><option value="customer">客户</option><option value="admin">管理员</option></select></label>
+        <label><span>邮箱</span><input name="email" type="email" placeholder="name@example.com" /></label>
+        <label><span>手机号</span><input name="phone" inputmode="tel" placeholder="可代替邮箱登录" /></label>
+        <label class="full"><span id="user-password-label">初始密码</span><input name="password" type="password" minlength="8" required autocomplete="new-password" placeholder="至少8个字符" /></label>
+      </div>
+      <div class="form-error" id="user-error" role="alert" hidden></div>
+      <footer><button class="button button-quiet" value="cancel" formmethod="dialog">取消</button><button class="button button-primary" id="create-user-submit" value="default">创建账号</button></footer>
+    </form>
+  </dialog>
+
+  <dialog id="config-option-dialog">
+    <form id="config-option-form" method="dialog" class="dialog-card">
+      <header><div><span class="eyebrow">CONFIG OPTION</span><h2>编辑配置条目</h2></div><button class="icon-button" value="cancel" formmethod="dialog" aria-label="关闭">✕</button></header>
+      <input type="hidden" name="option_id" />
+      <div class="form-grid">
+        <label><span>配置编号（BTK/BTE）</span><input name="code" required /></label>
+        <label><span>配置名称</span><input name="name" required /></label>
+        <label><span>配置名称（English）</span><input name="name_en" /></label>
+        <label class="full"><span>图片路径</span><input name="image_path" /></label>
+        <label class="full"><span>描述</span><textarea name="description" rows="3"></textarea></label>
+        <label class="full"><span>描述（English）</span><textarea name="description_en" rows="3"></textarea></label>
+        <label class="full"><span>备注（业务员可见）</span><textarea name="notes" rows="3"></textarea></label>
+        <label><span>参考价格（元）</span><input name="price" type="number" min="0" /></label>
+        <label><span>参考价格（美元）</span><input name="price_usd" type="number" min="0" /></label>
+        <label class="toggle-field"><input name="enabled" type="checkbox" /><span>启用</span></label>
+      </div>
+      <div class="form-error" id="config-option-error" role="alert" hidden></div>
+      <footer><button class="button button-quiet" value="cancel" formmethod="dialog">取消</button><button class="button button-primary" value="default">保存条目</button></footer>
+    </form>
+  </dialog>
+
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+</body>
+</html>

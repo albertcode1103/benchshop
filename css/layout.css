@@ -1,0 +1,344 @@
+/* =========================================
+   Layout & responsive grid
+   ========================================= */
+
+.site-header {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  height: var(--header-height);
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: saturate(180%) blur(12px);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.drawer-backdrop {
+  z-index: 90;
+}
+
+.cart-backdrop {
+  z-index: 110;
+}
+
+.cart-panel {
+  z-index: 120;
+}
+
+.header-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 100%;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  font-weight: 700;
+  font-size: 1.125rem;
+  letter-spacing: -0.02em;
+}
+
+.brand-logo {
+  width: auto;
+  height: 32px;
+  object-fit: contain;
+}
+
+.main {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-xl);
+  padding-top: var(--space-xl);
+  padding-bottom: var(--space-2xl);
+}
+
+.config-stage {
+  min-width: 0;
+}
+
+.stage-header {
+  margin-bottom: var(--space-xl);
+}
+
+.page-title {
+  font-size: clamp(1.75rem, 4vw, 2.5rem);
+  font-weight: 800;
+  line-height: 1.2;
+  margin-bottom: var(--space-sm);
+}
+
+.page-subtitle {
+  color: var(--color-text-secondary);
+  font-size: 1rem;
+}
+
+.preview-area {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--radius-xl);
+  background: linear-gradient(135deg, #eef0f4 0%, #e2e6ec 100%);
+  margin-bottom: var(--space-xl);
+  aspect-ratio: 4 / 3;
+}
+
+.gallery-viewport {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  touch-action: pan-y;
+  outline: none;
+}
+
+.gallery-track {
+  display: flex;
+  height: 100%;
+  transition: transform var(--transition-base);
+}
+
+.gallery-slide {
+  flex: 0 0 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.gallery-slide img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.gallery-nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.9);
+  border: none;
+  color: var(--color-text);
+  font-size: 1.75rem;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 10;
+  opacity: 0;
+  transition: opacity var(--transition-fast), background var(--transition-fast);
+  padding-bottom: 4px;
+}
+
+.preview-area:hover .gallery-nav {
+  opacity: 1;
+}
+
+.gallery-nav:hover {
+  background: #fff;
+}
+
+.gallery-prev { left: var(--space-md); }
+.gallery-next { right: var(--space-md); }
+
+.gallery-dots {
+  position: absolute;
+  bottom: var(--space-md);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: var(--space-sm);
+  z-index: 10;
+}
+
+.gallery-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255, 255, 255, 0.6);
+  cursor: pointer;
+  transition: transform var(--transition-fast), background var(--transition-fast);
+}
+
+.gallery-dot.active {
+  background: #fff;
+  transform: scale(1.25);
+}
+
+.preview-info {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: var(--space-xl);
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.65), transparent);
+  color: #fff;
+}
+
+.preview-info h2 {
+  font-size: clamp(1.5rem, 3vw, 2rem);
+  font-weight: 700;
+  margin-bottom: var(--space-xs);
+}
+
+.preview-info p {
+  opacity: 0.9;
+  max-width: 600px;
+}
+
+.category-tabs {
+  position: static;
+  top: auto;
+  z-index: 80;
+  display: flex;
+  gap: var(--space-sm);
+  margin-bottom: 0;
+  overflow-x: auto;
+  padding: 0 0 var(--space-sm);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg);
+  scrollbar-width: none;
+}
+
+.category-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.config-section {
+  position: relative;
+}
+
+.config-sticky-header {
+  position: sticky;
+  top: var(--header-height);
+  z-index: 80;
+  background: var(--color-bg);
+  padding-top: var(--space-sm);
+}
+
+.config-sticky-header .spec-chips {
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  transition: max-height 0.2s ease, opacity 0.2s ease, margin 0.2s ease;
+  margin-bottom: 0;
+}
+
+.config-sticky-header.is-sticky .spec-chips {
+  max-height: 120px;
+  opacity: 1;
+  margin-bottom: var(--space-md);
+}
+
+.options-panel {
+  min-height: 200px;
+  padding-top: var(--space-sm);
+}
+
+.summary-panel {
+  position: relative;
+}
+
+.summary-sticky {
+  position: sticky;
+  top: calc(var(--header-height) + var(--space-lg));
+  background: var(--color-surface);
+  border-radius: var(--radius-xl);
+  padding: var(--space-xl);
+  box-shadow: var(--shadow-md);
+  border: 1px solid var(--color-border);
+}
+
+.site-footer {
+  padding: var(--space-xl) 0;
+  border-top: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+  font-size: 0.875rem;
+  text-align: center;
+}
+
+/* Desktop layout */
+@media (min-width: 1024px) {
+  .main {
+    grid-template-columns: 1fr var(--summary-width);
+    gap: var(--space-2xl);
+  }
+
+  .summary-panel {
+    order: 2;
+  }
+
+  .config-stage {
+    order: 1;
+  }
+}
+
+/* Tablet & mobile: account for fixed summary toggle */
+@media (max-width: 1023px) {
+  .main {
+    padding-bottom: calc(var(--space-2xl) + 60px);
+  }
+}
+
+/* Large screens */
+@media (min-width: 1440px) {
+  .main {
+    grid-template-columns: 1fr 420px;
+  }
+}
+
+/* Device selector */
+.device-selector-bar {
+  margin-bottom: var(--space-xl);
+}
+
+.device-selector-bar label {
+  display: block;
+  font-size: 0.875rem;
+  color: var(--color-text-secondary);
+  margin-bottom: var(--space-xs);
+}
+
+/* Spec sections */
+.spec-section {
+  margin-bottom: var(--space-md);
+}
+
+.spec-section-header {
+  margin-bottom: var(--space-sm);
+}
+
+.spec-section-header h3 {
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+
+.config-section {
+  margin-bottom: var(--space-md);
+}
+
+.config-section > .spec-section-header {
+  margin-bottom: 0;
+}
+
+.page-desc {
+  margin-top: var(--space-sm);
+  color: var(--color-text-secondary);
+  font-size: 1rem;
+}
+
+@media (max-width: 639px) {
+  .gallery-nav {
+    display: none;
+  }
+}

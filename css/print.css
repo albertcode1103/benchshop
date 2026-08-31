@@ -1,0 +1,95 @@
+/* =========================================
+   Print / PDF styles
+   ========================================= */
+
+@media print {
+  @page {
+    margin: 16mm;
+    size: A4 portrait;
+  }
+
+  * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  html, body {
+    background: #fff;
+    color: #000;
+  }
+
+  .no-print,
+  .site-header,
+  .site-footer,
+  .summary-toggle,
+  .drawer-backdrop,
+  .cart-backdrop,
+  .cart-panel,
+  .device-selector-bar,
+  .category-tabs,
+  .options-panel,
+  .summary-actions,
+  #reset-config,
+  #cart-toggle,
+  #cart-count,
+  .color-section {
+    display: none !important;
+  }
+
+  .main {
+    display: block;
+    padding: 0;
+  }
+
+  .config-stage,
+  .preview-area,
+  .stage-header,
+  .spec-section,
+  .config-section {
+    display: none !important;
+  }
+
+  .summary-panel {
+    position: static;
+    transform: none;
+    max-height: none;
+    overflow: visible;
+    box-shadow: none;
+    border: none;
+    padding: 0;
+    margin: 0;
+  }
+
+  .summary-sticky {
+    box-shadow: none;
+    border: none;
+    border-radius: 0;
+    padding: 0;
+  }
+
+  .summary-header h2 {
+    font-size: 1.75rem;
+    margin-bottom: 1rem;
+  }
+
+  .summary-model {
+    background: #f5f5f5;
+    padding: 1rem;
+    break-inside: avoid;
+    page-break-inside: avoid;
+    break-after: avoid;
+    page-break-after: avoid;
+  }
+
+  .summary-list {
+    break-inside: auto;
+    page-break-inside: auto;
+  }
+
+  .summary-item,
+  .summary-group {
+    border-bottom: 1px solid #ddd;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}

@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 450" width="800" height="450">
+  <defs>
+    <linearGradient id="bodyMax" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#3d3d3d"/>
+      <stop offset="50%" stop-color="#262626"/>
+      <stop offset="100%" stop-color="#111111"/>
+    </linearGradient>
+    <linearGradient id="glassMax" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#0f1419"/>
+      <stop offset="100%" stop-color="#05070a"/>
+    </linearGradient>
+    <linearGradient id="rimMax" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#e8c76a"/>
+      <stop offset="100%" stop-color="#b8963f"/>
+    </linearGradient>
+  </defs>
+
+  <ellipse cx="400" cy="390" rx="360" ry="18" fill="#000000" opacity="0.22"/>
+
+  <path d="M80 300 L80 250 Q85 210 130 205 L240 195 L320 130 Q360 100 460 100 L560 105 Q640 115 690 170 L740 200 Q780 215 780 260 L780 310 Q780 340 750 350 L720 355 Q700 355 690 335 L680 320 L240 320 L230 335 Q220 355 190 355 L140 355 Q100 355 90 335 L80 315 Z" fill="url(#bodyMax)"/>
+
+  <path d="M260 195 L335 135 Q365 115 455 115 L545 120 Q605 130 645 175 L670 195 Z" fill="url(#glassMax)"/>
+  <path d="M350 130 L350 190 M460 120 L460 190 M565 125 L565 190" stroke="#000000" stroke-width="4" fill="none"/>
+
+  <path d="M720 230 L760 235 Q770 240 765 255 L725 250 Z" fill="#ffffff" opacity="0.95"/>
+  <path d="M85 235 L110 235 L110 255 L90 255 Q82 250 85 235 Z" fill="#ff3333" opacity="0.95"/>
+
+  <path d="M100 260 L750 260" stroke="#ffffff" stroke-width="2" opacity="0.1" fill="none"/>
+
+  <circle cx="180" cy="335" r="56" fill="#0a0a0a"/>
+  <circle cx="180" cy="335" r="38" fill="url(#rimMax)"/>
+  <circle cx="180" cy="335" r="12" fill="#000"/>
+
+  <circle cx="640" cy="335" r="56" fill="#0a0a0a"/>
+  <circle cx="640" cy="335" r="38" fill="url(#rimMax)"/>
+  <circle cx="640" cy="335" r="12" fill="#000"/>
+
+  <rect x="380" y="240" width="40" height="8" rx="4" fill="#ffffff" opacity="0.25"/>
+  <rect x="520" y="242" width="40" height="8" rx="4" fill="#ffffff" opacity="0.25"/>
+</svg>

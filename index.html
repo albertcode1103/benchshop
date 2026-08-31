@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="BOTEN Diesel Test Bench - 设备配置选择器" />
+  <title>BOTEN DIESEL TEST BENCH</title>
+  <link rel="icon" type="image/png" href="tb/site/LOGO.png?v=20260831" />
+  <link rel="shortcut icon" type="image/png" href="tb/site/LOGO.png?v=20260831" />
+  <link rel="apple-touch-icon" href="tb/site/LOGO.png?v=20260831" />
+  <link rel="stylesheet" href="css/main.css?v=20260830-4" />
+  <link rel="stylesheet" href="css/layout.css?v=20260830-3" />
+  <link rel="stylesheet" href="css/components.css?v=20260830-3" />
+  <link rel="stylesheet" href="css/print.css?v=20260831-1" />
+  <script src="js/runtime-config.js"></script>
+  <script src="js/data.js" defer></script>
+  <script src="js/catalog-api.js?v=20260831-1" defer></script>
+  <script src="js/state.js?v=20260831-1" defer></script>
+  <script src="js/price.js?v=20260830-3" defer></script>
+  <script src="js/renderer.js?v=20260831-3" defer></script>
+  <script src="js/auth.js?v=20260831-2" defer></script>
+  <script src="js/cart.js?v=20260831-2" defer></script>
+  <script src="js/pdf.js" defer></script>
+  <script src="js/main.js?v=20260831-1" defer></script>
+  <script src="js/language.js?v=20260831-3" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="container header-inner">
+      <a class="brand" href="#" aria-label="首页">
+        <img class="brand-logo" src="tb/site/BOTEN.png" alt="BOTEN" />
+        <span class="brand-name">BOTEN DIESEL TEST BENCH</span>
+      </a>
+      <div class="header-actions no-print">
+      <div class="language-switcher" id="language-switcher" role="group" aria-label="语言切换">
+        <button type="button" class="active" data-language="zh" data-short-label="中">中文</button>
+        <button type="button" data-language="en" data-short-label="EN">EN</button>
+      </div>
+      <button id="account-toggle" class="btn btn-ghost btn-sm account-toggle" type="button" aria-haspopup="dialog" aria-controls="auth-dialog">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>
+        <span id="account-label">登录</span>
+      </button>
+      <button id="cart-toggle" class="btn btn-ghost btn-sm" type="button"
+aria-haspopup="dialog" aria-controls="cart-panel">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"
+stroke-width="2" aria-hidden="true">
+          <path d="M6 6h15l-1.5 9h-12z"/>
+          <circle cx="9" cy="20" r="1.5" fill="currentColor"/>
+          <circle cx="18" cy="20" r="1.5" fill="currentColor"/>
+          <path d="M6 6L5 3H2"/>
+        </svg>
+        <span class="cart-label" id="header-cart-label">我的购物车</span>
+        <span id="cart-count" class="cart-badge" aria-label="购物车商品数量">0</span>
+      </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="main container">
+    <section class="config-stage" aria-label="配置区域">
+      <div class="device-selector-bar no-print">
+        <label for="device-select">选择设备型号</label>
+        <select id="device-select" class="device-select">
+          <!-- Options rendered by JS -->
+        </select>
+      </div>
+
+      <div class="stage-header">
+        <h1 class="page-title" id="page-title">--</h1>
+        <p class="page-subtitle" id="page-subtitle">--</p>
+        <p class="page-desc" id="page-desc">--</p>
+      </div>
+
+      <div class="preview-area" id="preview-area">
+        <div class="gallery-viewport" aria-roledescription="carousel" aria-label="设备图片展示">
+          <div class="gallery-track"><!-- Gallery slides rendered by JS --></div>
+          <button type="button" class="gallery-nav gallery-prev" aria-label="上一张"><span>‹</span></button>
+          <button type="button" class="gallery-nav gallery-next" aria-label="下一张"><span>›</span></button>
+          <div class="gallery-dots"><!-- Dots rendered by JS --></div>
+        </div>
+      </div>
+
+      <section class="spec-section color-section" id="color-section" aria-label="外观颜色">
+        <div class="spec-section-header">
+          <h3 id="color-title">外观颜色</h3>
+        </div>
+        <div class="options-grid color-options" id="color-options">
+          <!-- Color options rendered by JS -->
+        </div>
+      </section>
+
+      <section class="spec-section" id="motor-section" aria-label="电机选择">
+        <div class="spec-section-header">
+          <h3 id="motor-title">电机配置</h3>
+        </div>
+        <div class="options-grid" id="motor-options">
+          <!-- Motor options rendered by JS -->
+        </div>
+      </section>
+
+      <section class="spec-section" id="voltage-section" aria-label="供电选择">
+        <div class="spec-section-header">
+          <h3 id="voltage-title">供电配置</h3>
+        </div>
+        <div class="options-grid" id="voltage-options">
+          <!-- Voltage options rendered by JS -->
+        </div>
+      </section>
+
+      <section class="config-section" id="config-section" aria-label="设备配置">
+        <div class="spec-section-header">
+          <h3 id="optional-features-title">设备可选配置</h3>
+        </div>
+        <div class="config-sticky-header" id="config-sticky-header">
+          <div class="spec-chips" id="spec-chips" aria-label="已选配置快捷导航">
+            <!-- Selected spec chips rendered by JS -->
+          </div>
+          <nav class="category-tabs" id="category-tabs" aria-label="配置分类">
+            <!-- Tabs rendered by JS -->
+          </nav>
+        </div>
+
+        <div class="options-panel" id="options-panel" aria-live="polite">
+          <!-- Options rendered by JS -->
+        </div>
+      </section>
+    </section>
+
+    <aside class="summary-panel" id="summary-panel" aria-label="配置清单">
+      <div class="summary-sticky">
+        <header class="summary-header">
+          <h2 id="summary-title">当前选配</h2>
+          <div class="summary-header-actions no-print">
+            <button id="reset-config" class="btn btn-ghost btn-sm" type="button">重置</button>
+            <button id="summary-close" class="btn btn-ghost btn-sm summary-close" type="button" aria-label="关闭配置清单">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <path d="M6 6l12 12M18 6 6 18" />
+              </svg>
+            </button>
+          </div>
+        </header>
+
+        <div class="summary-model" id="summary-model">
+          <span class="summary-label" id="summary-model-label">型号</span>
+          <span class="summary-value" id="summary-model-name">--</span>
+        </div>
+
+        <ul class="summary-list" id="summary-list">
+          <!-- Summary items rendered by JS -->
+        </ul>
+
+        <div class="summary-empty" id="summary-empty" hidden>
+          尚未选择任何配置项
+        </div>
+
+        <div class="summary-actions no-print">
+          <button id="save-cart" class="btn btn-primary btn-block" type="button">
+            保存当前配置到购物车
+          </button>
+          <button id="share-current" class="btn btn-secondary btn-block" type="button">
+            分享当前配置
+          </button>
+          <button id="export-print" class="btn btn-secondary btn-block" type="button">
+            导出 PDF
+          </button>
+        </div>
+      </div>
+    </aside>
+  </main>
+
+  <footer class="site-footer no-print">
+    <div class="container">
+      <p id="site-footer-copy">&copy; 2026 BOTEN DIESEL TEST BENCH. 配置清单仅供参考，请联系销售获取正式报价。</p>
+    </div>
+  </footer>
+
+  <button id="summary-toggle" class="summary-toggle no-print" type="button" aria-expanded="false"
+aria-controls="summary-panel" aria-label="查看配置清单">
+    <span>查看配置清单</span>
+    <svg class="summary-toggle-icon" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+      <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  </button>
+
+  <div id="drawer-backdrop" class="drawer-backdrop no-print"></div>
+
+  <dialog id="auth-dialog" class="auth-dialog no-print" aria-labelledby="auth-title">
+    <div class="auth-dialog-card">
+      <header class="auth-dialog-header">
+        <div><span class="auth-kicker">BOTEN ACCOUNT</span><h2 id="auth-title">登录账号</h2></div>
+        <button id="auth-close" class="btn btn-text btn-sm" type="button" aria-label="关闭">✕</button>
+      </header>
+
+      <div id="auth-form-view">
+        <div class="auth-tabs" role="tablist">
+          <button class="auth-tab active" id="auth-login-tab" data-auth-mode="login" type="button">登录</button>
+          <button class="auth-tab" id="auth-register-tab" data-auth-mode="register" type="button">注册</button>
+        </div>
+        <form id="auth-form">
+          <label class="auth-field register-only" hidden><span id="auth-name-label">姓名</span><input id="auth-name" autocomplete="name" placeholder="请输入姓名" /></label>
+          <label class="auth-field"><span id="auth-identifier-label">邮箱或手机号</span><input id="auth-identifier" autocomplete="username" required placeholder="name@example.com / 手机号" /></label>
+          <label class="auth-field"><span id="auth-password-label">密码</span><input id="auth-password" type="password" minlength="8" required autocomplete="current-password" placeholder="至少8个字符" /></label>
+          <div id="auth-error" class="auth-error" role="alert" hidden></div>
+          <button id="auth-submit" class="btn btn-primary btn-block" type="submit">登录</button>
+        </form>
+        <button id="guest-continue" class="btn btn-text btn-block" type="button">暂不登录，继续浏览</button>
+        <p class="auth-hint" id="auth-hint">游客可以浏览和选配，保存配置时需要登录。</p>
+      </div>
+
+      <div id="account-view" class="account-view" hidden>
+        <div class="account-avatar" id="account-avatar">U</div>
+        <h3 id="account-name">用户</h3>
+        <p id="account-contact">--</p>
+        <span class="account-role" id="account-role">客户</span>
+        <button id="account-logout" class="btn btn-secondary btn-block" type="button">退出登录</button>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="share-dialog" class="share-dialog no-print" aria-labelledby="share-title">
+    <div class="share-dialog-card">
+      <header class="share-dialog-header">
+        <div><span class="auth-kicker">CONFIGURATION SHARE</span><h2 id="share-title">配置分享码</h2></div>
+        <button id="share-close" class="btn btn-text btn-sm" type="button" aria-label="关闭分享窗口">✕</button>
+      </header>
+      <p class="share-description" id="share-description">将以下 6 位分享码发送给业务员或管理员，即可查看本次设备配置。</p>
+      <button id="share-code" class="share-code" type="button" title="点击复制分享码">------</button>
+      <p id="share-copy-status" class="share-copy-status" aria-live="polite">点击分享码即可复制</p>
+      <div class="share-expiry"><span id="share-expiry-label">有效期至</span><strong id="share-expires-at">--</strong></div>
+      <button id="share-copy" class="btn btn-primary btn-block" type="button">复制分享码</button>
+    </div>
+  </dialog>
+
+  <div id="cart-backdrop" class="cart-backdrop no-print" aria-hidden="true"></div>
+  <div id="cart-panel" class="cart-panel no-print" role="dialog" aria-modal="true" aria-labelledby="cart-title" aria-hidden="true">
+    <div class="cart-panel-inner">
+      <header class="cart-panel-header">
+        <h2 id="cart-title">我的购物车</h2>
+        <button id="cart-close" class="btn btn-text btn-sm" type="button" aria-label="关闭购物车">✕</button>
+      </header>
+      <div id="cart-items" class="cart-items"></div>
+      <div id="cart-empty" class="cart-empty" hidden>购物车为空</div>
+      <footer class="cart-panel-footer">
+        <button id="cart-clear" class="btn btn-text btn-sm" type="button">清空购物车</button>
+      </footer>
+    </div>
+  </div>
+</body>
+</html>
