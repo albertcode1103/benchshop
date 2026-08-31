@@ -103,12 +103,13 @@ def seed() -> None:
                 connection.execute(
                     """
                     INSERT INTO options
-                        (id, category_id, code, name, description, image_path, price, sort_order)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        (id, category_id, code, name, name_en, description, image_path, price, sort_order)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(id) DO UPDATE SET
                         category_id = excluded.category_id,
                         code = excluded.code,
                         name = excluded.name,
+                        name_en = CASE WHEN options.name_en = '' THEN excluded.name_en ELSE options.name_en END,
                         description = excluded.description,
                         image_path = excluded.image_path,
                         price = excluded.price,
@@ -118,6 +119,7 @@ def seed() -> None:
                         option["id"],
                         category["id"],
                         option_code(option),
+                        option["name"],
                         option["name"],
                         option.get("description", ""),
                         option.get("image"),
@@ -155,18 +157,21 @@ def seed() -> None:
             for color_index, color in enumerate(product.get("colors", [])):
                 code = product["type"].replace("BOTEN ", "").strip()
                 suffix = "绿色" if color == "Green" else "红色" if color == "Red" else color
-                image_path = "tb/tbpic/{0}/{0}{1}.png".format(code, suffix) if len(product["colors"]) > 1 else "tb/tbpic/{0}/{0}.png".format(code)
+                folder_code = "CR318 Pro" if code == "CR318 PRO" else code
+                relative_image = "tb/tbpic/{0}/{0}{1}.png".format(folder_code, suffix) if len(product["colors"]) > 1 else "tb/tbpic/{0}/{0}.png".format(folder_code)
+                image_path = relative_image if (PROJECT_DIR / relative_image).is_file() else None
                 connection.execute(
                     """
-                    INSERT INTO product_colors (product_id, code, label, image_path, is_default, sort_order)
-                    VALUES (?, ?, ?, ?, ?, ?)
+                    INSERT INTO product_colors (product_id, code, label, label_en, image_path, is_default, sort_order)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(product_id, code) DO UPDATE SET
                         label = excluded.label,
+                        label_en = excluded.label_en,
                         image_path = excluded.image_path,
                         is_default = excluded.is_default,
                         sort_order = excluded.sort_order
                     """,
-                    (product_id, color, color, image_path, int(color == "Green" or color_index == 0), color_index),
+                    (product_id, color, suffix, color, image_path, int(color == "Green" or color_index == 0), color_index),
                 )
 
             for spec_category, values in (("motor", product["motors"]), ("voltage", product["voltages"])):

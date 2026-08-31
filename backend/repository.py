@@ -39,7 +39,7 @@ def get_product(product_id: str, lang: str = "zh") -> Optional[Dict[str, Any]]:
 
         color_rows = connection.execute(
             """
-            SELECT code, label, image_path, is_default
+            SELECT code, label, label_en, image_path, is_default
             FROM product_colors
             WHERE product_id = ?
             ORDER BY sort_order, code
@@ -55,9 +55,8 @@ def get_product(product_id: str, lang: str = "zh") -> Optional[Dict[str, Any]]:
                 c.multiple,
                 o.id AS option_id,
                 o.code,
-                o.name, o.name_en, o.description_en,
+                o.name, o.name_en, o.description, o.description_en,
                 po.description_override, po.description_override_en,
-                COALESCE(po.description_override, o.description) AS description,
                 COALESCE(po.image_override, o.image_path) AS image_path,
                 COALESCE(po.price_override, o.price) AS price,
                 po.mapping_id
@@ -74,6 +73,9 @@ def get_product(product_id: str, lang: str = "zh") -> Optional[Dict[str, Any]]:
     if lang.startswith("en"):
         product["name"] = product.get("name_en") or product["name"]; product["title_name"] = product.get("title_name_en") or product["title_name"]; product["description"] = product.get("description_en") or product["description"]
     product["colors"] = _rows(color_rows)
+    if lang.startswith("en"):
+        for color in product["colors"]:
+            color["label"] = color.get("label_en") or color["label"]
     categories: Dict[str, Dict[str, Any]] = {}
     for row in option_rows:
         item = dict(row)
@@ -108,15 +110,10 @@ def get_product(product_id: str, lang: str = "zh") -> Optional[Dict[str, Any]]:
         item["id"] = item.pop("option_id")
         if lang.startswith("en"):
             item["name"] = item.get("name_en") or item["name"]
-            # A model-specific note has precedence over the shared option text.
-            # Until overrides have separate locale fields, retaining that note is
-            # safer than silently replacing it with the shared English text.
-            item["description"] = (
-                item.get("description_override_en")
-                or item.get("description_override")
-                or item.get("description_en")
-                or item["description"]
-            )
+            item["description"] = item.get("description_en") or item["description"]
+            item["special_note"] = item.get("description_override_en") or ""
+        else:
+            item["special_note"] = item.get("description_override") or ""
         item.pop("description_override", None)
         item.pop("description_override_en", None)
         category["options"].append(item)

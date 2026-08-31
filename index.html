@@ -4,31 +4,33 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="description" content="BOTEN Diesel Test Bench - 设备配置选择器" />
+  <meta name="theme-color" content="#ffffff" />
   <title>BOTEN DIESEL TEST BENCH</title>
   <link rel="icon" type="image/png" href="tb/site/LOGO.png?v=20260831" />
   <link rel="shortcut icon" type="image/png" href="tb/site/LOGO.png?v=20260831" />
   <link rel="apple-touch-icon" href="tb/site/LOGO.png?v=20260831" />
-  <link rel="stylesheet" href="css/main.css?v=20260830-4" />
-  <link rel="stylesheet" href="css/layout.css?v=20260830-3" />
-  <link rel="stylesheet" href="css/components.css?v=20260830-3" />
+  <link rel="stylesheet" href="css/main.css?v=20260831-5" />
+  <link rel="stylesheet" href="css/layout.css?v=20260831-5" />
+  <link rel="stylesheet" href="css/components.css?v=20260901-7" />
   <link rel="stylesheet" href="css/print.css?v=20260831-1" />
   <script src="js/runtime-config.js?v=20260831-2"></script>
   <script src="js/data.js" defer></script>
   <script src="js/catalog-api.js?v=20260831-2" defer></script>
   <script src="js/state.js?v=20260831-1" defer></script>
-  <script src="js/price.js?v=20260830-3" defer></script>
-  <script src="js/renderer.js?v=20260831-3" defer></script>
-  <script src="js/auth.js?v=20260831-2" defer></script>
-  <script src="js/cart.js?v=20260831-3" defer></script>
+  <script src="js/price.js?v=20260831-4" defer></script>
+  <script src="js/renderer.js?v=20260901-7" defer></script>
+  <script src="js/auth.js?v=20260831-6" defer></script>
+  <script src="js/cart.js?v=20260831-6" defer></script>
   <script src="js/pdf.js?v=20260831-1" defer></script>
   <script src="js/main.js?v=20260831-1" defer></script>
-  <script src="js/language.js?v=20260831-3" defer></script>
+  <script src="js/language.js?v=20260831-4" defer></script>
 </head>
 <body>
+  <a class="skip-link" href="#main-content">跳到主要内容</a>
   <header class="site-header">
     <div class="container header-inner">
       <a class="brand" href="#" aria-label="首页">
-        <img class="brand-logo" src="tb/site/BOTEN.png" alt="BOTEN" />
+        <img class="brand-logo" src="tb/site/BOTEN.png" alt="BOTEN" width="1617" height="545" />
         <span class="brand-name">BOTEN DIESEL TEST BENCH</span>
       </a>
       <div class="header-actions no-print">
@@ -56,7 +58,7 @@ stroke-width="2" aria-hidden="true">
     </div>
   </header>
 
-  <main class="main container">
+  <main class="main container" id="main-content" tabindex="-1">
     <section class="config-stage" aria-label="配置区域">
       <div class="device-selector-bar no-print">
         <label for="device-select">选择设备型号</label>
@@ -72,7 +74,7 @@ stroke-width="2" aria-hidden="true">
       </div>
 
       <div class="preview-area" id="preview-area">
-        <div class="gallery-viewport" aria-roledescription="carousel" aria-label="设备图片展示">
+        <div class="gallery-viewport" tabindex="0" aria-roledescription="carousel" aria-label="设备图片展示">
           <div class="gallery-track"><!-- Gallery slides rendered by JS --></div>
           <button type="button" class="gallery-nav gallery-prev" aria-label="上一张"><span>‹</span></button>
           <button type="button" class="gallery-nav gallery-next" aria-label="下一张"><span>›</span></button>
@@ -115,12 +117,12 @@ stroke-width="2" aria-hidden="true">
           <div class="spec-chips" id="spec-chips" aria-label="已选配置快捷导航">
             <!-- Selected spec chips rendered by JS -->
           </div>
-          <nav class="category-tabs" id="category-tabs" aria-label="配置分类">
+          <nav class="category-tabs" id="category-tabs" role="tablist" aria-label="配置分类">
             <!-- Tabs rendered by JS -->
           </nav>
         </div>
 
-        <div class="options-panel" id="options-panel" aria-live="polite">
+        <div class="options-panel" id="options-panel" role="tabpanel" aria-live="polite">
           <!-- Options rendered by JS -->
         </div>
       </section>
@@ -157,12 +159,10 @@ stroke-width="2" aria-hidden="true">
           <button id="save-cart" class="btn btn-primary btn-block" type="button">
             保存当前配置到购物车
           </button>
-          <button id="share-current" class="btn btn-secondary btn-block" type="button">
-            分享当前配置
-          </button>
-          <button id="export-print" class="btn btn-secondary btn-block" type="button">
-            导出 PDF
-          </button>
+          <div class="summary-secondary-actions">
+            <button id="share-current" class="btn btn-secondary" type="button">分享当前配置</button>
+            <button id="export-print" class="btn btn-secondary" type="button">导出 PDF</button>
+          </div>
         </div>
       </div>
     </aside>
@@ -188,24 +188,24 @@ aria-controls="summary-panel" aria-label="查看配置清单">
   <dialog id="auth-dialog" class="auth-dialog no-print" aria-labelledby="auth-title">
     <div class="auth-dialog-card">
       <header class="auth-dialog-header">
-        <div><span class="auth-kicker">BOTEN ACCOUNT</span><h2 id="auth-title">登录账号</h2></div>
+        <div><h2 id="auth-title">登录账号</h2></div>
         <button id="auth-close" class="btn btn-text btn-sm" type="button" aria-label="关闭">✕</button>
       </header>
 
       <div id="auth-form-view">
-        <div class="auth-tabs" role="tablist">
-          <button class="auth-tab active" id="auth-login-tab" data-auth-mode="login" type="button">登录</button>
-          <button class="auth-tab" id="auth-register-tab" data-auth-mode="register" type="button">注册</button>
-        </div>
         <form id="auth-form">
-          <label class="auth-field register-only" hidden><span id="auth-name-label">姓名</span><input id="auth-name" autocomplete="name" placeholder="请输入姓名" /></label>
-          <label class="auth-field"><span id="auth-identifier-label">邮箱或手机号</span><input id="auth-identifier" autocomplete="username" required placeholder="name@example.com / 手机号" /></label>
-          <label class="auth-field"><span id="auth-password-label">密码</span><input id="auth-password" type="password" minlength="8" required autocomplete="current-password" placeholder="至少8个字符" /></label>
+          <label class="auth-field register-only" id="auth-name-field" hidden><span data-auth-text="name">姓名</span><input id="auth-name" name="display_name" autocomplete="name" placeholder="请输入姓名" /></label>
+          <div class="auth-method-tabs" role="tablist" aria-label="登录方式">
+            <button class="auth-method-tab active" id="auth-tab-email" role="tab" aria-selected="true" aria-controls="auth-email-field" tabindex="0" type="button" data-auth-identifier="email">邮箱</button>
+            <button class="auth-method-tab" id="auth-tab-phone" role="tab" aria-selected="false" aria-controls="auth-phone-field" tabindex="-1" type="button" data-auth-identifier="phone">手机号</button>
+          </div>
+          <label class="auth-field" id="auth-email-field" role="tabpanel" aria-labelledby="auth-tab-email"><span data-auth-text="email">邮箱</span><input id="auth-email" name="email" type="email" autocomplete="email" spellcheck="false" required placeholder="name@example.com" /></label>
+          <label class="auth-field" id="auth-phone-field" role="tabpanel" aria-labelledby="auth-tab-phone" hidden><span data-auth-text="phone">手机号</span><span class="phone-input-group"><input id="auth-country-code" value="+86" name="country_code" type="tel" inputmode="tel" autocomplete="tel-country-code" spellcheck="false" pattern="\+[1-9][0-9]{0,3}" aria-label="国家区号" /><input id="auth-phone" name="phone" type="tel" inputmode="numeric" autocomplete="tel-national" spellcheck="false" pattern="[0-9]{7,15}" aria-label="实际手机号" placeholder="1590000000" /></span></label>
+          <label class="auth-field"><span id="auth-password-label">密码</span><input id="auth-password" name="password" type="password" minlength="8" required autocomplete="current-password" placeholder="至少8个字符" /></label>
           <div id="auth-error" class="auth-error" role="alert" hidden></div>
           <button id="auth-submit" class="btn btn-primary btn-block" type="submit">登录</button>
         </form>
-        <button id="guest-continue" class="btn btn-text btn-block" type="button">暂不登录，继续浏览</button>
-        <p class="auth-hint" id="auth-hint">游客可以浏览和选配，保存配置时需要登录。</p>
+        <p class="auth-switch" id="auth-mode-switch">还没有账号？<button class="auth-link" type="button" data-auth-mode="register">注册</button></p>
       </div>
 
       <div id="account-view" class="account-view" hidden>
@@ -213,6 +213,7 @@ aria-controls="summary-panel" aria-label="查看配置清单">
         <h3 id="account-name">用户</h3>
         <p id="account-contact">--</p>
         <span class="account-role" id="account-role">客户</span>
+        <button id="account-admin-entry" class="btn btn-primary btn-block" type="button" hidden>进入后台</button>
         <button id="account-logout" class="btn btn-secondary btn-block" type="button">退出登录</button>
       </div>
     </div>

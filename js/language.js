@@ -16,7 +16,9 @@
       selectAll: "全选", clearAll: "全不选", shareAction: "分享", deleteAction: "删除",
       createAccount: "创建账号", registerContinue: "注册并继续", registering: "注册中…", signingIn: "登录中…",
       accountFallback: "账号", signInToSave: "登录后可保存配置", noSaved: "暂无配置", generating: "生成中…",
-      copied: "已复制", copyCode: "复制分享码", confirmClear: "删除全部配置？", requestFailed: "请求失败"
+      copied: "已复制", copyCode: "复制分享码", confirmClear: "删除全部配置？", requestFailed: "请求失败",
+      email: "邮箱", phone: "手机号", loginMethod: "登录方式", countryCode: "国家区号", phoneNumber: "实际手机号",
+      emailHint: "name@example.com", phoneHint: "1590000000", invalidPhone: "请输入国家区号和7至15位手机号"
     },
     en: {
       account: "Sign in", device: "Select Test Bench", cart: "Cart", clear: "Clear Cart",
@@ -33,7 +35,9 @@
       selectAll: "Select all", clearAll: "Clear all", shareAction: "Share", deleteAction: "Delete",
       createAccount: "Create account", registerContinue: "Register", registering: "Registering…", signingIn: "Signing in…",
       accountFallback: "Account", signInToSave: "Sign in to save", noSaved: "No saved items", generating: "Generating…",
-      copied: "Copied", copyCode: "Copy code", confirmClear: "Delete all items?", requestFailed: "Request failed"
+      copied: "Copied", copyCode: "Copy code", confirmClear: "Delete all items?", requestFailed: "Request failed",
+      email: "Email", phone: "Phone", loginMethod: "Sign-in method", countryCode: "Country code", phoneNumber: "Phone number",
+      emailHint: "name@example.com", phoneHint: "1590000000", invalidPhone: "Enter a country code and a 7–15 digit phone number"
     }
   };
 

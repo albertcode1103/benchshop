@@ -52,8 +52,8 @@ def staff_user(user=Depends(registered_user)):
 
 
 @router.get("/configs")
-def configs(user=Depends(registered_user)):
-    return {"items": list_saved_configs(user["id"])}
+def configs(lang: str = "zh", user=Depends(registered_user)):
+    return {"items": list_saved_configs(user["id"], "en" if lang == "en" else "zh")}
 
 
 @router.post("/configs", status_code=status.HTTP_201_CREATED)
@@ -76,16 +76,17 @@ def current_config_pdf(payload: SaveConfigRequest, user=Depends(current_user)):
 
 
 @router.get("/configs/{config_id}")
-def config(config_id: str, user=Depends(registered_user)):
-    result = get_saved_config(config_id, user["id"])
+def config(config_id: str, lang: str = "zh", user=Depends(registered_user)):
+    result = get_saved_config(config_id, user["id"], "en" if lang == "en" else "zh")
     if result is None:
         raise HTTPException(status_code=404, detail="Saved configuration not found")
     return result
 
 
 @router.get("/configs/{config_id}/pdf")
-def saved_config_pdf(config_id: str, user=Depends(registered_user)):
-    result = get_saved_config(config_id, user["id"])
+def saved_config_pdf(config_id: str, lang: str = "zh", user=Depends(registered_user)):
+    selected_lang = "en" if lang == "en" else "zh"
+    result = get_saved_config(config_id, user["id"], selected_lang)
     if result is None:
         raise HTTPException(status_code=404, detail="Saved configuration not found")
     content = configuration_pdf(result["snapshot"], result["name"], "配置编号 / Config: {}".format(config_id[:8]))
@@ -149,22 +150,22 @@ def remove_quote(quote_id: str, user=Depends(staff_user)):
 
 
 @router.get("/shares/{code}")
-def shared_config(code: str, request: Request, user=Depends(registered_user)):
+def shared_config(code: str, request: Request, user=Depends(registered_user), lang: str = "zh"):
     if user["role"] not in ("sales", "admin"):
         raise HTTPException(status_code=403, detail="Sales or admin access required")
     if len(code) != 6 or not code.isdigit():
         raise HTTPException(status_code=422, detail="Share code must contain 6 digits")
     client = request.client.host if request.client else "unknown"
     enforce("share:{}:{}".format(client, code), limit=30, window_seconds=60)
-    result = get_share(code)
+    result = get_share(code, "en" if lang == "en" else "zh")
     if result is None:
         raise HTTPException(status_code=404, detail="Share code not found or expired")
     return result
 
 
 @router.get("/shares/{code}/pdf")
-def shared_config_pdf(code: str, request: Request, user=Depends(staff_user)):
-    result = shared_config(code, request, user)
+def shared_config_pdf(code: str, request: Request, user=Depends(staff_user), lang: str = "zh"):
+    result = shared_config(code, request, user, lang)
     title = result.get("name") or "客户配置清单"
     content = configuration_pdf(result["snapshot"], title, "分享码 / Share: {}".format(code))
     return _pdf_response(content, "shared-configuration-{}.pdf".format(code))

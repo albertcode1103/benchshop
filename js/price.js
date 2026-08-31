@@ -2,15 +2,9 @@ function formatPrice(value) {
   return "¥" + value.toLocaleString("zh-CN");
 }
 
-const colorLabels = {
-  Green: "Green 绿色",
-  Red: "Red 红色"
-};
-
-function getColorLabel(color) {
-  const language = localStorage.getItem("boten-language") === "en" ? "en" : "zh";
-  if (language === "en") return color;
-  return colorLabels[color] || `${color} ${colorToCn(color)}`;
+function getColorLabel(color, model = null) {
+  if (model?.colorNames?.[color]) return model.colorNames[color];
+  return color;
 }
 
 function getSpecLabel(categoryId, name) {
@@ -82,7 +76,7 @@ function buildSummaryGroups(model, snapshot) {
   groups.push({
     type: "single",
     category: localStorage.getItem("boten-language") === "en" ? "Appearance" : "外观颜色",
-    value: getColorLabel(snapshot.currentColor)
+    value: getColorLabel(snapshot.currentColor, model)
   });
 
   model.categories.forEach((cat) => {

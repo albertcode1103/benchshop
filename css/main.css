@@ -8,11 +8,12 @@
   --color-surface: #ffffff;
   --color-text: #1a1a1a;
   --color-text-secondary: #666666;
-  --color-text-muted: #999999;
+  --color-text-muted: #6b7280;
   --color-border: #e5e7eb;
   --color-border-strong: #d1d5db;
-  --color-accent: #ff6a00;
-  --color-accent-dark: #e65f00;
+  --color-accent: #f36b21;
+  --color-accent-dark: #a83e00;
+  --color-accent-action: #a83e00;
   --color-accent-light: #fff4eb;
   --color-success: #10b981;
   --color-danger: #ef4444;
@@ -80,6 +81,29 @@ button {
   font-family: inherit;
 }
 
+select { color: var(--color-text); background-color: var(--color-surface); }
+
+.skip-link {
+  position: fixed;
+  top: 10px;
+  left: 12px;
+  z-index: 1000;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  color: #fff;
+  background: #111827;
+  transform: translateY(-160%);
+}
+.skip-link:focus { transform: translateY(0); }
+
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 3px solid #111827;
+  outline-offset: 3px;
+  box-shadow: 0 0 0 6px #fff;
+}
+
+#main-content:focus { outline: 0; box-shadow: none; }
+
 h1, h2, h3, h4, h5, h6, p {
   margin: 0;
 }
@@ -119,6 +143,16 @@ a {
 
 .text-muted {
   color: var(--color-text-muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+  }
 }
 .language-switcher { display:inline-flex; align-items:center; gap:3px; padding:3px; border:1px solid var(--border, #d8dee8); border-radius:9px; background:var(--surface, #fff); }
 .language-switcher button { min-height:32px; padding:0 10px; border:0; border-radius:7px; color:var(--muted, #667085); background:transparent; font:inherit; font-size:13px; font-weight:700; cursor:pointer; }

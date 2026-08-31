@@ -227,7 +227,7 @@ backend/
 .\backend\.venv\Scripts\python.exe -m unittest discover -s tests -v
 ```
 
-当前 12 项测试覆盖目录初始化、迁移、登录会话、保存分享、角色边界、机型专属双语说明、PDF、操作审计、图片接口、安全删除和数据库备份恢复。生产服务器若不运行测试，可只安装 `requirements.txt`。
+当前 26 项测试覆盖目录初始化、迁移、登录会话、保存分享、历史颜色名称刷新、角色边界、目录 CRUD、机型专属双语说明、PDF、操作审计、图片接口、安全删除和数据库备份恢复。生产服务器若不运行测试，可只安装 `requirements.txt`。
 
 ## PDF 下载
 

@@ -50,6 +50,12 @@ def require_admin(user=Depends(current_user)):
     return user
 
 
+def require_catalog_manager(user=Depends(current_user)):
+    if user["role"] not in ("admin", "sales"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Catalog manager access required")
+    return user
+
+
 @router.post("/guest")
 def guest_session(request: Request):
     client = request.client.host if request.client else "unknown"
@@ -64,11 +70,13 @@ def register(payload: RegisterRequest, request: Request):
     enforce("register:{}".format(client), limit=10, window_seconds=3600)
     email = payload.email.strip().lower() if payload.email else None
     phone = payload.phone.strip() if payload.phone else None
-    if not email and not phone:
-        raise HTTPException(status_code=422, detail="Email or phone is required")
+    if not email or not phone:
+        raise HTTPException(status_code=422, detail="Email and phone are required")
+    if not payload.display_name.strip():
+        raise HTTPException(status_code=422, detail="Name is required")
     if email and not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email):
         raise HTTPException(status_code=422, detail="Invalid email")
-    if phone and not re.match(r"^\+?[0-9]{7,15}$", phone):
+    if phone and not re.match(r"^\+[1-9][0-9]{6,14}$", phone):
         raise HTTPException(status_code=422, detail="Invalid phone")
     try:
         user = create_user(email, phone, payload.password, display_name=payload.display_name)

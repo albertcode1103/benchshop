@@ -5,7 +5,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import FileResponse
 
-from .auth_routes import require_admin
+from .auth_routes import require_catalog_manager
 from .config import UPLOAD_DIR
 
 
@@ -15,7 +15,7 @@ MEDIA_NAME = re.compile(r"^[a-f0-9]{32}\.(?:jpg|png|webp)$")
 admin_media_router = APIRouter(
     prefix="/api/v1/admin/media",
     tags=["admin-media"],
-    dependencies=[Depends(require_admin)],
+    dependencies=[Depends(require_catalog_manager)],
 )
 public_media_router = APIRouter(prefix="/api/v1/media", tags=["media"])
 

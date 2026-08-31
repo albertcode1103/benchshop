@@ -62,6 +62,17 @@ def _paragraph(value: Any, style: ParagraphStyle) -> Paragraph:
     return Paragraph(text or "-", style)
 
 
+def _option_detail_paragraph(option: Dict[str, Any], style: ParagraphStyle) -> Paragraph:
+    parts = [escape(str(option.get("name") or "-"))]
+    description = str(option.get("description") or "").strip()
+    special_note = str(option.get("special_note") or "").strip()
+    if description:
+        parts.append(escape(description).replace("\n", "<br/>"))
+    if special_note:
+        parts.append("<b>{}</b>".format(escape(special_note).replace("\n", "<br/>")))
+    return Paragraph("<br/>".join(parts), style)
+
+
 def _styles() -> Dict[str, ParagraphStyle]:
     base = getSampleStyleSheet()
     return {
@@ -125,10 +136,7 @@ def configuration_pdf(snapshot: Dict[str, Any], title: str = "设备配置清单
     rows: List[List[Any]] = [[_paragraph("类别", styles["header"]), _paragraph("编号", styles["header"]), _paragraph("名称与说明", styles["header"])]]
     for category in snapshot.get("categories") or []:
         for option in category.get("options") or []:
-            detail = str(option.get("name") or "-")
-            if str(option.get("description") or "").strip():
-                detail += "\n" + str(option["description"]).strip()
-            rows.append([_paragraph(category.get("name") or category.get("id"), styles["body"]), _paragraph(option.get("code") or option.get("id"), styles["body"]), _paragraph(detail, styles["body"])])
+            rows.append([_paragraph(category.get("name") or category.get("id"), styles["body"]), _paragraph(option.get("code") or option.get("id"), styles["body"]), _option_detail_paragraph(option, styles["body"])])
     if len(rows) == 1:
         rows.append([_paragraph("-", styles["body"]), _paragraph("-", styles["body"]), _paragraph("未选择附加配置", styles["body"])])
     table = Table(rows, colWidths=[34 * mm, 35 * mm, 101 * mm], repeatRows=1, hAlign="LEFT")

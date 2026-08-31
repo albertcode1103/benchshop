@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS product_colors (
     product_id TEXT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
     code TEXT NOT NULL,
     label TEXT NOT NULL,
+    label_en TEXT NOT NULL DEFAULT '',
     image_path TEXT,
     is_default INTEGER NOT NULL DEFAULT 0,
     sort_order INTEGER NOT NULL DEFAULT 0,

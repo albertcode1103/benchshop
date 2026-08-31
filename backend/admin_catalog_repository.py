@@ -7,7 +7,7 @@ def create_product(values: Dict[str, Any]) -> Dict[str, Any]:
     product_id = values["id"].strip().lower()
     with get_connection() as db:
         db.execute("INSERT INTO products(id,name,name_en,title_name,title_name_en,description,description_en,base_price,price_usd,enabled,sort_order) VALUES(?,?,?,?,?,?,?,?,?,1,999)", (product_id, values["name"], values.get("name_en", ""), values.get("title_name", values["name"]), values.get("title_name_en", ""), values.get("description", ""), values.get("description_en", ""), int(values.get("base_price", 0)), int(values.get("price_usd", 0))))
-        db.execute("INSERT INTO product_colors(product_id,code,label,is_default,sort_order) VALUES(?,?,?,?,0)", (product_id, "Green", "Green", 1))
+        db.execute("INSERT INTO product_colors(product_id,code,label,label_en,is_default,sort_order) VALUES(?,?,?,?,?,0)", (product_id, "Green", "绿色", "Green", 1))
     return get_admin_product(product_id)
 
 
@@ -25,7 +25,7 @@ def list_config_categories() -> List[Dict[str, Any]]:
 
 def update_config_option(option_id: str, values: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     allowed = ("code", "name", "name_en", "image_path", "description", "description_en", "notes", "price", "price_usd", "enabled", "sort_order")
-    updates = {key: values[key] for key in allowed if key in values}
+    updates = {key: values[key] for key in allowed if key in values and values[key] is not None}
     if not updates: return None
     assignments = ", ".join("{} = ?".format(key) for key in updates)
     params = [int(v) if key == "enabled" else v for key, v in updates.items()]; params.append(option_id)
@@ -48,12 +48,13 @@ def create_config_option(category_id: str, code: str, name: str, **values: Any) 
     option_id = "opt-" + uuid.uuid4().hex[:16]
     with get_connection() as connection:
         sort_order = connection.execute("SELECT COALESCE(MAX(sort_order), -1) + 1 FROM options WHERE category_id = ?", (category_id,)).fetchone()[0]
-        connection.execute("INSERT INTO options (id, category_id, code, name, name_en, image_path, description, description_en, notes, price, price_usd, enabled, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", (option_id, category_id, code.strip(), name.strip(), values.get("name_en") or "", values.get("image_path"), values.get("description") or "", values.get("description_en") or "", values.get("notes") or "", values.get("price") or 0, values.get("price_usd") or 0, int(values.get("enabled", True)), sort_order))
+        enabled = True if values.get("enabled") is None else bool(values["enabled"])
+        connection.execute("INSERT INTO options (id, category_id, code, name, name_en, image_path, description, description_en, notes, price, price_usd, enabled, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", (option_id, category_id, code.strip(), name.strip(), values.get("name_en") or "", values.get("image_path"), values.get("description") or "", values.get("description_en") or "", values.get("notes") or "", values.get("price") or 0, values.get("price_usd") or 0, int(enabled), sort_order))
         result = connection.execute("SELECT id, category_id, code, name, name_en, image_path, description, description_en, notes, price, price_usd, enabled, sort_order FROM options WHERE id = ?", (option_id,)).fetchone()
     item = dict(result); item["enabled"] = bool(item["enabled"]); return item
 
 def update_config_category(category_id: str, values: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    updates = {k: values[k] for k in ("name", "name_en", "description", "description_en", "multiple", "sort_order") if k in values}
+    updates = {k: values[k] for k in ("name", "name_en", "description", "description_en", "multiple", "sort_order") if k in values and values[k] is not None}
     if not updates: return None
     assignments = ", ".join(f"{k} = ?" for k in updates)
     params = [int(v) if k == "multiple" else v for k, v in updates.items()] + [category_id]
@@ -163,7 +164,7 @@ def get_admin_product(product_id: str) -> Optional[Dict[str, Any]]:
 
         color_rows = connection.execute(
             """
-            SELECT code, label, image_path, is_default, sort_order
+            SELECT code, label, label_en, image_path, is_default, sort_order
             FROM product_colors WHERE product_id = ? ORDER BY sort_order, code
             """,
             (product_id,),
@@ -173,11 +174,12 @@ def get_admin_product(product_id: str) -> Optional[Dict[str, Any]]:
             SELECT o.id, o.category_id, o.code, o.name, o.name_en,
                    o.description, o.description_en, o.image_path,
                    o.price, o.price_usd, o.enabled, o.sort_order,
-                   CASE WHEN po.option_id IS NULL THEN 0 ELSE 1 END AS selected,
+                   CASE WHEN po.option_id IS NULL THEN 0 ELSE 1 END AS mapped,
+                   COALESCE(po.enabled, 0) AS selected,
                    po.description_override, po.description_override_en, po.image_override, po.price_override
             FROM options o
             LEFT JOIN product_options po
-              ON po.option_id = o.id AND po.product_id = ? AND po.enabled = 1
+              ON po.option_id = o.id AND po.product_id = ?
             ORDER BY o.category_id, o.sort_order, o.name
             """,
             (product_id,),
@@ -198,6 +200,7 @@ def get_admin_product(product_id: str) -> Optional[Dict[str, Any]]:
     for row in option_rows:
         option = dict(row)
         option["enabled"] = bool(option["enabled"])
+        option["mapped"] = bool(option["mapped"])
         option["selected"] = bool(option["selected"])
         options_by_category.setdefault(option.pop("category_id"), []).append(option)
 
@@ -228,6 +231,104 @@ def update_product(product_id: str, values: Dict[str, Any]) -> Optional[Dict[str
     return get_admin_product(product_id)
 
 
+def save_product_configuration(
+    product_id: str,
+    values: Dict[str, Any],
+    colors: List[Dict[str, Any]],
+    option_ids: List[str],
+    option_overrides: Dict[str, Dict[str, Any]],
+) -> Optional[Dict[str, Any]]:
+    """Save every editable part of one product in one SQLite transaction."""
+    allowed = ("name", "title_name", "name_en", "title_name_en", "description", "description_en", "base_price", "price_usd", "enabled", "sort_order")
+    updates = {key: values[key] for key in allowed if key in values and values[key] is not None}
+    if not option_ids:
+        raise ValueError("At least one motor and voltage option is required")
+
+    with get_connection() as connection:
+        if connection.execute("SELECT 1 FROM products WHERE id = ?", (product_id,)).fetchone() is None:
+            return None
+
+        placeholders = ",".join("?" for _ in option_ids)
+        option_rows = connection.execute(
+            "SELECT id, category_id, code FROM options WHERE id IN ({}) AND enabled = 1".format(placeholders),
+            option_ids,
+        ).fetchall()
+        if len(option_rows) != len(set(option_ids)):
+            raise ValueError("One or more options do not exist")
+        categories = {row["category_id"] for row in option_rows}
+        if "motor" not in categories or "voltage" not in categories:
+            raise ValueError("Each product requires at least one motor and voltage option")
+
+        if updates:
+            assignments = ", ".join("{} = ?".format(key) for key in updates)
+            params = [int(value) if key == "enabled" else value for key, value in updates.items()] + [product_id]
+            connection.execute("UPDATE products SET {}, updated_at = CURRENT_TIMESTAMP WHERE id = ?".format(assignments), params)
+
+        connection.execute("DELETE FROM product_colors WHERE product_id = ?", (product_id,))
+        for index, color in enumerate(colors):
+            connection.execute(
+                "INSERT INTO product_colors (product_id, code, label, label_en, image_path, is_default, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (product_id, color["code"], color["label"], color.get("label_en") or color["label"], color.get("image_path"), int(color.get("is_default", False)), index),
+            )
+
+        override_ids = set(option_overrides)
+        if override_ids:
+            override_placeholders = ",".join("?" for _ in override_ids)
+            valid_override_ids = {
+                row["id"] for row in connection.execute(
+                    "SELECT id FROM options WHERE id IN ({})".format(override_placeholders),
+                    tuple(override_ids),
+                ).fetchall()
+            }
+            if valid_override_ids != override_ids:
+                raise ValueError("One or more option overrides do not exist")
+
+        existing_rows = connection.execute(
+            """SELECT option_id, mapping_id, description_override, description_override_en,
+                      image_override, price_override, sort_order
+               FROM product_options WHERE product_id = ?""",
+            (product_id,),
+        ).fetchall()
+        existing = {row["option_id"]: dict(row) for row in existing_rows}
+        selected = {row["id"]: dict(row) for row in option_rows}
+        all_option_ids = set(existing) | set(selected) | override_ids
+        option_meta = {
+            row["id"]: dict(row) for row in connection.execute(
+                "SELECT id, category_id, code FROM options WHERE id IN ({})".format(
+                    ",".join("?" for _ in all_option_ids)
+                ),
+                tuple(all_option_ids),
+            ).fetchall()
+        } if all_option_ids else {}
+        for index, option_id in enumerate(sorted(all_option_ids, key=lambda value: (0 if value in selected else 1, value))):
+            override = option_overrides.get(option_id)
+            previous = existing.get(option_id, {})
+            meta = option_meta[option_id]
+            mapping_id = previous.get("mapping_id") or "{}-{}-{}".format(product_id.upper(), meta["category_id"].upper(), meta["code"])
+            description = override.get("description_override") if override is not None else previous.get("description_override")
+            description_en = override.get("description_override_en") if override is not None else previous.get("description_override_en")
+            connection.execute(
+                """INSERT INTO product_options
+                   (product_id, option_id, mapping_id, description_override, description_override_en,
+                    image_override, price_override, sort_order, enabled)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(product_id, option_id) DO UPDATE SET
+                     mapping_id=excluded.mapping_id,
+                     description_override=excluded.description_override,
+                     description_override_en=excluded.description_override_en,
+                     image_override=excluded.image_override,
+                     price_override=excluded.price_override,
+                     sort_order=excluded.sort_order,
+                     enabled=excluded.enabled""",
+                (
+                    product_id, option_id, mapping_id, description, description_en,
+                    previous.get("image_override"), previous.get("price_override"), index,
+                    int(option_id in selected),
+                ),
+            )
+    return get_admin_product(product_id)
+
+
 def replace_colors(product_id: str, colors: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     with get_connection() as connection:
         exists = connection.execute("SELECT 1 FROM products WHERE id = ?", (product_id,)).fetchone()
@@ -238,13 +339,14 @@ def replace_colors(product_id: str, colors: List[Dict[str, Any]]) -> Optional[Di
             connection.execute(
                 """
                 INSERT INTO product_colors
-                    (product_id, code, label, image_path, is_default, sort_order)
-                VALUES (?, ?, ?, ?, ?, ?)
+                    (product_id, code, label, label_en, image_path, is_default, sort_order)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     product_id,
                     color["code"],
                     color["label"],
+                    color.get("label_en") or color["label"],
                     color.get("image_path"),
                     int(color.get("is_default", False)),
                     index,
@@ -280,15 +382,23 @@ def replace_option_mappings(product_id: str, option_ids: List[str]) -> Optional[
             (product_id,),
         ).fetchall()
         existing_overrides = {row["option_id"]: dict(row) for row in existing_rows}
-        connection.execute("DELETE FROM product_options WHERE product_id = ?", (product_id,))
+        connection.execute("UPDATE product_options SET enabled = 0 WHERE product_id = ?", (product_id,))
         for index, row in enumerate(option_rows):
             mapping_id = "{}-{}-{}".format(product_id.upper(), row["category_id"].upper(), row["code"])
             override = existing_overrides.get(row["id"], {})
             connection.execute(
                 """
                 INSERT INTO product_options
-                    (product_id, option_id, mapping_id, description_override, description_override_en, image_override, price_override, sort_order)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    (product_id, option_id, mapping_id, description_override, description_override_en, image_override, price_override, sort_order, enabled)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
+                ON CONFLICT(product_id, option_id) DO UPDATE SET
+                    mapping_id=excluded.mapping_id,
+                    description_override=excluded.description_override,
+                    description_override_en=excluded.description_override_en,
+                    image_override=excluded.image_override,
+                    price_override=excluded.price_override,
+                    sort_order=excluded.sort_order,
+                    enabled=1
                 """,
                 (
                     product_id,
@@ -305,5 +415,19 @@ def replace_option_mappings(product_id: str, option_ids: List[str]) -> Optional[
 
 def update_product_option_override(product_id: str, option_id: str, description: Optional[str] = None, description_en: Optional[str] = None, price: Optional[int] = None) -> Optional[Dict[str, Any]]:
     with get_connection() as db:
-        cur = db.execute("UPDATE product_options SET description_override=?, description_override_en=?, price_override=COALESCE(?, price_override) WHERE product_id=? AND option_id=?", (description, description_en, price, product_id, option_id))
-    return get_admin_product(product_id) if cur.rowcount else None
+        product_exists = db.execute("SELECT 1 FROM products WHERE id=?", (product_id,)).fetchone()
+        option = db.execute("SELECT id, category_id, code FROM options WHERE id=?", (option_id,)).fetchone()
+        if product_exists is None or option is None:
+            return None
+        mapping_id = "{}-{}-{}".format(product_id.upper(), option["category_id"].upper(), option["code"])
+        db.execute(
+            """INSERT INTO product_options
+               (product_id, option_id, mapping_id, description_override, description_override_en, price_override, enabled)
+               VALUES (?, ?, ?, ?, ?, ?, 0)
+               ON CONFLICT(product_id, option_id) DO UPDATE SET
+                 description_override=excluded.description_override,
+                 description_override_en=excluded.description_override_en,
+                 price_override=COALESCE(excluded.price_override, product_options.price_override)""",
+            (product_id, option_id, mapping_id, description, description_en, price),
+        )
+    return get_admin_product(product_id)

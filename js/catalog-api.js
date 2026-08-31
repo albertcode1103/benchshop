@@ -29,7 +29,8 @@ function mapApiCategory(category) {
     options: category.options.map((option) => ({
       id: option.id,
       name: option.name,
-      description: option.description_override || option.description || "",
+      description: option.description || "",
+      specialNote: option.special_note || "",
       price: Number(option.price || 0),
       image: window.botenAssetUrl(option.image_path) || null,
       mappingId: option.mapping_id || null
@@ -39,8 +40,10 @@ function mapApiCategory(category) {
 
 function mapApiProduct(product, localAssets) {
   const colorImages = {};
+  const colorNames = {};
   product.colors.forEach((color) => {
     if (color.image_path) colorImages[color.code] = window.botenAssetUrl(color.image_path);
+    colorNames[color.code] = color.label || color.code;
   });
 
   return {
@@ -52,6 +55,7 @@ function mapApiProduct(product, localAssets) {
     basePrice: Number(product.base_price || 0),
     colors: product.colors.map((color) => color.code),
     colorImages,
+    colorNames,
     // data.js is retained only as a source for local gallery assets. All
     // customer-facing product text must come from the catalog API.
     detailImages: localAssets?.detailImages || [],

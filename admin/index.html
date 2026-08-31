@@ -4,23 +4,25 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="description" content="BOTEN 柴油试验台后台管理" />
+  <meta name="theme-color" content="#182028" />
   <title>BOTEN 管理后台</title>
   <link rel="icon" type="image/png" href="../tb/site/LOGO.png" />
-  <link rel="stylesheet" href="admin.css?v=20260831-6" />
+  <link rel="stylesheet" href="admin.css?v=20260901-9" />
   <script src="../js/runtime-config.js?v=20260831-2"></script>
   <script>window.addEventListener('error',function(e){var s=document.getElementById('api-status');if(s)s.textContent='后台脚本加载失败：'+(e.message||'请按 Ctrl+F5 刷新');});</script>
-  <script src="admin.js?v=20260831-12" defer></script>
+  <script src="admin.js?v=20260901-16" defer></script>
 </head>
 <body>
+  <a class="skip-link" href="#admin-content">跳到主要内容</a>
   <section class="login-page" id="login-page">
     <div class="login-brand">
-      <img src="../tb/site/BOTEN.png" alt="BOTEN" />
+      <img src="../tb/site/BOTEN.png" alt="BOTEN" width="1617" height="545" />
       <span>Diesel Test Bench</span>
     </div>
     <form class="login-card" id="login-form">
       <div class="eyebrow">BOTEN CONSOLE</div>
       <h1>登录工作后台</h1>
-      <p>管理员可管理产品和账号，业务员可查看客户分享配置。</p>
+      <p>管理员可管理产品和账号，业务员可维护设备配置并处理客户分享。</p>
 
       <label>
         <span>邮箱或手机号</span>
@@ -43,13 +45,13 @@
   <div class="admin-app" id="admin-app" hidden>
     <aside class="sidebar" id="sidebar">
       <a class="sidebar-brand" href="#dashboard" aria-label="BOTEN 管理后台首页">
-        <img src="../tb/site/BOTEN.png" alt="BOTEN" />
+        <img src="../tb/site/BOTEN.png" alt="BOTEN" width="1617" height="545" />
         <span>管理后台</span>
       </a>
       <nav class="sidebar-nav" aria-label="后台导航">
         <button class="nav-item active" data-view="dashboard" data-admin-only type="button"><span class="nav-icon">▦</span>概览</button>
-        <button class="nav-item" data-view="products" data-admin-only type="button"><span class="nav-icon">◇</span>设备目录</button>
-        <button class="nav-item" data-view="config-catalog" data-admin-only type="button"><span class="nav-icon">≡</span>配置目录</button>
+        <button class="nav-item" data-view="products" type="button"><span class="nav-icon">◇</span>设备目录</button>
+        <button class="nav-item" data-view="config-catalog" type="button"><span class="nav-icon">≡</span>配置目录</button>
         <button class="nav-item" data-view="shares" type="button"><span class="nav-icon">↗</span>分享记录</button>
         <button class="nav-item" data-view="quotes" type="button"><span class="nav-icon">¥</span>报价管理</button>
       </nav>
@@ -66,7 +68,7 @@
       </div>
     </aside>
 
-    <main class="admin-main">
+    <main class="admin-main" id="admin-content" tabindex="-1">
       <header class="topbar">
         <button class="icon-button mobile-only" id="menu-button" type="button" aria-label="打开导航">☰</button>
         <div>
@@ -122,7 +124,7 @@
 
         <section class="view" data-view-panel="shares">
           <section class="panel">
-          <header class="panel-header"><div><span class="eyebrow">SHARED CONFIGS</span><h2>分享记录</h2><p>查询客户配置、查看使用情况或提前关闭分享码。</p></div><form class="code-search" id="code-search"><input id="share-code" inputmode="numeric" maxlength="6" placeholder="输入6位分享码" /><button class="button button-secondary">查询</button><button type="button" class="button button-quiet" id="clear-share-result">清除</button></form></header>
+          <header class="panel-header"><div><span class="eyebrow">SHARED CONFIGS</span><h2>分享记录</h2><p>查询客户配置、查看使用情况或提前关闭分享码。</p></div><form class="code-search" id="code-search"><label class="sr-only" for="share-code">分享码</label><input id="share-code" name="share_code" inputmode="numeric" maxlength="6" aria-label="输入 6 位分享码" placeholder="输入6位分享码" /><button class="button button-secondary">查询</button><button type="button" class="button button-quiet" id="clear-share-result">清除</button></form></header>
             <div class="share-result" id="share-result" hidden></div>
             <div class="table-wrap"><table><thead><tr><th>分享码</th><th>配置</th><th>发送用户</th><th>访问</th><th>有效期</th><th>状态</th><th class="align-right">操作</th></tr></thead><tbody id="shares-table"></tbody></table></div>
           </section>
@@ -142,31 +144,36 @@
     <form id="product-form" method="dialog" class="dialog-card">
       <header><div><span class="eyebrow">PRODUCT EDITOR</span><h2 id="product-dialog-title">编辑产品</h2></div><button class="icon-button" value="cancel" formmethod="dialog" aria-label="关闭">✕</button></header>
       <input type="hidden" name="product_id" />
-      <div class="editor-tabs" role="tablist">
-        <button class="editor-tab active" type="button" data-editor-tab="basic">基础资料</button>
-        <button class="editor-tab" type="button" data-editor-tab="colors">外观颜色</button>
-        <button class="editor-tab" type="button" data-editor-tab="options">配置模块</button>
+      <div class="editor-tabs" role="tablist" aria-label="产品编辑内容">
+        <button class="editor-tab active" id="editor-tab-basic" role="tab" aria-selected="true" aria-controls="editor-panel-basic" tabindex="0" type="button" data-editor-tab="basic">基础资料</button>
+        <button class="editor-tab" id="editor-tab-colors" role="tab" aria-selected="false" aria-controls="editor-panel-colors" tabindex="-1" type="button" data-editor-tab="colors">外观颜色</button>
+        <button class="editor-tab" id="editor-tab-options" role="tab" aria-selected="false" aria-controls="editor-panel-options" tabindex="-1" type="button" data-editor-tab="options">配置模块</button>
       </div>
-      <section class="editor-panel active" data-editor-panel="basic">
+      <section class="editor-panel active" id="editor-panel-basic" role="tabpanel" aria-labelledby="editor-tab-basic" data-editor-panel="basic">
         <div class="form-grid">
           <label><span>设备型号</span><input name="name" required /></label>
-          <label><span>设备型号（English）</span><input name="name_en" /></label>
+          <label><span>设备型号</span><input name="name_en" /></label>
           <label><span>产品名称</span><input name="title_name" required /></label>
-          <label><span>产品名称（English）</span><input name="title_name_en" /></label>
+          <label><span>产品名称</span><input name="title_name_en" /></label>
           <label><span>基础价格（元）</span><input name="base_price" type="number" min="0" step="1" /></label>
           <label><span>基础价格（美元）</span><input name="price_usd" type="number" min="0" step="1" /></label>
           <label><span>显示顺序</span><input name="sort_order" type="number" step="1" /></label>
           <label class="full"><span>产品描述</span><textarea name="description" rows="4"></textarea></label>
-          <label class="full"><span>产品描述（English）</span><textarea name="description_en" rows="3"></textarea></label>
+          <label class="full"><span>产品描述</span><textarea name="description_en" rows="3"></textarea></label>
           <label class="toggle-field full"><input name="enabled" type="checkbox" /><span>在用户端启用该产品</span></label>
         </div>
       </section>
-      <section class="editor-panel" data-editor-panel="colors">
+      <section class="editor-panel" id="editor-panel-colors" role="tabpanel" aria-labelledby="editor-tab-colors" data-editor-panel="colors" hidden>
         <div class="editor-section-heading"><div><h3>外观颜色</h3><p>每台设备至少保留一种颜色，只能设置一个默认颜色。</p></div><button class="button button-secondary" id="add-color-button" type="button">添加颜色</button></div>
         <div class="color-editor-list" id="color-editor-list"></div>
       </section>
-      <section class="editor-panel" data-editor-panel="options">
+      <section class="editor-panel" id="editor-panel-options" role="tabpanel" aria-labelledby="editor-tab-options" data-editor-panel="options" hidden>
         <div class="editor-section-heading"><div><h3>配置模块</h3><p>勾选该机型允许用户选择的规格和工装。</p></div></div>
+        <div class="mapping-toolbar" aria-label="配置筛选工具">
+          <label class="mapping-search"><span class="sr-only">搜索配置</span><input id="mapping-search" type="search" placeholder="搜索编号、名称或说明" autocomplete="off" /></label>
+          <div class="mapping-filters" role="group" aria-label="配置筛选"><button type="button" class="active" data-mapping-filter="all">全部</button><button type="button" data-mapping-filter="selected">仅已启用</button><button type="button" data-mapping-filter="noted">仅有标注</button></div>
+          <button class="button button-secondary" id="mapping-expand-all" type="button">展开全部</button>
+        </div>
         <div class="mapping-editor" id="mapping-editor"></div>
       </section>
       <div class="form-error" id="product-error" role="alert" hidden></div>
@@ -197,11 +204,11 @@
       <div class="form-grid">
         <label><span>配置编号（BTK/BTE）</span><input name="code" required /></label>
         <label><span>配置名称</span><input name="name" required /></label>
-        <label><span>配置名称（English）</span><input name="name_en" /></label>
+        <label><span>配置名称</span><input name="name_en" /></label>
         <label class="full"><span>配置图片</span><div class="image-path-control"><input name="image_path" placeholder="上传图片或填写现有路径" /><button class="button button-secondary" type="button" data-pick-image>上传</button><input type="file" accept="image/png,image/jpeg,image/webp" data-image-file hidden /></div></label>
-        <label class="full"><span>描述</span><textarea name="description" rows="3"></textarea></label>
-        <label class="full"><span>描述（English）</span><textarea name="description_en" rows="3"></textarea></label>
-        <label class="full"><span>备注（业务员可见）</span><textarea name="notes" rows="3"></textarea></label>
+        <label class="full"><span>配置描述</span><textarea name="description" rows="1"></textarea></label>
+        <label class="full"><span>配置描述</span><textarea name="description_en" rows="1"></textarea></label>
+        <label class="full"><span>备注（业务员可见）</span><textarea name="notes" rows="1"></textarea></label>
         <label><span>参考价格（元）</span><input name="price" type="number" min="0" /></label>
         <label><span>参考价格（美元）</span><input name="price_usd" type="number" min="0" /></label>
         <label class="toggle-field"><input name="enabled" type="checkbox" /><span>启用</span></label>

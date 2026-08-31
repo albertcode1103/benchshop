@@ -2,6 +2,7 @@ import json
 import secrets
 import sqlite3
 import uuid
+from copy import deepcopy
 from datetime import timedelta
 from typing import Any, Dict, List, Optional
 
@@ -66,15 +67,38 @@ def save_config(user_id: str, name: str, product_id: str, snapshot: Dict[str, An
     return get_saved_config(config_id, user_id)  # type: ignore
 
 
-def _decode(row: Any) -> Optional[Dict[str, Any]]:
+def _refresh_snapshot(snapshot: Dict[str, Any], lang: str) -> Dict[str, Any]:
+    """Rebuild catalog text from current data while preserving saved selections."""
+    product = snapshot.get("product") or {}
+    color = snapshot.get("color") or {}
+    product_id = product.get("id")
+    color_code = color.get("code")
+    if not product_id or not color_code:
+        return snapshot
+
+    selections: Dict[str, Any] = {}
+    for category in snapshot.get("categories") or []:
+        option_ids = [option.get("id") for option in category.get("options") or [] if option.get("id")]
+        if option_ids:
+            selections[category["id"]] = option_ids if category.get("multiple") else option_ids[0]
+    try:
+        return build_snapshot(product_id, color_code, selections, lang)
+    except ValueError:
+        # Keep historical data readable if a formerly selected catalog item was removed.
+        return snapshot
+
+
+def _decode(row: Any, lang: Optional[str] = None) -> Optional[Dict[str, Any]]:
     if row is None:
         return None
     item = dict(row)
     item["snapshot"] = json.loads(item.pop("snapshot_json"))
+    if lang in ("zh", "en"):
+        item["snapshot"] = _refresh_snapshot(deepcopy(item["snapshot"]), lang)
     return item
 
 
-def get_saved_config(config_id: str, user_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+def get_saved_config(config_id: str, user_id: Optional[str] = None, lang: Optional[str] = None) -> Optional[Dict[str, Any]]:
     query = "SELECT * FROM saved_configs WHERE id = ?"
     params: List[Any] = [config_id]
     if user_id:
@@ -82,15 +106,15 @@ def get_saved_config(config_id: str, user_id: Optional[str] = None) -> Optional[
         params.append(user_id)
     with get_connection() as connection:
         row = connection.execute(query, params).fetchone()
-    return _decode(row)
+    return _decode(row, lang)
 
 
-def list_saved_configs(user_id: str) -> List[Dict[str, Any]]:
+def list_saved_configs(user_id: str, lang: Optional[str] = None) -> List[Dict[str, Any]]:
     with get_connection() as connection:
         rows = connection.execute(
             "SELECT * FROM saved_configs WHERE user_id = ? ORDER BY updated_at DESC", (user_id,)
         ).fetchall()
-    return [_decode(row) for row in rows]  # type: ignore
+    return [_decode(row, lang) for row in rows]  # type: ignore
 
 
 def delete_saved_config(config_id: str, user_id: str) -> bool:
@@ -129,7 +153,7 @@ def create_share(config_id: str, user_id: str) -> Dict[str, Any]:
     raise RuntimeError("Unable to allocate a share code")
 
 
-def get_share(code: str) -> Optional[Dict[str, Any]]:
+def get_share(code: str, lang: Optional[str] = None) -> Optional[Dict[str, Any]]:
     with get_connection() as connection:
         row = connection.execute(
             """
@@ -155,6 +179,8 @@ def get_share(code: str) -> Optional[Dict[str, Any]]:
         )
     item = dict(row)
     item["snapshot"] = json.loads(item.pop("snapshot_json"))
+    if lang in ("zh", "en"):
+        item["snapshot"] = _refresh_snapshot(deepcopy(item["snapshot"]), lang)
     return item
 
 

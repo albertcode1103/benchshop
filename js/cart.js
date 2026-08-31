@@ -12,11 +12,13 @@ function descriptionText(value) {
 
 function savedConfigToCartItem(saved) {
   const snapshot = saved.snapshot;
-  const groups = [{ type: "single", category: localStorage.getItem("boten-language") === "en" ? "Appearance" : "外观颜色", value: getColorLabel(snapshot.color.code) }];
+  const colorName = snapshot.color.label || snapshot.color.code;
+  const groups = [{ type: "single", category: localStorage.getItem("boten-language") === "en" ? "Appearance" : "外观颜色", value: colorName }];
   snapshot.categories.forEach((category) => {
     const values = category.options.map((option) => {
-      if (category.id !== "cri" || !option.description) return getSpecLabel(category.id, option.name);
-      return `${option.name} | ${descriptionText(option.description)}`;
+      const details = [option.description, option.special_note].map(descriptionText).filter(Boolean);
+      if (!details.length) return getSpecLabel(category.id, option.name);
+      return `${option.name} | ${details.join(" | ")}`;
     });
     if (!values.length) return;
     groups.push(category.multiple
@@ -28,7 +30,7 @@ function savedConfigToCartItem(saved) {
     savedAt: saved.created_at,
     modelName: snapshot.product.name,
     titleName: saved.name || snapshot.product.title_name,
-    colorName: getColorLabel(snapshot.color.code),
+    colorName,
     groups
   };
 }
@@ -40,7 +42,8 @@ async function refreshServerCart() {
     return;
   }
   try {
-    const result = await authRequest("/configs");
+    const language = localStorage.getItem("boten-language") === "en" ? "en" : "zh";
+    const result = await authRequest(`/configs?lang=${language}`);
     serverCart = result.items.map(savedConfigToCartItem);
   } catch (error) {
     console.error("Failed to load saved configurations", error);
@@ -169,13 +172,30 @@ async function clearCart() {
 function openCartPanel() {
   const panel = document.getElementById("cart-panel"); const backdrop = document.getElementById("cart-backdrop");
   if (!panel || !backdrop) return;
-  panel.classList.add("open"); backdrop.classList.add("open"); panel.setAttribute("aria-hidden", "false"); backdrop.setAttribute("aria-hidden", "false"); document.body.style.overflow = "hidden";
+  panel._returnFocus = document.activeElement;
+  panel.classList.add("open"); backdrop.classList.add("open"); panel.setAttribute("aria-hidden", "false"); backdrop.setAttribute("aria-hidden", "false");
+  [document.querySelector(".site-header"), document.querySelector(".main"), document.querySelector(".site-footer")].filter(Boolean).forEach((region) => { region.inert = true; });
+  document.body.style.overflow = "hidden";
+  requestAnimationFrame(() => document.getElementById("cart-close")?.focus());
 }
 
 function closeCartPanel() {
   const panel = document.getElementById("cart-panel"); const backdrop = document.getElementById("cart-backdrop");
   if (!panel || !backdrop) return;
-  panel.classList.remove("open"); backdrop.classList.remove("open"); panel.setAttribute("aria-hidden", "true"); backdrop.setAttribute("aria-hidden", "true"); document.body.style.overflow = "";
+  panel.classList.remove("open"); backdrop.classList.remove("open"); panel.setAttribute("aria-hidden", "true"); backdrop.setAttribute("aria-hidden", "true");
+  [document.querySelector(".site-header"), document.querySelector(".main"), document.querySelector(".site-footer")].filter(Boolean).forEach((region) => { region.inert = false; });
+  document.body.style.overflow = "";
+  panel._returnFocus?.focus(); panel._returnFocus = null;
+}
+
+function trapCartFocus(event) {
+  const panel = document.getElementById("cart-panel");
+  if (event.key !== "Tab" || !panel?.classList.contains("open")) return;
+  const items = Array.from(panel.querySelectorAll('button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')).filter((item) => !item.hidden);
+  if (!items.length) return;
+  const first = items[0]; const last = items[items.length - 1];
+  if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+  else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
 }
 
 function initCart() {
@@ -194,5 +214,6 @@ function initCart() {
   document.addEventListener("keydown", (event) => {
     const panel = document.getElementById("cart-panel");
     if (event.key === "Escape" && panel?.classList.contains("open")) closeCartPanel();
+    trapCartFocus(event);
   });
 }

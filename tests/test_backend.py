@@ -23,10 +23,12 @@ from backend.admin_catalog_repository import (
     create_config_option,
     delete_config_category,
     delete_config_option,
+    get_admin_product,
+    replace_option_mappings,
     update_product_option_override,
 )
 from backend.audit_catalog import audit_catalog
-from backend.config_repository import build_snapshot, create_share, get_share, save_config
+from backend.config_repository import build_snapshot, create_share, get_share, list_saved_configs, save_config
 from backend.config_routes import staff_user
 from backend.database import get_connection
 from backend.database_maintenance import create_backup, restore_backup, verify_database
@@ -55,6 +57,8 @@ class BackendWorkflowTests(unittest.TestCase):
         with get_connection() as database:
             columns = {row[1] for row in database.execute("PRAGMA table_info(product_options)")}
         self.assertIn("description_override_en", columns)
+        cr318pro = get_product("cr318pro")
+        self.assertIsNone(cr318pro["colors"][0]["image_path"])
 
     def test_authentication_and_session(self) -> None:
         user = create_user("workflow@example.com", None, "password123", display_name="Workflow")
@@ -63,6 +67,18 @@ class BackendWorkflowTests(unittest.TestCase):
         session = create_session(authenticated)
         self.assertEqual(user["id"], get_user_by_token(session["token"])["id"])
         self.assertIsNone(authenticate("workflow@example.com", "wrong-password"))
+
+    def test_phone_registration_and_login_use_international_format(self) -> None:
+        with TestClient(app) as client:
+            registered = client.post("/api/v1/auth/register", json={"display_name": "Phone User", "email": "phone-user@example.com", "phone": "+861590000000", "password": "password123"})
+            self.assertEqual(201, registered.status_code, registered.text)
+            self.assertEqual("+861590000000", registered.json()["user"]["phone"])
+            logged_in = client.post("/api/v1/auth/login", json={"identifier": "+861590000000", "password": "password123"})
+            self.assertEqual(200, logged_in.status_code, logged_in.text)
+            invalid = client.post("/api/v1/auth/register", json={"display_name": "Invalid Phone", "email": "invalid-phone@example.com", "phone": "1590000000", "password": "password123"})
+            self.assertEqual(422, invalid.status_code, invalid.text)
+            incomplete = client.post("/api/v1/auth/register", json={"email": "missing-name@example.com", "phone": "+861590000001", "password": "password123"})
+            self.assertEqual(422, incomplete.status_code, incomplete.text)
 
     def test_save_and_share_configuration(self) -> None:
         user = create_user("share@example.com", None, "password123", display_name="Share User")
@@ -80,6 +96,23 @@ class BackendWorkflowTests(unittest.TestCase):
         self.assertEqual(saved["id"], shared["config_id"])
         self.assertEqual("Share User", shared["sender_name"])
 
+    def test_saved_config_refreshes_current_bilingual_color_names(self) -> None:
+        user = create_user("color-refresh@example.com", None, "password123", display_name="Color Refresh")
+        product = get_product("cr1016")
+        color_code = product["colors"][0]["code"]
+        saved = save_config(user["id"], "Color refresh", product["id"], build_snapshot(product["id"], color_code, {}))
+        with get_connection() as database:
+            original = database.execute("SELECT label, label_en FROM product_colors WHERE product_id=? AND code=?", (product["id"], color_code)).fetchone()
+            database.execute("UPDATE product_colors SET label=?, label_en=? WHERE product_id=? AND code=?", ("深绿色", "Deep Green", product["id"], color_code))
+        try:
+            chinese = next(item for item in list_saved_configs(user["id"], "zh") if item["id"] == saved["id"])
+            english = next(item for item in list_saved_configs(user["id"], "en") if item["id"] == saved["id"])
+            self.assertEqual("深绿色", chinese["snapshot"]["color"]["label"])
+            self.assertEqual("Deep Green", english["snapshot"]["color"]["label"])
+        finally:
+            with get_connection() as database:
+                database.execute("UPDATE product_colors SET label=?, label_en=? WHERE product_id=? AND code=?", (original["label"], original["label_en"], product["id"], color_code))
+
     def test_bilingual_product_option_override(self) -> None:
         product = get_product("cr1016")
         option = next(item for category in product["categories"] for item in category["options"])
@@ -87,7 +120,31 @@ class BackendWorkflowTests(unittest.TestCase):
         self.assertIsNotNone(updated)
         english = get_product("cr1016", "en")
         translated = next(item for category in english["categories"] for item in category["options"] if item["id"] == option["id"])
-        self.assertEqual("English product-specific note", translated["description"])
+        self.assertEqual("English product-specific note", translated["special_note"])
+        self.assertNotEqual("English product-specific note", translated["description"])
+
+    def test_disabled_product_option_retains_bilingual_note(self) -> None:
+        product_id = "cr1016"
+        product = get_admin_product(product_id)
+        selected_ids = [option["id"] for category in product["categories"] for option in category["options"] if option["selected"]]
+        target = next(option for category in product["categories"] if category["id"] not in ("motor", "voltage") for option in category["options"] if option["selected"])
+        original_zh = target.get("description_override")
+        original_en = target.get("description_override_en")
+        try:
+            update_product_option_override(product_id, target["id"], "保留的中文标注", "Retained English note")
+            replace_option_mappings(product_id, [option_id for option_id in selected_ids if option_id != target["id"]])
+            disabled = get_admin_product(product_id)
+            disabled_option = next(option for category in disabled["categories"] for option in category["options"] if option["id"] == target["id"])
+            self.assertFalse(disabled_option["selected"])
+            self.assertEqual("保留的中文标注", disabled_option["description_override"])
+            self.assertNotIn(target["id"], [option["id"] for category in get_product(product_id)["categories"] for option in category["options"]])
+
+            replace_option_mappings(product_id, selected_ids)
+            restored = next(option for category in get_product(product_id, "en")["categories"] for option in category["options"] if option["id"] == target["id"])
+            self.assertEqual("Retained English note", restored["special_note"])
+        finally:
+            replace_option_mappings(product_id, selected_ids)
+            update_product_option_override(product_id, target["id"], original_zh, original_en)
 
     def test_staff_role_boundary(self) -> None:
         self.assertEqual("sales", staff_user({"role": "sales"})["role"])
@@ -150,6 +207,87 @@ class BackendWorkflowTests(unittest.TestCase):
             self.assertEqual(200, audit_response.status_code, audit_response.text)
             self.assertTrue(any(item["details"].get("path") == "/api/v1/admin/config-catalog/categories" for item in audit_response.json()["items"]))
 
+    def test_admin_catalog_crud_api_round_trip(self) -> None:
+        admin = create_user("crud-admin@example.com", None, "password123", role="admin", display_name="CRUD Admin")
+        headers = {"Authorization": "Bearer {}".format(create_session(admin)["token"])}
+        with TestClient(app) as client:
+            category_response = client.post("/api/v1/admin/config-catalog/categories", headers=headers, json={
+                "name": "临时回归分类", "name_en": "Temporary regression category", "multiple": True,
+            })
+            self.assertEqual(201, category_response.status_code, category_response.text)
+            category = category_response.json()
+            option_response = client.post("/api/v1/admin/config-catalog/options", headers=headers, json={
+                "category_id": category["id"], "code": "REG-001", "name": "临时配置", "name_en": "Temporary option", "price": 100, "price_usd": 15,
+            })
+            self.assertEqual(201, option_response.status_code, option_response.text)
+            option = option_response.json()
+            edited = client.patch("/api/v1/admin/config-catalog/options/{}".format(option["id"]), headers=headers, json={"name": "临时配置已修改", "price": 120})
+            self.assertEqual(200, edited.status_code, edited.text)
+            self.assertEqual("临时配置已修改", edited.json()["name"])
+            self.assertEqual(204, client.delete("/api/v1/admin/config-catalog/options/{}".format(option["id"]), headers=headers).status_code)
+            self.assertEqual(204, client.delete("/api/v1/admin/config-catalog/categories/{}".format(category["id"]), headers=headers).status_code)
+
+            product = client.get("/api/v1/admin/products/cr1016", headers=headers).json()
+            empty_color = client.put("/api/v1/admin/products/cr1016/colors", headers=headers, json={"colors": [{"code": "test", "label": "", "label_en": "Test", "is_default": True}]})
+            self.assertEqual(422, empty_color.status_code, empty_color.text)
+            self.assertTrue(product["colors"])
+
+            duplicate = client.post("/api/v1/admin/products", headers=headers, json={"id": "cr1016", "name": "Duplicate", "title_name": "Duplicate"})
+            self.assertEqual(409, duplicate.status_code, duplicate.text)
+
+    def test_catalog_manager_permissions_and_atomic_product_save(self) -> None:
+        admin = create_user("catalog-admin@example.com", None, "password123", role="admin", display_name="Catalog Admin")
+        sales = create_user("catalog-sales@example.com", None, "password123", role="sales", display_name="Catalog Sales")
+        admin_headers = {"Authorization": "Bearer {}".format(create_session(admin)["token"])}
+        sales_headers = {"Authorization": "Bearer {}".format(create_session(sales)["token"])}
+        with TestClient(app) as client:
+            self.assertEqual(200, client.get("/api/v1/admin/products", headers=sales_headers).status_code)
+            self.assertEqual(200, client.get("/api/v1/admin/config-catalog", headers=sales_headers).status_code)
+            self.assertEqual(403, client.get("/api/v1/admin/users", headers=sales_headers).status_code)
+            self.assertEqual(403, client.get("/api/v1/admin/audit-logs", headers=sales_headers).status_code)
+
+            product = client.get("/api/v1/admin/products/cr1016", headers=admin_headers).json()
+            selected = [option["id"] for category in product["categories"] for option in category["options"] if option["selected"]]
+            payload = {
+                "name": product["name"],
+                "description": "Atomic product description",
+                "title_name": product["title_name"],
+                "colors": product["colors"],
+                "option_ids": selected,
+                "option_overrides": {},
+            }
+            saved = client.put("/api/v1/admin/products/cr1016/configuration", headers=admin_headers, json=payload)
+            self.assertEqual(200, saved.status_code, saved.text)
+            self.assertEqual("Atomic product description", saved.json()["description"])
+
+            failed = client.put("/api/v1/admin/products/cr1016/configuration", headers=admin_headers, json={**payload, "description": "Must roll back", "option_ids": []})
+            self.assertEqual(422, failed.status_code, failed.text)
+            self.assertEqual("Atomic product description", client.get("/api/v1/admin/products/cr1016", headers=admin_headers).json()["description"])
+
+    def test_admin_cannot_disable_self(self) -> None:
+        admin = create_user("self-guard@example.com", None, "password123", role="admin", display_name="Self Guard")
+        headers = {"Authorization": "Bearer {}".format(create_session(admin)["token"])}
+        with TestClient(app) as client:
+            response = client.patch("/api/v1/admin/users/{}/status".format(admin["id"]), headers=headers, json={"enabled": False})
+        self.assertEqual(422, response.status_code)
+
+    def test_saved_quote_can_be_downloaded_as_pdf(self) -> None:
+        staff = create_user("quote-pdf@example.com", None, "password123", role="sales", display_name="Quote PDF")
+        config_owner = create_user("quote-config@example.com", None, "password123", display_name="Quote Config")
+        product = get_product("cr1016")
+        snapshot = build_snapshot(product["id"], product["colors"][0]["code"], {})
+        config = save_config(config_owner["id"], "Quote PDF configuration", product["id"], snapshot)
+        headers = {"Authorization": "Bearer {}".format(create_session(staff)["token"])}
+        with TestClient(app) as client:
+            created = client.post("/api/v1/quotes", headers=headers, json={
+                "config_id": config["id"], "title": "Quote PDF", "items": [{"code": "CR1016", "name": "Test Bench", "quantity": 1, "price": 1000}], "total_price": 1000, "currency": "CNY",
+            })
+            self.assertEqual(201, created.status_code, created.text)
+            response = client.get("/api/v1/quotes/{}/pdf".format(created.json()["id"]), headers=headers)
+        self.assertEqual(200, response.status_code, response.text)
+        self.assertEqual("application/pdf", response.headers["content-type"])
+        self.assertGreater(len(response.content), 100)
+
     def test_cross_platform_pdf_generation(self) -> None:
         from io import BytesIO
         from pypdf import PdfReader
@@ -203,12 +341,14 @@ class BackendWorkflowTests(unittest.TestCase):
                 version_row = connection.execute("SELECT version_num FROM alembic_version").fetchone()
                 tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
                 columns = {row[1] for row in connection.execute("PRAGMA table_info(product_options)")}
+                color_columns = {row[1] for row in connection.execute("PRAGMA table_info(product_colors)")}
             finally:
                 connection.close()
             self.assertIsNotNone(version_row, process.stdout + process.stderr)
-            self.assertEqual("20260831_0003", version_row[0])
+            self.assertEqual("20260831_0004", version_row[0])
             self.assertTrue({"products", "options", "users", "quotes", "audit_logs"}.issubset(tables))
             self.assertIn("description_override_en", columns)
+            self.assertIn("label_en", color_columns)
 
 
 if __name__ == "__main__":

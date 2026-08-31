@@ -1,10 +1,11 @@
 import sqlite3
-from typing import List, Optional
+import sqlite3
+from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from .auth_routes import require_admin
+from .auth_routes import require_admin, require_catalog_manager
 from .user_repository import create_user, get_user_by_id, list_users, set_user_enabled, update_user
 from .config_repository import deactivate_share, list_shares
 from .audit_repository import list_audit_logs
@@ -25,10 +26,11 @@ from .admin_catalog_repository import (
     delete_config_option,
     config_category_references,
     delete_config_category,
+    save_product_configuration,
 )
 
 
-router = APIRouter(prefix="/api/v1/admin", tags=["admin"], dependencies=[Depends(require_admin)])
+router = APIRouter(prefix="/api/v1/admin", tags=["admin"], dependencies=[Depends(require_catalog_manager)])
 
 
 class CreateStaffRequest(BaseModel):
@@ -77,6 +79,7 @@ class ProductCreateRequest(BaseModel):
 class ProductColorRequest(BaseModel):
     code: str
     label: str
+    label_en: str = ""
     image_path: Optional[str] = None
     is_default: bool = False
 
@@ -92,6 +95,12 @@ class ProductOptionOverrideRequest(BaseModel):
     description_override: Optional[str] = None
     description_override_en: Optional[str] = None
     price_override: Optional[int] = None
+
+
+class ProductSaveRequest(ProductUpdateRequest):
+    colors: List[ProductColorRequest]
+    option_ids: List[str]
+    option_overrides: Dict[str, ProductOptionOverrideRequest] = Field(default_factory=dict)
 
 
 class ConfigOptionUpdateRequest(BaseModel):
@@ -130,12 +139,12 @@ class ConfigOptionCreateRequest(ConfigOptionUpdateRequest):
     name: str
 
 
-@router.get("/users")
+@router.get("/users", dependencies=[Depends(require_admin)])
 def users():
     return {"items": list_users()}
 
 
-@router.get("/audit-logs")
+@router.get("/audit-logs", dependencies=[Depends(require_admin)])
 def audit_logs():
     return {"items": list_audit_logs()}
 
@@ -236,6 +245,29 @@ def edit_product(product_id: str, payload: ProductUpdateRequest):
     return result
 
 
+@router.put("/products/{product_id}/configuration")
+def save_product(product_id: str, payload: ProductSaveRequest):
+    values = payload.model_dump(exclude={"colors", "option_ids", "option_overrides"}, exclude_unset=True)
+    if any(values.get(field) is not None and values[field] < 0 for field in ("base_price", "price_usd")):
+        raise HTTPException(status_code=422, detail="Price cannot be negative")
+    colors = [{**color.model_dump(), "label": color.label.strip(), "label_en": color.label_en.strip() or color.label.strip()} for color in payload.colors]
+    codes = [color["code"].strip() for color in colors]
+    if not colors or any(not code or not color["label"] for code, color in zip(codes, colors)) or len(codes) != len(set(codes)):
+        raise HTTPException(status_code=422, detail="Color codes must be unique and non-empty")
+    if not any(color["is_default"] for color in colors):
+        colors[0]["is_default"] = True
+    elif sum(1 for color in colors if color["is_default"]) > 1:
+        raise HTTPException(status_code=422, detail="Only one default color is allowed")
+    overrides = {option_id: item.model_dump() for option_id, item in payload.option_overrides.items()}
+    try:
+        result = save_product_configuration(product_id, values, colors, payload.option_ids, overrides)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error))
+    if result is None:
+        raise HTTPException(status_code=404, detail="Product not found")
+    return result
+
+
 @router.put("/products/{product_id}/colors")
 def edit_product_colors(product_id: str, payload: ProductColorsRequest):
     if not payload.colors:
@@ -243,7 +275,9 @@ def edit_product_colors(product_id: str, payload: ProductColorsRequest):
     codes = [color.code.strip() for color in payload.colors]
     if any(not code for code in codes) or len(codes) != len(set(codes)):
         raise HTTPException(status_code=422, detail="Color codes must be unique and non-empty")
-    colors = [color.model_dump() for color in payload.colors]
+    colors = [{**color.model_dump(), "label": color.label.strip(), "label_en": color.label_en.strip() or color.label.strip()} for color in payload.colors]
+    if any(not color["label"] for color in colors):
+        raise HTTPException(status_code=422, detail="Color names must be non-empty")
     if not any(color["is_default"] for color in colors):
         colors[0]["is_default"] = True
     elif sum(1 for color in colors if color["is_default"]) > 1:
@@ -271,7 +305,7 @@ def edit_product_option_override(product_id: str, option_id: str, payload: Produ
     return result
 
 
-@router.post("/users", status_code=status.HTTP_201_CREATED)
+@router.post("/users", status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_admin)])
 def add_user(payload: CreateStaffRequest):
     if payload.role not in ("customer", "sales", "admin"):
         raise HTTPException(status_code=422, detail="Unsupported role")
@@ -293,15 +327,22 @@ def add_user(payload: CreateStaffRequest):
         raise HTTPException(status_code=409, detail="Email or phone already exists")
 
 
-@router.patch("/users/{user_id}/status")
-def update_user_status(user_id: str, payload: UserStatusRequest):
-    user = set_user_enabled(user_id, payload.enabled)
-    if user is None:
+@router.patch("/users/{user_id}/status", dependencies=[Depends(require_admin)])
+def update_user_status(user_id: str, payload: UserStatusRequest, current=Depends(require_admin)):
+    target = get_user_by_id(user_id)
+    if target is None:
         raise HTTPException(status_code=404, detail="User not found")
+    if not payload.enabled and user_id == current["id"]:
+        raise HTTPException(status_code=422, detail="You cannot disable your own account")
+    if not payload.enabled and target["role"] == "admin":
+        enabled_admins = sum(1 for user in list_users() if user["role"] == "admin" and user["enabled"])
+        if enabled_admins <= 1:
+            raise HTTPException(status_code=422, detail="At least one enabled admin account is required")
+    user = set_user_enabled(user_id, payload.enabled)
     return user
 
-@router.patch("/users/{user_id}")
-def edit_user(user_id: str, payload: UserUpdateRequest):
+@router.patch("/users/{user_id}", dependencies=[Depends(require_admin)])
+def edit_user(user_id: str, payload: UserUpdateRequest, current=Depends(require_admin)):
     values = payload.model_dump(exclude_unset=True)
     existing = get_user_by_id(user_id)
     if existing is None: raise HTTPException(status_code=404, detail="User not found")
@@ -316,6 +357,12 @@ def edit_user(user_id: str, payload: UserUpdateRequest):
         if not values["display_name"]: raise HTTPException(status_code=422, detail="Display name is required")
     if values.get("role") and values["role"] not in ("customer", "sales", "admin"):
         raise HTTPException(status_code=422, detail="Unsupported role")
+    if existing["role"] == "admin" and values.get("role") != "admin":
+        enabled_admins = sum(1 for user in list_users() if user["role"] == "admin" and user["enabled"])
+        if enabled_admins <= 1:
+            raise HTTPException(status_code=422, detail="At least one enabled admin account is required")
+    if user_id == current["id"] and values.get("role") and values["role"] != "admin":
+        raise HTTPException(status_code=422, detail="You cannot remove your own admin access")
     if values.get("password") is not None and values["password"] and len(values["password"]) < 8:
         raise HTTPException(status_code=422, detail="Password must contain at least 8 characters")
     try:
@@ -326,12 +373,12 @@ def edit_user(user_id: str, payload: UserUpdateRequest):
     return result
 
 
-@router.get("/shares")
+@router.get("/shares", dependencies=[Depends(require_admin)])
 def shares():
     return {"items": list_shares()}
 
 
-@router.delete("/shares/{share_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/shares/{share_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_admin)])
 def close_share(share_id: str):
     if not deactivate_share(share_id):
         raise HTTPException(status_code=404, detail="Share not found")

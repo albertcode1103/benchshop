@@ -1,4 +1,6 @@
 
+  const escapeOptionHtml = (value) => String(value ?? "").replace(/[&<>'"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[char]));
+
   const rendererElements = {
     deviceSelect: document.getElementById("device-select"),
     pageTitle: document.getElementById("page-title"),
@@ -52,7 +54,21 @@
     bindDeviceSelect();
     bindDrawerEvents();
     bindStickyHeader();
+    bindCategoryTabsScroll();
     render(state.getSnapshot());
+  }
+
+  function bindCategoryTabsScroll() {
+    const tabs = rendererElements.categoryTabs;
+    if (!tabs) return;
+
+    tabs.addEventListener("wheel", (event) => {
+      if (Math.abs(event.deltaY) <= Math.abs(event.deltaX) || tabs.scrollWidth <= tabs.clientWidth) return;
+      const nextLeft = Math.max(0, Math.min(tabs.scrollLeft + event.deltaY, tabs.scrollWidth - tabs.clientWidth));
+      if (nextLeft === tabs.scrollLeft) return;
+      event.preventDefault();
+      tabs.scrollLeft = nextLeft;
+    }, { passive: false });
   }
 
   function bindDeviceSelect() {
@@ -120,7 +136,7 @@
       .map(
         (url, idx) => `
           <div class="gallery-slide" data-index="${idx}">
-            <img src="${url}" alt="${model.name} 图片 ${idx + 1}" loading="${idx === 0 ? "eager" : "lazy"}"
+            <img src="${url}" alt="${model.name} 图片 ${idx + 1}" width="1600" height="900" loading="${idx === 0 ? "eager" : "lazy"}" ${idx === 0 ? 'fetchpriority="high"' : ""}
                  onerror="this.src='assets/images/placeholder-option.svg'" />
           </div>
         `
@@ -269,7 +285,7 @@
                 <polyline points="5 12 10 17 19 8"/>
               </svg>
             </div>
-            <div class="option-name">${getColorLabel(color)}</div>
+            <div class="option-name">${getColorLabel(color, model)}</div>
           </div>
         `;
       })
@@ -317,7 +333,7 @@
         const media = isTextOnly
           ? ""
           : `<div class="option-media">
-               <img src="${opt.image || "assets/images/placeholder-option.svg"}" alt="" loading="lazy" onerror="this.src='assets/images/placeholder-option.svg'" />
+               <img src="${opt.image || "assets/images/placeholder-option.svg"}" alt="" width="640" height="320" loading="lazy" onerror="this.src='assets/images/placeholder-option.svg'" />
              </div>`;
         const label = opt.name;
         return `
@@ -330,6 +346,8 @@
             </div>
             ${media}
             <div class="option-name">${label}</div>
+            ${opt.description ? `<div class="option-desc">${opt.description}</div>` : ""}
+            ${opt.specialNote ? `<div class="option-special-note">${escapeOptionHtml(opt.specialNote)}</div>` : ""}
           </div>
         `;
       })
@@ -355,8 +373,8 @@
       .filter((c) => c.id !== "motor" && c.id !== "voltage")
       .map(
         (cat) => `
-          <button type="button" class="tab-btn ${cat.id === currentCategoryId ? "active" : ""}"
-                  data-category="${cat.id}" role="tab" aria-selected="${cat.id === currentCategoryId}">
+          <button type="button" id="category-tab-${cat.id}" class="tab-btn ${cat.id === currentCategoryId ? "active" : ""}"
+                  data-category="${cat.id}" role="tab" aria-selected="${cat.id === currentCategoryId}" aria-controls="options-panel" tabindex="${cat.id === currentCategoryId ? "0" : "-1"}">
             ${cat.name}
           </button>
         `
@@ -366,6 +384,16 @@
     rendererElements.categoryTabs.querySelectorAll(".tab-btn").forEach((btn) => {
       btn.addEventListener("click", () => rendererStateRef.setCategory(btn.dataset.category));
     });
+    rendererElements.categoryTabs.onkeydown = (event) => {
+      if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+      const tabs = Array.from(rendererElements.categoryTabs.querySelectorAll(".tab-btn")); const current = tabs.indexOf(document.activeElement); if (current < 0) return;
+      event.preventDefault();
+      const next = event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 : (current + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
+      tabs[next].focus(); rendererStateRef.setCategory(tabs[next].dataset.category);
+    };
+    rendererElements.optionsPanel.setAttribute("aria-labelledby", `category-tab-${currentCategoryId}`);
+
+    rendererElements.categoryTabs.querySelector(".tab-btn.active")?.scrollIntoView({ block: "nearest", inline: "nearest" });
   }
 
   function renderSpecChips(model, snapshot) {
@@ -379,7 +407,7 @@
 
     const chips = [
       { id: "model-chip", label: model.type, target: "device-select" },
-      { id: "color-chip", label: getColorLabel(color), target: "color-section" },
+      { id: "color-chip", label: getColorLabel(color, model), target: "color-section" },
       { id: "motor-chip", label: motorOpt?.name || "--", target: "motor-section" },
       { id: "voltage-chip", label: voltageOpt?.name || "--", target: "voltage-section" }
     ];
@@ -434,7 +462,7 @@
           : selected === opt.id;
         const media = opt.color
           ? `<div class="option-color" style="background-color: ${opt.color};" aria-label="${opt.name} 颜色"></div>`
-          : `<img src="${opt.image || "assets/images/placeholder-option.svg"}" alt="" loading="lazy" onerror="this.src='assets/images/placeholder-option.svg'" />`;
+          : `<img src="${opt.image || "assets/images/placeholder-option.svg"}" alt="" width="640" height="320" loading="lazy" onerror="this.src='assets/images/placeholder-option.svg'" />`;
 
         return `
           <div class="option-card option-card-config ${isActive ? "active" : ""}" data-option="${opt.id}" role="${isMulti ? "checkbox" : "radio"}"
@@ -447,6 +475,7 @@
             <div class="option-media option-media-2by1">${media}</div>
             <div class="option-name">${opt.name}</div>
             ${opt.description ? `<div class="option-desc">${opt.description}</div>` : ""}
+            ${opt.specialNote ? `<div class="option-special-note">${escapeOptionHtml(opt.specialNote)}</div>` : ""}
           </div>
         `;
       })
@@ -528,18 +557,28 @@
 
     if (!toggle || !panel || !backdrop) return;
 
+    let previousFocus = null;
+    const pageRegions = [document.querySelector(".site-header"), document.querySelector(".config-stage"), document.querySelector(".site-footer")].filter(Boolean);
+    const focusable = () => Array.from(panel.querySelectorAll('button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')).filter((item) => !item.hidden);
     const openDrawer = () => {
+      previousFocus = document.activeElement;
       panel.classList.add("open");
       backdrop.classList.add("open");
       toggle.setAttribute("aria-expanded", "true");
+      panel.setAttribute("role", "dialog"); panel.setAttribute("aria-modal", "true");
+      pageRegions.forEach((region) => { region.inert = true; });
       document.body.style.overflow = "hidden";
+      requestAnimationFrame(() => (rendererElements.summaryClose || focusable()[0])?.focus());
     };
 
     const closeDrawer = () => {
       panel.classList.remove("open");
       backdrop.classList.remove("open");
       toggle.setAttribute("aria-expanded", "false");
+      panel.removeAttribute("aria-modal");
+      pageRegions.forEach((region) => { region.inert = false; });
       document.body.style.overflow = "";
+      previousFocus?.focus(); previousFocus = null;
     };
 
     toggle.addEventListener("click", openDrawer);
@@ -551,6 +590,12 @@
     document.addEventListener("keydown", (e) => {
       if (e.key === "Escape" && panel.classList.contains("open")) {
         closeDrawer();
+      }
+      if (e.key === "Tab" && panel.classList.contains("open")) {
+        const items = focusable(); if (!items.length) return;
+        const first = items[0]; const last = items[items.length - 1];
+        if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
       }
     });
   }
