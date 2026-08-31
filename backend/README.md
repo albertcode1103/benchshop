@@ -13,6 +13,12 @@ py -3.8 -m venv backend\.venv
 .\backend\.venv\Scripts\python.exe -m pip install -r .\backend\requirements.txt
 ```
 
+如果 Windows 系统代理可用于浏览器，但 pip 报 `ProxyError`，可把代理明确写成 HTTP 代理协议（端口按本机软件调整）：
+
+```powershell
+.\backend\.venv\Scripts\python.exe -m pip install -r .\backend\requirements.txt --proxy http://127.0.0.1:10808
+```
+
 日常启动 API：
 
 ```powershell

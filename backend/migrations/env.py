@@ -34,6 +34,10 @@ def run_migrations_online() -> None:
     )
     with connectable.connect() as connection:
         connection.exec_driver_sql("PRAGMA foreign_keys = ON")
+        # SQLAlchemy 2 starts an implicit transaction for the PRAGMA. Commit it
+        # before Alembic opens its migration transaction, otherwise SQLite DDL
+        # remains while the alembic_version row is rolled back on connection close.
+        connection.commit()
         context.configure(connection=connection, target_metadata=target_metadata, render_as_batch=True)
         with context.begin_transaction():
             context.run_migrations()

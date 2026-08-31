@@ -1,5 +1,7 @@
 import os
 import sqlite3
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -98,6 +100,31 @@ class BackendWorkflowTests(unittest.TestCase):
         report = audit_catalog()
         self.assertEqual(7, report["summary"]["products"])
         self.assertEqual(75, report["summary"]["options"])
+
+    def test_alembic_upgrade_on_empty_database(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="boten-migration-") as folder:
+            database_path = Path(folder) / "migration-test.db"
+            environment = os.environ.copy()
+            environment["BOTEN_DATABASE_PATH"] = str(database_path)
+            process = subprocess.run(
+                [sys.executable, "-m", "alembic", "-c", "alembic.ini", "upgrade", "head"],
+                cwd=Path(__file__).resolve().parents[1],
+                env=environment,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            connection = sqlite3.connect(str(database_path))
+            try:
+                version_row = connection.execute("SELECT version_num FROM alembic_version").fetchone()
+                tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+                columns = {row[1] for row in connection.execute("PRAGMA table_info(product_options)")}
+            finally:
+                connection.close()
+            self.assertIsNotNone(version_row, process.stdout + process.stderr)
+            self.assertEqual("20260831_0002", version_row[0])
+            self.assertTrue({"products", "options", "users", "quotes"}.issubset(tables))
+            self.assertIn("description_override_en", columns)
 
 
 if __name__ == "__main__":
