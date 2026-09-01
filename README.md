@@ -153,6 +153,12 @@ py -m http.server 8080
 
 ## 部署准备
 
+### 2026-09-01 群晖部署状态
+
+最新代码与数据库已在群晖 `BOTEN_NAS` 的 `/volume1/docker/benchshop` 启动验证：`api` 容器状态为 `healthy`，`web` 容器已运行并通过宿主机 `8080` 端口提供服务。局域网验收使用 `http://<NAS-IP>:8080/`，管理后台使用 `http://<NAS-IP>:8080/admin/`。
+
+本次首次启动曾因“表结构已存在但 Alembic 版本记录落后”而失败。已在核对现有表结构后以 `docker compose run --rm --no-deps --entrypoint python api -m alembic stamp 20260901_0005` 修正记录，再执行 `docker compose up -d --force-recreate` 成功启动。此操作只更新迁移版本，不会重建或删除业务数据。
+
 当前代码适合本地验证。部署到外网前至少需要：
 
 1. 选择 Linux 或 Windows 服务器并安装受支持的 Python。
