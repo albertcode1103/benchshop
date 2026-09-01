@@ -15,6 +15,7 @@
       closeCart: "关闭购物车", closeShare: "关闭分享", footer: "配置仅供参考，请联系销售报价。",
       selectAll: "全选", clearAll: "全不选", shareAction: "分享", deleteAction: "删除", overview: "设备概况",
       overviewDescription: "设备描述", overviewSpecifications: "参数表", specificationName: "参数", specificationValue: "数值",
+      overviewExpand: "展开", overviewCollapse: "折叠",
       createAccount: "创建账号", registerContinue: "注册并继续", registering: "注册中…", signingIn: "登录中…",
       accountFallback: "账号", signInToSave: "登录后可保存配置", noSaved: "暂无配置", generating: "生成中…",
       copied: "已复制", copyCode: "复制分享码", confirmClear: "删除全部配置？", requestFailed: "请求失败",
@@ -35,6 +36,7 @@
       closeCart: "Close cart", closeShare: "Close share", footer: "For reference only. Contact sales for a quote.",
       selectAll: "Select all", clearAll: "Clear all", shareAction: "Share", deleteAction: "Delete", overview: "Overview",
       overviewDescription: "Description", overviewSpecifications: "Specifications", specificationName: "Specification", specificationValue: "Value",
+      overviewExpand: "Expand", overviewCollapse: "Collapse",
       createAccount: "Create account", registerContinue: "Register", registering: "Registering…", signingIn: "Signing in…",
       accountFallback: "Account", signInToSave: "Sign in to save", noSaved: "No saved items", generating: "Generating…",
       copied: "Copied", copyCode: "Copy code", confirmClear: "Delete all items?", requestFailed: "Request failed",
@@ -63,6 +65,8 @@
     const summaryToggle = document.getElementById("summary-toggle");
     const summaryClose = document.getElementById("summary-close");
     const optionalFeaturesTitle = document.getElementById("optional-features-title");
+    const overview = document.querySelector(".device-overview");
+    const overviewToggleLabel = document.getElementById("overview-toggle-label");
     const staticText = {
       "header-cart-label": "cart", "auth-title": "loginTitle", "auth-login-tab": "login",
       "auth-register-tab": "register", "auth-name-label": "name", "auth-identifier-label": "identifier",
@@ -95,6 +99,7 @@
     }
     if (summaryClose) summaryClose.setAttribute("aria-label", text.closeSummary);
     if (optionalFeaturesTitle) optionalFeaturesTitle.textContent = text.optionalFeatures;
+    if (overviewToggleLabel) overviewToggleLabel.textContent = overview?.open ? text.overviewCollapse : text.overviewExpand;
     Object.entries(staticText).forEach(function ([id, key]) {
       const element = document.getElementById(id);
       if (element) element.textContent = text[key];
@@ -129,6 +134,8 @@
       button.setAttribute("aria-pressed", button.dataset.language === lang ? "true" : "false");
     });
     applyStaticLanguage(lang);
+    const overview = document.querySelector(".device-overview");
+    if (overview) overview.addEventListener("toggle", function () { applyStaticLanguage(localStorage.getItem(STORAGE_KEY) === "en" ? "en" : "zh"); });
     switcher.addEventListener("click", function (event) {
       const button = event.target.closest("[data-language]");
       if (!button) return;
