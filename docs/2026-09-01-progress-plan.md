@@ -19,6 +19,7 @@
 - 本机 E 盘是唯一日常开发源；确认后的代码推送到 GitHub `main`，BOTEN-NAS 只通过 `git fetch --ipv4` 和 `git merge --ff-only` 获取版本。
 - `data/`、`deploy/.env`、上传图片和数据库备份不纳入 Git；每次更新前使用 `database_maintenance backup`，更新后确认 `api` 为 `healthy`、`web` 为 `Up`。
 - 若需回滚，先查看提交并检出已确认版本，不覆盖 `data/`；迁移异常时先备份并核对 `alembic_version`，禁止删除迁移记录或手动重复执行旧迁移。
+- 本机 `backend/boten.db` 的迁移已明确暂缓，待用户完成项目验收后再执行；届时按 `deploy/README.md` 的在线备份、上传、确认式恢复与完整性检查流程操作，并同步 `uploads/catalog/` 图片。
 
 ## 今日优先事项
 

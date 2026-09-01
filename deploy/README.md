@@ -125,6 +125,49 @@ cd "$PROJECT_DIR"
 sudo docker compose up -d --build
 ```
 
+## 从本机迁移已确认的数据库（暂缓执行）
+
+本机开发数据库不通过 Git 迁移。待项目验收确认后，使用 SQLite 在线备份文件迁移；
+这会以本机数据库替换 NAS 当前业务数据库，因此迁移前须确认 NAS 没有需要保留的新账号、
+分享记录或报价。Git 更新代码与数据库迁移是两件独立的事。
+
+### 1. 本机 E 盘创建一致性备份
+
+```powershell
+cd E:\Project\CC-Project\benchshop
+.\backend\.venv\Scripts\python.exe -m backend.database_maintenance backup --output-dir .\backups --keep 30
+```
+
+命令会输出新备份文件，例如 `backups\boten-20260901-120000-000000.db`。通过 File
+Station、SFTP 或受控文件共享将该文件上传到 BOTEN-NAS：
+
+```text
+/volume1/docker/benchshop/data/backups/
+```
+
+若本机有后台上传的设备或颜色图片，同时将本机 `uploads/catalog/` 的内容同步到 NAS 的
+`/volume1/docker/benchshop/data/uploads/catalog/`；不要覆盖 NAS 的 `data/backups/` 目录。
+
+### 2. BOTEN-NAS 恢复并验证
+
+将下面的备份文件名替换为实际文件名。恢复程序会先在 NAS 创建当前数据库的安全备份，
+随后才替换数据库：
+
+```sh
+cd /volume1/docker/benchshop
+sudo docker compose down
+sudo docker compose run --rm --no-deps --entrypoint python api \
+  -m backend.database_maintenance restore \
+  /data/backups/boten-20260901-120000-000000.db \
+  --confirm RESTORE
+sudo docker compose up -d
+sudo docker compose ps
+sudo docker compose exec api python -m backend.database_maintenance check
+```
+
+恢复完成的验收标准是 `api` 为 `healthy`、数据库检查通过，并核对用户端、后台、图片和
+最近报价。恢复过程中不要删除 `data/`、`alembic_version` 或手工覆盖 `boten.db`。
+
 ## 数据备份、检查与恢复
 
 常用维护命令：
