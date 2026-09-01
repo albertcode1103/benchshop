@@ -1,8 +1,8 @@
 import sqlite3
-import sqlite3
 from typing import Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from .auth_routes import require_admin, require_catalog_manager
@@ -28,9 +28,90 @@ from .admin_catalog_repository import (
     delete_config_category,
     save_product_configuration,
 )
+from .excel_service import catalog_template, parse_xlsx
+from .database import get_connection
 
 
 router = APIRouter(prefix="/api/v1/admin", tags=["admin"], dependencies=[Depends(require_catalog_manager)])
+
+@router.get("/catalog-template.xlsx")
+def export_catalog_template():
+    return Response(content=catalog_template(list_admin_products(), list_config_categories()), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": "attachment; filename=boten-catalog-template.xlsx"})
+
+@router.post("/catalog-template/preview")
+async def preview_catalog_template(request: Request):
+    data = await request.body()
+    if len(data) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="Excel 文件不能超过 10MB")
+    try:
+        sheets = parse_xlsx(data)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="无法解析 Excel 文件") from exc
+    expected = [["设备型号","中文名称","英文名称","人民币参考价","美元参考价","启用"], ["配置编号","分类编号","中文名称","英文名称","中文描述","英文描述","备注","人民币价格","美元价格","启用"], ["设备型号","电机配置编号","人民币基础价","美元基础价"], ["设备型号","参数ID","中文项目","英文项目","中文数据","英文数据","排序"]]
+    report=[]
+    with get_connection() as db:
+        product_ids={r[0] for r in db.execute("SELECT id FROM products").fetchall()}
+        option_ids={r[0] for r in db.execute("SELECT id FROM options").fetchall()}
+    for index, rows in enumerate(sheets):
+        headers=rows[0] if rows else []
+        errors=[]
+        if headers != expected[index]: errors.append("表头不匹配")
+        for line, row in enumerate(rows[1:], 2):
+            key=row[0] if row else ""
+            if index in (0,3) and key not in product_ids: errors.append(f"第{line}行：未知设备型号 {key}")
+            if index == 1 and key not in option_ids: errors.append(f"第{line}行：未知配置编号 {key}")
+            if index == 2 and (key not in product_ids or len(row) < 2 or row[1] not in option_ids): errors.append(f"第{line}行：设备或电机编号无效")
+        report.append({"rows": max(0,len(rows)-1),"headers":headers,"errors":errors[:50]})
+    return {"valid": all(not item["errors"] for item in report), "sheets": report}
+
+@router.post("/catalog-template/commit")
+async def commit_catalog_template(request: Request):
+    data = await request.body()
+    try:
+        sheets = parse_xlsx(data)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="无法解析 Excel 文件") from exc
+    if not sheets or not sheets[0] or sheets[0][0] != ["设备型号","中文名称","英文名称","人民币参考价","美元参考价","启用"]:
+        raise HTTPException(status_code=400, detail="设备目录表头不匹配")
+    updates=[]
+    with get_connection() as db:
+        for row in sheets[0][1:]:
+            if len(row) < 6: continue
+            try: cny=int(row[3] or 0); usd=int(row[4] or 0)
+            except ValueError: raise HTTPException(status_code=400, detail=f"设备 {row[0]} 价格无效")
+            if cny < 0 or usd < 0: raise HTTPException(status_code=400, detail=f"设备 {row[0]} 价格不能为负")
+            if db.execute("SELECT 1 FROM products WHERE id=?", (row[0],)).fetchone() is None: raise HTTPException(status_code=400, detail=f"未知设备型号 {row[0]}")
+            updates.append((row[1],row[2],cny,usd,1 if str(row[5]).lower() not in ("0","false","否") else 0,row[0]))
+        db.executemany("UPDATE products SET name=?,name_en=?,base_price=?,price_usd=?,enabled=?,updated_at=CURRENT_TIMESTAMP WHERE id=?", updates)
+        option_updates=[]
+        if len(sheets)>1 and sheets[1] and sheets[1][0] == ["配置编号","分类编号","中文名称","英文名称","中文描述","英文描述","备注","人民币价格","美元价格","启用"]:
+            for row in sheets[1][1:]:
+                if len(row)<10: continue
+                try: cny=int(row[7] or 0); usd=int(row[8] or 0)
+                except ValueError: raise HTTPException(status_code=400, detail=f"配置 {row[0]} 价格无效")
+                if cny<0 or usd<0: raise HTTPException(status_code=400, detail=f"配置 {row[0]} 价格不能为负")
+                if db.execute("SELECT 1 FROM options WHERE id=?", (row[0],)).fetchone() is None: raise HTTPException(status_code=400, detail=f"未知配置编号 {row[0]}")
+                option_updates.append((row[2],row[3],row[4],row[5],row[6],cny,usd,1 if str(row[9]).lower() not in ("0","false","否") else 0,row[0]))
+            db.executemany("UPDATE options SET name=?,name_en=?,description=?,description_en=?,notes=?,price=?,price_usd=?,enabled=? WHERE id=?", option_updates)
+        motor_updates=[]
+        if len(sheets)>2:
+            for row in sheets[2][1:]:
+                if len(row)<4: continue
+                try: cny=int(row[2] or 0); usd=int(row[3] or 0)
+                except ValueError: raise HTTPException(status_code=400, detail="电机价格无效")
+                if cny<0 or usd<0: raise HTTPException(status_code=400, detail="电机价格不能为负")
+                motor_updates.append((row[0],row[1],cny,usd))
+            for product_id, motor_id, cny, usd in motor_updates:
+                if db.execute("SELECT 1 FROM product_options WHERE product_id=? AND option_id=?", (product_id,motor_id)).fetchone() is None: raise HTTPException(status_code=400, detail="电机组合不存在")
+                db.execute("INSERT INTO product_motor_prices(product_id,motor_option_id,base_price_cny,base_price_usd) VALUES(?,?,?,?) ON CONFLICT(product_id,motor_option_id) DO UPDATE SET base_price_cny=excluded.base_price_cny,base_price_usd=excluded.base_price_usd", (product_id,motor_id,cny,usd))
+        specs_updated=0
+        if len(sheets)>3:
+            for row in sheets[3][1:]:
+                if len(row)<7: continue
+                if db.execute("SELECT 1 FROM products WHERE id=?", (row[0],)).fetchone() is None: raise HTTPException(status_code=400, detail=f"未知设备型号 {row[0]}")
+                if row[1] and db.execute("SELECT 1 FROM product_specifications WHERE id=? AND product_id=?", (row[1],row[0])).fetchone() is not None:
+                    db.execute("UPDATE product_specifications SET label=?,label_en=?,value=?,value_en=?,sort_order=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND product_id=?", (row[2],row[3],row[4],row[5],int(row[6] or 0),row[1],row[0])); specs_updated+=1
+    return {"updated": len(updates), "options_updated": len(option_updates), "motor_prices_updated": len(motor_updates), "specifications_updated": specs_updated}
 
 
 class CreateStaffRequest(BaseModel):
@@ -91,6 +172,18 @@ class ProductColorsRequest(BaseModel):
 class ProductMappingsRequest(BaseModel):
     option_ids: List[str]
 
+class MotorBasePriceRequest(BaseModel):
+    base_price_cny: int = 0
+    base_price_usd: int = 0
+
+class ProductSpecificationRequest(BaseModel):
+    id: Optional[str] = None
+    label: str = ""
+    label_en: str = ""
+    value: str = ""
+    value_en: str = ""
+    sort_order: int = 0
+
 class ProductOptionOverrideRequest(BaseModel):
     description_override: Optional[str] = None
     description_override_en: Optional[str] = None
@@ -101,6 +194,8 @@ class ProductSaveRequest(ProductUpdateRequest):
     colors: List[ProductColorRequest]
     option_ids: List[str]
     option_overrides: Dict[str, ProductOptionOverrideRequest] = Field(default_factory=dict)
+    motor_prices: Dict[str, MotorBasePriceRequest] = Field(default_factory=dict)
+    specifications: List[ProductSpecificationRequest] = Field(default_factory=list)
 
 
 class ConfigOptionUpdateRequest(BaseModel):
@@ -260,7 +355,7 @@ def save_product(product_id: str, payload: ProductSaveRequest):
         raise HTTPException(status_code=422, detail="Only one default color is allowed")
     overrides = {option_id: item.model_dump() for option_id, item in payload.option_overrides.items()}
     try:
-        result = save_product_configuration(product_id, values, colors, payload.option_ids, overrides)
+        result = save_product_configuration(product_id, values, colors, payload.option_ids, overrides, {key: value.model_dump() for key, value in payload.motor_prices.items()}, [item.model_dump() for item in payload.specifications])
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error))
     if result is None:

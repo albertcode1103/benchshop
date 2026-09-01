@@ -28,6 +28,9 @@ def build_snapshot(product_id: str, color: str, selections: Dict[str, Any], lang
             "id": product["id"],
             "name": product["name"],
             "title_name": product["title_name"],
+            "description": product.get("description", ""),
+            "base_price": product.get("base_price", 0),
+            "price_usd": product.get("price_usd", 0),
         },
         "color": colors[color],
         "categories": [],
@@ -51,6 +54,13 @@ def build_snapshot(product_id: str, color: str, selections: Dict[str, Any], lang
                     "options": [option_map[option_id] for option_id in requested_ids],
                 }
             )
+    motor_category = next((category for category in snapshot["categories"] if category["id"] == "motor"), None)
+    if not motor_category or len(motor_category["options"]) != 1:
+        raise ValueError("Exactly one motor option is required")
+    motor = motor_category["options"][0]
+    snapshot["product"]["base_price"] = motor.get("motor_base_price_cny") if motor.get("motor_base_price_cny") is not None else snapshot["product"]["base_price"]
+    snapshot["product"]["price_usd"] = motor.get("motor_base_price_usd") if motor.get("motor_base_price_usd") is not None else snapshot["product"]["price_usd"]
+    snapshot["product"]["motor_option_id"] = motor.get("id")
     return snapshot
 
 

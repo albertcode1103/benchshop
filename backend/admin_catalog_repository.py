@@ -176,16 +176,23 @@ def get_admin_product(product_id: str) -> Optional[Dict[str, Any]]:
                    o.price, o.price_usd, o.enabled, o.sort_order,
                    CASE WHEN po.option_id IS NULL THEN 0 ELSE 1 END AS mapped,
                    COALESCE(po.enabled, 0) AS selected,
-                   po.description_override, po.description_override_en, po.image_override, po.price_override
+                   po.description_override, po.description_override_en, po.image_override, po.price_override,
+                   mp.base_price_cny AS motor_base_price_cny, mp.base_price_usd AS motor_base_price_usd
             FROM options o
             LEFT JOIN product_options po
               ON po.option_id = o.id AND po.product_id = ?
+            LEFT JOIN product_motor_prices mp
+              ON mp.motor_option_id = o.id AND mp.product_id = ?
             ORDER BY o.category_id, o.sort_order, o.name
             """,
-            (product_id,),
+            (product_id, product_id),
         ).fetchall()
         category_rows = connection.execute(
             "SELECT id, name, name_en, description, description_en, multiple, sort_order FROM categories ORDER BY sort_order, name"
+        ).fetchall()
+        specification_rows = connection.execute(
+            "SELECT id, label, label_en, value, value_en, sort_order FROM product_specifications WHERE product_id = ? ORDER BY sort_order, id",
+            (product_id,),
         ).fetchall()
 
     product = dict(product_row)
@@ -210,6 +217,7 @@ def get_admin_product(product_id: str) -> Optional[Dict[str, Any]]:
         category["multiple"] = bool(category["multiple"])
         category["options"] = options_by_category.get(category["id"], [])
         product["categories"].append(category)
+    product["specifications"] = [dict(row) for row in specification_rows]
     return product
 
 
@@ -237,6 +245,8 @@ def save_product_configuration(
     colors: List[Dict[str, Any]],
     option_ids: List[str],
     option_overrides: Dict[str, Dict[str, Any]],
+    motor_prices: Optional[Dict[str, Dict[str, Any]]] = None,
+    specifications: Optional[List[Dict[str, Any]]] = None,
 ) -> Optional[Dict[str, Any]]:
     """Save every editable part of one product in one SQLite transaction."""
     allowed = ("name", "title_name", "name_en", "title_name_en", "description", "description_en", "base_price", "price_usd", "enabled", "sort_order")
@@ -291,6 +301,35 @@ def save_product_configuration(
         ).fetchall()
         existing = {row["option_id"]: dict(row) for row in existing_rows}
         selected = {row["id"]: dict(row) for row in option_rows}
+
+        motor_prices = motor_prices or {}
+        for motor_id, price in motor_prices.items():
+            if int(price.get("base_price_cny", 0)) < 0 or int(price.get("base_price_usd", 0)) < 0:
+                raise ValueError("Motor base prices cannot be negative")
+            motor_row = connection.execute("SELECT id FROM options WHERE id = ? AND category_id = 'motor'", (motor_id,)).fetchone()
+            if motor_row is None or motor_id not in selected:
+                raise ValueError("Motor price must reference a selected motor")
+            connection.execute(
+                "INSERT INTO product_motor_prices (product_id, motor_option_id, base_price_cny, base_price_usd, updated_at) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP) ON CONFLICT(product_id, motor_option_id) DO UPDATE SET base_price_cny=excluded.base_price_cny, base_price_usd=excluded.base_price_usd, updated_at=CURRENT_TIMESTAMP",
+                (product_id, motor_id, int(price.get("base_price_cny", 0)), int(price.get("base_price_usd", 0))),
+            )
+        motor_option_ids = [row["id"] for row in option_rows if row["category_id"] == "motor"]
+        connection.execute("DELETE FROM product_motor_prices WHERE product_id = ? AND motor_option_id NOT IN ({})".format(",".join("?" for _ in motor_option_ids)), [product_id] + motor_option_ids)
+
+        if specifications is not None:
+            connection.execute("DELETE FROM product_specifications WHERE product_id = ?", (product_id,))
+            for index, spec in enumerate(specifications):
+                label = str(spec.get("label") or "").strip()
+                label_en = str(spec.get("label_en") or "").strip()
+                value = str(spec.get("value") or "").strip()
+                value_en = str(spec.get("value_en") or "").strip()
+                if not any((label, label_en, value, value_en)):
+                    continue
+                connection.execute(
+                    "INSERT INTO product_specifications (id, product_id, label, label_en, value, value_en, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (str(spec.get("id") or uuid.uuid4().hex), product_id, label, label_en, value, value_en, int(spec.get("sort_order", index))),
+                )
+
         all_option_ids = set(existing) | set(selected) | override_ids
         option_meta = {
             row["id"]: dict(row) for row in connection.execute(

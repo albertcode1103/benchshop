@@ -6,6 +6,8 @@
     pageTitle: document.getElementById("page-title"),
     pageSubtitle: document.getElementById("page-subtitle"),
     pageDesc: document.getElementById("page-desc"),
+    overviewTitle: document.getElementById("overview-title"),
+    specifications: document.getElementById("product-specifications"),
     previewArea: document.getElementById("preview-area"),
     colorSection: document.getElementById("color-section"),
     colorTitle: document.getElementById("color-title"),
@@ -109,6 +111,13 @@
     if (rendererElements.pageTitle) rendererElements.pageTitle.textContent = model.type;
     if (rendererElements.pageSubtitle) rendererElements.pageSubtitle.textContent = model.titleName;
     if (rendererElements.pageDesc) rendererElements.pageDesc.textContent = model.description;
+    if (rendererElements.overviewTitle) rendererElements.overviewTitle.textContent = window.botenI18n?.t("overview") || "设备概况";
+    if (rendererElements.specifications) {
+      const specs = Array.isArray(model.specifications) ? model.specifications : [];
+      rendererElements.specifications.innerHTML = specs.length
+        ? specs.map((spec) => `<tr><th scope="row">${escapeOptionHtml(spec.label)}</th><td>${escapeOptionHtml(spec.value)}</td></tr>`).join("")
+        : '<tr><td colspan="2">--</td></tr>';
+    }
   }
 
   let galleryState = {

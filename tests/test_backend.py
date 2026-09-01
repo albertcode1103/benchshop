@@ -345,8 +345,8 @@ class BackendWorkflowTests(unittest.TestCase):
             finally:
                 connection.close()
             self.assertIsNotNone(version_row, process.stdout + process.stderr)
-            self.assertEqual("20260831_0004", version_row[0])
-            self.assertTrue({"products", "options", "users", "quotes", "audit_logs"}.issubset(tables))
+            self.assertEqual("20260901_0006", version_row[0])
+            self.assertTrue({"products", "options", "users", "quotes", "audit_logs", "product_motor_prices", "product_specifications"}.issubset(tables))
             self.assertIn("description_override_en", columns)
             self.assertIn("label_en", color_columns)
 

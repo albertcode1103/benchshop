@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Optional
 
 from .config import DATABASE_PATH, PROJECT_DIR
+from .database import initialize_database
 
 
 DEFAULT_BACKUP_DIR = PROJECT_DIR / "backups"
@@ -78,6 +79,7 @@ def restore_backup(source: Path, confirmation: str, safety_dir: Path = DEFAULT_B
         verify_database(temporary)
         temporary.replace(target)
         verify_database(target)
+        initialize_database()
     finally:
         if temporary.exists():
             temporary.unlink()

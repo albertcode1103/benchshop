@@ -10,7 +10,7 @@
   <link rel="stylesheet" href="admin.css?v=20260901-9" />
   <script src="../js/runtime-config.js?v=20260831-2"></script>
   <script>window.addEventListener('error',function(e){var s=document.getElementById('api-status');if(s)s.textContent='后台脚本加载失败：'+(e.message||'请按 Ctrl+F5 刷新');});</script>
-  <script src="admin.js?v=20260901-16" defer></script>
+  <script src="admin.js?v=20260901-17" defer></script>
 </head>
 <body>
   <a class="skip-link" href="#admin-content">跳到主要内容</a>
@@ -104,7 +104,7 @@
         <section class="view" data-view-panel="products">
           <section class="panel">
             <header class="panel-header"><div><span class="eyebrow">DEVICE CATALOG</span><h2>设备目录</h2><p>调整设备资料、颜色以及该设备允许使用的配置项目。</p></div></header>
-            <div class="table-wrap"><table><thead><tr><th>型号</th><th>产品名称</th><th>基础价格</th><th>状态</th><th class="align-right">操作</th></tr></thead><tbody id="products-table"></tbody></table></div>
+            <div class="table-wrap"><table class="product-catalog-table"><colgroup><col class="product-col-model" /><col class="product-col-title" /><col class="product-col-price" /><col class="product-col-status" /><col class="product-col-actions" /></colgroup><thead><tr><th>型号</th><th>产品名称</th><th>基础价格</th><th>状态</th><th class="align-right">操作</th></tr></thead><tbody id="products-table"></tbody></table></div>
           </section>
         </section>
 
@@ -158,9 +158,10 @@
           <label><span>基础价格（元）</span><input name="base_price" type="number" min="0" step="1" /></label>
           <label><span>基础价格（美元）</span><input name="price_usd" type="number" min="0" step="1" /></label>
           <label><span>显示顺序</span><input name="sort_order" type="number" step="1" /></label>
-          <label class="full"><span>产品描述</span><textarea name="description" rows="4"></textarea></label>
-          <label class="full"><span>产品描述</span><textarea name="description_en" rows="3"></textarea></label>
+          <label class="full"><span>设备概况</span><textarea name="description" rows="4"></textarea></label>
+          <label class="full"><span>设备概况</span><textarea name="description_en" rows="3"></textarea></label>
           <label class="toggle-field full"><input name="enabled" type="checkbox" /><span>在用户端启用该产品</span></label>
+          <div class="full specification-editor"><h3>参数表</h3><div id="product-specifications-editor"></div><button type="button" class="button button-secondary" id="add-specification-button">添加参数</button></div>
         </div>
       </section>
       <section class="editor-panel" id="editor-panel-colors" role="tabpanel" aria-labelledby="editor-tab-colors" data-editor-panel="colors" hidden>

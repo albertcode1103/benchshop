@@ -5,7 +5,8 @@ const API_BASE = typeof window.BOTEN_API_BASE === "string"
 const TOKEN_KEY = "boten_admin_token";
 const CUSTOMER_TOKEN_KEY = "boten_user_token";
 
-const state = { user: null, products: [], users: [], shares: [], quotes: [], audits: [], editingProduct: null, mappingEditor: null, userRoleFilter: "all", catalogLanguage: localStorage.getItem("boten-admin-language") || "zh", configCatalog: [], collapsedCategories: new Set() };
+function getStoredCollapsedCategories() { try { const value = JSON.parse(localStorage.getItem("boten-admin-collapsed-categories") || "[]"); return Array.isArray(value) ? value : []; } catch (_) { return []; } }
+const state = { user: null, products: [], users: [], shares: [], quotes: [], audits: [], editingProduct: null, mappingEditor: null, userRoleFilter: "all", catalogLanguage: localStorage.getItem("boten-admin-language") || "zh", configCatalog: [], collapsedCategories: new Set(getStoredCollapsedCategories()) };
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
 
@@ -259,14 +260,17 @@ function renderDashboard() {
 }
 
 function renderProducts() {
+  const english = state.catalogLanguage === "en";
+  const priceLabel = $("[data-view-panel=\"products\"] thead th:nth-child(3)");
+  if (priceLabel) priceLabel.textContent = english ? "价格 / USD" : "价格 / 人民币";
   $("#products-table").innerHTML = state.products.map((product) => `
-    <tr><td><strong>${escapeHtml(product.name)}</strong></td><td>${escapeHtml(product.title_name)}</td><td>¥${Number(product.base_price).toLocaleString("zh-CN")}</td><td><span class="badge ${product.enabled ? "good" : "off"}">${product.enabled ? "已启用" : "已下架"}</span></td><td class="align-right"><button class="table-action" data-edit-product="${product.id}">编辑</button></td></tr>
+    <tr><td><strong>${escapeHtml(english ? (product.name_en || product.name) : product.name)}</strong></td><td>${escapeHtml(english ? (product.title_name_en || product.title_name) : product.title_name)}</td><td>${english ? "$" + Number(product.price_usd || 0).toLocaleString("en-US") : "¥" + Number(product.base_price || 0).toLocaleString("zh-CN")}</td><td><span class="badge ${product.enabled ? "good" : "off"}">${product.enabled ? "已启用" : "已下架"}</span></td><td class="align-right"><button class="table-action" data-edit-product="${product.id}">编辑</button></td></tr>
   `).join("") || '<tr><td colspan="5" class="empty">暂无产品数据</td></tr>';
 }
 
 function renderConfigCatalog(categories) {
   const target = $("#config-catalog-list"); if (!target) return;
-  target.innerHTML = categories.map((category) => `<section class="config-catalog-group"><header><div><h3>${escapeHtml(category.name)}</h3><p>${escapeHtml(category.description || "")}</p></div><div><span>${category.options.length} 项</span><button class="text-button" data-add-option="${escapeHtml(category.id)}">添加配置</button><details class="catalog-more"><summary>更多</summary><div><button class="text-button" data-collapse-category="${escapeHtml(category.id)}" aria-expanded="true">折叠分类</button><button class="text-button" data-edit-category='${escapeHtml(JSON.stringify(category))}'>编辑分类</button></div></details></div></header><div class="config-catalog-table"><table><thead><tr><th>编号</th><th>名称</th><th>图片</th><th>参考价格</th><th>状态</th><th></th></tr></thead><tbody>${category.options.map((option) => `<tr><td><strong>${escapeHtml(option.code)}</strong></td><td>${escapeHtml(option.name)}<br><small>${escapeHtml(option.description || "")}</small></td><td class="config-image-cell">${renderCatalogThumbnail(option)}</td><td>¥${Number(option.price || 0).toLocaleString("zh-CN")}</td><td><span class="badge ${option.enabled ? "good" : "off"}">${option.enabled ? "启用" : "停用"}</span></td><td class="align-right"><button class="table-action" data-edit-option='${escapeHtml(JSON.stringify(option))}'>编辑</button></td></tr>`).join("")}</tbody></table></div></section>`).join("") || '<div class="empty">暂无配置目录</div>';
+  target.innerHTML = categories.map((category) => `<section class="config-catalog-group"><header><div class="catalog-collapse-target" data-collapse-category="${escapeHtml(category.id)}" role="button" tabindex="0" aria-expanded="true"><h3>${escapeHtml(category.name)}</h3><p>${escapeHtml(category.description || "")}</p></div><div><span>${category.options.length} 项</span><button class="text-button" data-add-option="${escapeHtml(category.id)}">添加配置</button><details class="catalog-more"><summary>更多</summary><div><button class="text-button" data-edit-category='${escapeHtml(JSON.stringify(category))}'>编辑分类</button></div></details></div></header><div class="config-catalog-table"><table><thead><tr><th>编号</th><th>名称</th><th>图片</th><th>参考价格</th><th>状态</th><th></th></tr></thead><tbody>${category.options.map((option) => `<tr><td><strong>${escapeHtml(option.code)}</strong></td><td>${escapeHtml(option.name)}<br><small>${escapeHtml(option.description || "")}</small></td><td class="config-image-cell">${renderCatalogThumbnail(option)}</td><td>¥${Number(option.price || 0).toLocaleString("zh-CN")}</td><td><span class="badge ${option.enabled ? "good" : "off"}">${option.enabled ? "启用" : "停用"}</span></td><td class="align-right"><button class="table-action" data-edit-option='${escapeHtml(JSON.stringify(option))}'>编辑</button></td></tr>`).join("")}</tbody></table></div></section>`).join("") || '<div class="empty">暂无配置目录</div>';
 }
 
 async function addConfigCategory() { categoryCard(); }
@@ -275,7 +279,7 @@ async function editConfigCategory(category) { categoryCard(category); }
 function addLanguageToggles() { ["#product-dialog", "#config-option-dialog"].forEach((selector) => { const dialog = $(selector); const header = $(".dialog-card > header", dialog); if (!header || $(".lang-toggle", header)) return; const box = document.createElement("div"); box.className = "catalog-language dialog-language"; box.innerHTML = '<button type="button" class="lang-toggle active" data-lang="zh" aria-pressed="true">中文</button><button type="button" class="lang-toggle" data-lang="en" aria-pressed="false">EN</button>'; box.addEventListener("click", (event) => { const button = event.target.closest(".lang-toggle"); if (!button) return; event.stopPropagation(); toggleDialogLanguage(button); }); header.appendChild(box); }); const examples={name:"例如：CR318C",name_en:"例如：CR318C",title_name:"例如：共轨喷油器试验台",title_name_en:"例如：Common Rail Test Bench",description:"例如：适用于多种喷油器测试",description_en:"例如：Designed for common rail injector testing",code:"例如：BTK-1019",price:"例如：1500"}; Object.entries(examples).forEach(([name,placeholder])=>$$(`[name="${name}"]`).forEach(el=>{if(!el.placeholder)el.placeholder=placeholder;})); }
 function toggleDialogLanguage(button) { const dialog = button.closest("dialog"); const lang = button.dataset.lang; $$(".lang-toggle", dialog).forEach((item) => { const active = item === button; item.classList.toggle("active", active); item.setAttribute("aria-pressed", String(active)); }); $$('[name$="_en"]', dialog).forEach((field) => { const label = field.closest("label"); if (label) label.hidden = lang !== "en"; }); $$('[name="name"],[name="title_name"],[name="description"]', dialog).forEach((field) => { const label = field.closest("label"); if (label) label.hidden = lang === "en"; }); $$('[data-color-name-lang]', dialog).forEach((label) => { label.hidden = label.dataset.colorNameLang !== lang; }); if (dialog.id === "product-dialog") { state.catalogLanguage = lang; localStorage.setItem("boten-admin-language", lang); renderMappingEditor(); } }
 function applyCatalogLanguage(lang) { state.catalogLanguage=lang; $$(".catalog-language button").forEach(b=>b.classList.toggle("active",b.dataset.catalogLang===lang)); $$("#products-table tr").forEach((row,i)=>{const p=state.products[i];if(!p)return;const cells=row.children;cells[0].querySelector("strong").textContent=lang==="en"?(p.name_en||p.name):p.name;cells[1].textContent=lang==="en"?(p.title_name_en||p.title_name):p.title_name;}); $$(".config-catalog-group").forEach((group,i)=>{const c=state.configCatalog[i];if(!c)return;group.querySelector("h3").textContent=lang==="en"?(c.name_en||c.name):c.name;const p=group.querySelector("header p");if(p)p.textContent=lang==="en"?(c.description_en||c.description||""):(c.description||"");$$('tbody tr',group).forEach((row,n)=>{const o=c.options[n];if(!o)return;const cell=row.children[1];cell.childNodes[0].textContent=lang==="en"?(o.name_en||o.name):o.name;const small=cell.querySelector("small");if(small)small.textContent=lang==="en"?(o.description_en||o.description||""):(o.description||"");});}); }
-function addCatalogLanguageSwitches(){[["products","设备目录"],["config-catalog","配置目录"]].forEach(([view])=>{const header=$(`[data-view-panel="${view}"] .panel-header`);if(!header||$(".catalog-language",header))return;const box=document.createElement("div");box.className="catalog-language";box.innerHTML='<button type="button" class="active" data-catalog-lang="zh">中文</button><button type="button" data-catalog-lang="en">EN</button>';header.appendChild(box);box.addEventListener("click",e=>{const b=e.target.closest("[data-catalog-lang]");if(b)applyCatalogLanguage(b.dataset.catalogLang);});}); $$(".config-catalog-group").forEach((group,index)=>{const header=$("header",group);if(!header||$("[data-collapse-category]",header))return;const b=document.createElement("button");b.type="button";b.className="catalog-collapse";b.dataset.collapseCategory=state.configCatalog[index]?.id||index;b.textContent="折叠";b.setAttribute("aria-expanded","true");header.prepend(b);});}
+function addCatalogLanguageSwitches(){[["products","设备目录"],["config-catalog","配置目录"]].forEach(([view])=>{const header=$(`[data-view-panel="${view}"] .panel-header`);if(!header||$(".catalog-language",header))return;const box=document.createElement("div");box.className="catalog-language";box.innerHTML='<button type="button" class="active" data-catalog-lang="zh">中文</button><button type="button" data-catalog-lang="en">EN</button>';header.appendChild(box);box.addEventListener("click",e=>{const b=e.target.closest("[data-catalog-lang]");if(b)applyCatalogLanguage(b.dataset.catalogLang);});});}
 function openConfigOptionEditor(option) {
   const form = $("#config-option-form");
   const zhButton = $(`.lang-toggle[data-lang="${state.catalogLanguage}"]`, $("#config-option-dialog")); if (zhButton) toggleDialogLanguage(zhButton);
@@ -296,12 +300,19 @@ async function openProductEditor(productId) {
     if (form.elements.price_usd) form.elements.price_usd.value = product.price_usd || 0;
     form.elements.sort_order.value = product.sort_order;
     form.elements.enabled.checked = product.enabled;
+    const specificationEditor = $("#product-specifications-editor");
+    const renderSpecifications = () => { specificationEditor.innerHTML = (state.editingProduct.specifications || []).map((s, i) => `<div class="specification-row"><input data-spec="label" value="${escapeHtml(s.label || "")}" placeholder="项目"><input data-spec="label_en" value="${escapeHtml(s.label_en || "")}" placeholder="Project"><input data-spec="value" value="${escapeHtml(s.value || "")}" placeholder="数据"><input data-spec="value_en" value="${escapeHtml(s.value_en || "")}" placeholder="Value"><button type="button" class="button button-quiet" data-remove-spec="${i}">删除</button></div>`).join(""); };
+    state.editingProduct.specifications = Array.isArray(product.specifications) ? product.specifications : [];
+    renderSpecifications();
+    $("#add-specification-button").onclick = () => { state.editingProduct.specifications.push({ label: "", label_en: "", value: "", value_en: "" }); renderSpecifications(); };
+    specificationEditor.onclick = (event) => { const button = event.target.closest("[data-remove-spec]"); if (button) { state.editingProduct.specifications.splice(Number(button.dataset.removeSpec), 1); renderSpecifications(); } };
     $("#product-dialog-title").textContent = `编辑 ${product.name}`;
     renderColorEditor(product.colors);
     state.mappingEditor = {
       categories: product.categories,
       selected: new Set(product.categories.flatMap((category) => category.options.filter((option) => option.selected).map((option) => option.id))),
       notes: new Map(product.categories.flatMap((category) => category.options.map((option) => [option.id, { zh: option.description_override || "", en: option.description_override_en || "", mapped: Boolean(option.mapped), dirty: false }]))),
+      motorPrices: new Map(product.categories.flatMap((category) => category.id === "motor" ? category.options.map((option) => [option.id, { base_price_cny: option.motor_base_price_cny ?? product.base_price ?? 0, base_price_usd: option.motor_base_price_usd ?? product.price_usd ?? 0 }]) : [])),
       query: "",
       filter: "all",
       collapsed: new Set(product.categories.map((category) => category.id))
@@ -371,6 +382,7 @@ async function deleteConfigCategory(category) {
 function renderMappingEditor() {
   const editor = state.mappingEditor;
   if (!editor) return;
+  $$("[data-motor-price-cny]").forEach((field) => { const id = field.dataset.motorPriceCny; const usd = $(`[data-motor-price-usd="${CSS.escape(id)}"]`); editor.motorPrices.set(id, { base_price_cny: Number(field.value || 0), base_price_usd: Number(usd?.value || 0) }); });
   const lang = $(".lang-toggle.active", $("#product-dialog"))?.dataset.lang || state.catalogLanguage || "zh";
   const query = (editor.query || "").trim().toLocaleLowerCase();
   const groups = editor.categories.map((category) => {
@@ -389,7 +401,8 @@ function renderMappingEditor() {
         const optionName = lang === "en" ? (option.name_en || option.name) : option.name;
         const description = lang === "en" ? (option.description_en || option.description) : option.description;
         const specialNote = editor.notes.get(option.id)?.[lang] || "";
-        return `<div class="mapping-option"><input type="checkbox" value="${escapeHtml(option.id)}" aria-label="${lang === "en" ? "Enable" : "启用"} ${escapeHtml(optionName)}" ${editor.selected.has(option.id) ? "checked" : ""} /><div class="mapping-option-copy"><strong>${escapeHtml(optionName)}</strong>${description ? `<small>${escapeHtml(description.replace(/<[^>]*>/g, " "))}</small>` : ""}${specialNote ? `<b class="mapping-special-note">${escapeHtml(specialNote)}</b>` : ""}</div><button type="button" class="text-button mapping-note-button" data-edit-mapping-note="${escapeHtml(option.id)}">标注</button></div>`;
+        const motorPrice = category.id === "motor" ? (editor.motorPrices.get(option.id) || { base_price_cny: option.motor_base_price_cny ?? state.editingProduct?.base_price ?? 0, base_price_usd: option.motor_base_price_usd ?? state.editingProduct?.price_usd ?? 0 }) : null;
+        return `<div class="mapping-option"><input type="checkbox" value="${escapeHtml(option.id)}" aria-label="${lang === "en" ? "Enable" : "启用"} ${escapeHtml(optionName)}" ${editor.selected.has(option.id) ? "checked" : ""} /><div class="mapping-option-copy"><strong>${escapeHtml(optionName)}</strong>${description ? `<small>${escapeHtml(description.replace(/<[^>]*>/g, " "))}</small>` : ""}${specialNote ? `<b class="mapping-special-note">${escapeHtml(specialNote)}</b>` : ""}${motorPrice ? `<div class="motor-price-fields"><label>人民币基础价<input type="number" min="0" step="1" data-motor-price-cny="${escapeHtml(option.id)}" value="${Number(motorPrice.base_price_cny || 0)}"></label><label>美元基础价<input type="number" min="0" step="1" data-motor-price-usd="${escapeHtml(option.id)}" value="${Number(motorPrice.base_price_usd || 0)}"></label></div>` : ""}</div><button type="button" class="text-button mapping-note-button" data-edit-mapping-note="${escapeHtml(option.id)}">标注</button></div>`;
       }).join("")}</div>
     </section>
   `; }).join("");
@@ -466,13 +479,16 @@ async function saveProduct(event) {
         optionOverrides[optionId] = { description_override: note.zh || null, description_override_en: note.en || null };
       }
     }
+    const motorPrices = Object.fromEntries(Array.from(state.mappingEditor?.motorPrices || []).filter(([optionId]) => state.mappingEditor.selected.has(optionId)));
+    $$("[data-motor-price-cny]").forEach((field) => { const id = field.dataset.motorPriceCny; const usd = $(`[data-motor-price-usd="${CSS.escape(id)}"]`); motorPrices[id] = { base_price_cny: Number(field.value || 0), base_price_usd: Number(usd?.value || 0) }; });
     await api(`/api/v1/admin/products/${productId}/configuration`, {
       method: "PUT",
       body: JSON.stringify({
         name: form.elements.name.value.trim(), name_en: form.elements.name_en.value.trim(), title_name: form.elements.title_name.value.trim(), title_name_en: form.elements.title_name_en.value.trim(),
         description: form.elements.description.value.trim(), description_en: form.elements.description_en.value.trim(), base_price: Number(form.elements.base_price.value || 0), price_usd: Number(form.elements.price_usd?.value || 0),
         sort_order: Number(form.elements.sort_order.value || 0), enabled: form.elements.enabled.checked,
-        colors, option_ids: optionIds, option_overrides: optionOverrides
+        colors, option_ids: optionIds, option_overrides: optionOverrides, motor_prices: motorPrices,
+        specifications: Array.from($("#product-specifications-editor").querySelectorAll(".specification-row")).map((row, i) => ({ id: row.dataset.id || null, label: row.querySelector('[data-spec="label"]').value, label_en: row.querySelector('[data-spec="label_en"]').value, value: row.querySelector('[data-spec="value"]').value, value_en: row.querySelector('[data-spec="value_en"]').value, sort_order: i }))
       })
     });
     $("#product-dialog").close(); showToast("产品配置已保存"); await loadData();
@@ -789,10 +805,10 @@ function setCategoryCollapsed(group, collapsed) {
   // Remove the large table from layout completely. Relying on a class alone
   // can leave a stale grid/scroll extent after collapsing long categories.
   if (table) table.hidden = collapsed;
-  if (button) {
+  if (button?.classList.contains("catalog-collapse")) {
     button.textContent = collapsed ? "展开分类" : "折叠分类";
-    button.setAttribute("aria-expanded", String(!collapsed));
   }
+  if (button) button.setAttribute("aria-expanded", String(!collapsed));
 }
 
 function restoreCollapsedCategories() {
@@ -872,6 +888,7 @@ function bindEvents() {
       setCategoryCollapsed(group, collapsed);
       if (collapsed) state.collapsedCategories.add(id);
       else state.collapsedCategories.delete(id);
+      localStorage.setItem("boten-admin-collapsed-categories", JSON.stringify(Array.from(state.collapsedCategories)));
     }
     const languageButton = event.target.closest(".lang-toggle"); if (languageButton) toggleDialogLanguage(languageButton);
     const catalogLanguageButton = event.target.closest("[data-catalog-lang]"); if (catalogLanguageButton) localStorage.setItem("boten-admin-language", catalogLanguageButton.dataset.catalogLang);
@@ -884,6 +901,10 @@ function bindEvents() {
       row.remove();
       if (wasDefault) $('[data-color-field="is_default"]', $("#color-editor-list")).checked = true;
     }
+  });
+  document.addEventListener("keydown", (event) => {
+    const target = event.target.closest?.("[data-collapse-category]");
+    if (target && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); target.click(); }
   });
   document.addEventListener("change", (event) => {
     const mappingCheckbox = event.target.closest('#mapping-editor input[type="checkbox"]');
@@ -927,7 +948,8 @@ function categoryCard(category = null) { catalogEditorCard({ title: category ? "
 async function addConfigOption(categoryId) { catalogEditorCard({ title:"添加配置", size:"medium", fields:[{name:"code",label:"配置编号",lang:"all",placeholder:"例如：BTK-1019",required:true},{name:"name",label:"配置名称",lang:"zh",placeholder:"例如：共轨喷油器测试套件",required:true},{name:"description",label:"配置描述",lang:"zh",type:"textarea",placeholder:"例如：适用于 Bosch CRIN4.2"},{name:"name_en",label:"配置名称",lang:"en",placeholder:"例如：Injector Test Kit"},{name:"description_en",label:"配置描述",lang:"en",type:"textarea",placeholder:"例如：For Bosch CRIN4.2"},{name:"image_path",label:"配置图片",lang:"all",placeholder:"上传图片或填写现有路径"},{name:"price",label:"人民币单价",lang:"all",type:"number",placeholder:"例如：1500"},{name:"price_usd",label:"美元单价",lang:"all",type:"number",placeholder:"例如：210"}], onSave:data=>api("/api/v1/admin/config-catalog/options",{method:"POST",body:JSON.stringify({...data,category_id:categoryId,price:Number(data.price||0),price_usd:Number(data.price_usd||0),enabled:true})}) }); }
 
 // Unified bilingual add-device editor.
-function addProductButton(){const panel=$('[data-view-panel="products"] .panel-header');if(!panel||$("#add-product-button"))return;const button=document.createElement("button");button.id="add-product-button";button.className="button button-secondary";button.textContent="添加设备";button.addEventListener("click",()=>catalogEditorCard({title:"添加设备",size:"large",fields:[{name:"id",label:"设备编号",lang:"all",placeholder:"例如：CR999",required:true},{name:"name",label:"设备名称",lang:"zh",placeholder:"例如：BOTEN CR999",required:true},{name:"title_name",label:"产品标题",lang:"zh",placeholder:"例如：共轨喷油器试验台",required:true},{name:"description",label:"产品描述",lang:"zh",type:"textarea",placeholder:"例如：适用于共轨喷油器测试"},{name:"name_en",label:"设备名称",lang:"en",placeholder:"例如：BOTEN CR999"},{name:"title_name_en",label:"产品标题",lang:"en",placeholder:"例如：Common Rail Test Bench"},{name:"description_en",label:"产品描述",lang:"en",type:"textarea",placeholder:"例如：Designed for common rail testing"},{name:"base_price",label:"人民币单价",lang:"all",type:"number",placeholder:"例如：158000"},{name:"price_usd",label:"美元单价",lang:"all",type:"number",placeholder:"例如：22000"}],onSave:data=>api("/api/v1/admin/products",{method:"POST",body:JSON.stringify({...data,base_price:Number(data.base_price||0),price_usd:Number(data.price_usd||0)})})}));panel.appendChild(button);}
+function addProductButton(){const panel=$('[data-view-panel="products"] .panel-header');if(!panel||$("#add-product-button"))return;const button=document.createElement("button");button.id="add-product-button";button.className="button button-secondary";button.textContent="添加设备";button.addEventListener("click",()=>catalogEditorCard({title:"添加设备",size:"large",fields:[{name:"id",label:"设备编号",lang:"all",placeholder:"例如：CR999",required:true},{name:"name",label:"设备名称",lang:"zh",placeholder:"例如：BOTEN CR999",required:true},{name:"title_name",label:"产品标题",lang:"zh",placeholder:"例如：共轨喷油器试验台",required:true},{name:"description",label:"设备概况",lang:"zh",type:"textarea",placeholder:"例如：适用于共轨喷油器测试"},{name:"name_en",label:"设备名称",lang:"en",placeholder:"例如：BOTEN CR999"},{name:"title_name_en",label:"产品标题",lang:"en",placeholder:"例如：Common Rail Test Bench"},{name:"description_en",label:"设备概况",lang:"en",type:"textarea",placeholder:"例如：Designed for common rail testing"},{name:"base_price",label:"人民币单价",lang:"all",type:"number",placeholder:"例如：158000"},{name:"price_usd",label:"美元单价",lang:"all",type:"number",placeholder:"例如：22000"}],onSave:data=>api("/api/v1/admin/products",{method:"POST",body:JSON.stringify({...data,base_price:Number(data.base_price||0),price_usd:Number(data.price_usd||0)})})}));panel.appendChild(button);const exportButton=document.createElement("a");exportButton.className="button button-quiet";exportButton.href="/api/v1/admin/catalog-template.xlsx";exportButton.textContent="导出 Excel 模板";exportButton.target="_blank";panel.appendChild(exportButton);}
+function addProductButton(){const panel=$('[data-view-panel="products"] .panel-header');if(!panel||$("#add-product-button"))return;const button=document.createElement("button");button.id="add-product-button";button.className="button button-secondary";button.textContent="添加设备";button.addEventListener("click",()=>catalogEditorCard({title:"添加设备",size:"large",fields:[{name:"id",label:"设备编号",lang:"all",placeholder:"例如：CR999",required:true},{name:"name",label:"设备名称",lang:"zh",placeholder:"例如：BOTEN CR999",required:true},{name:"title_name",label:"产品标题",lang:"zh",placeholder:"例如：共轨喷油器试验台",required:true},{name:"description",label:"设备概况",lang:"zh",type:"textarea",placeholder:"例如：适用于共轨喷油器测试"},{name:"name_en",label:"设备名称",lang:"en",placeholder:"例如：BOTEN CR999"},{name:"title_name_en",label:"产品标题",lang:"en",placeholder:"例如：Common Rail Test Bench"},{name:"description_en",label:"设备概况",lang:"en",type:"textarea",placeholder:"例如：Designed for common rail testing"},{name:"base_price",label:"人民币单价",lang:"all",type:"number",placeholder:"例如：158000"},{name:"price_usd",label:"美元单价",lang:"all",type:"number",placeholder:"例如：22000"}],onSave:data=>api("/api/v1/admin/products",{method:"POST",body:JSON.stringify({...data,base_price:Number(data.base_price||0),price_usd:Number(data.price_usd||0)})})}));panel.appendChild(button);const exportButton=document.createElement("a");exportButton.className="button button-quiet";exportButton.href="/api/v1/admin/catalog-template.xlsx";exportButton.textContent="导出 Excel 模板";exportButton.target="_blank";panel.appendChild(exportButton);const input=document.createElement("input");input.type="file";input.accept=".xlsx";input.className="sr-only";input.addEventListener("change",async()=>{if(!input.files[0])return;const data=await input.files[0].arrayBuffer();const preview=await fetch("/api/v1/admin/catalog-template/preview",{method:"POST",headers:{"Content-Type":"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"},body:data});const result=await preview.json();if(!result.valid){showToast("模板校验失败，请检查错误");return;}if(confirm("模板校验通过，确认导入？")){const commit=await fetch("/api/v1/admin/catalog-template/commit",{method:"POST",headers:{"Content-Type":"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"},body:data});if(commit.ok){showToast("Excel 导入成功");loadData();}else showToast("Excel 导入失败");}});document.body.appendChild(input);const upload=document.createElement("button");upload.className="button button-quiet";upload.type="button";upload.textContent="上传 Excel";upload.addEventListener("click",()=>input.click());panel.appendChild(upload);}
 
 async function saveConfigOption(event) {
   event.preventDefault(); const form=event.currentTarget; if(event.submitter?.value==="cancel"){form.closest("dialog")?.close();return;}
@@ -937,4 +959,7 @@ async function saveConfigOption(event) {
 
 document.addEventListener("DOMContentLoaded", async () => {
   bindEvents(); await checkApi(); await restoreSession();
+});
+document.addEventListener("click", (event) => {
+  if (event.target.closest("[data-catalog-lang]")) setTimeout(renderProducts, 0);
 });

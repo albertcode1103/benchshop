@@ -77,6 +77,31 @@ CREATE TABLE IF NOT EXISTS product_options (
 CREATE INDEX IF NOT EXISTS idx_options_category ON options(category_id);
 CREATE INDEX IF NOT EXISTS idx_product_options_product ON product_options(product_id);
 
+CREATE TABLE IF NOT EXISTS product_motor_prices (
+    product_id TEXT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    motor_option_id TEXT NOT NULL REFERENCES options(id) ON DELETE CASCADE,
+    base_price_cny INTEGER NOT NULL DEFAULT 0,
+    base_price_usd INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (product_id, motor_option_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_product_motor_prices_product ON product_motor_prices(product_id);
+
+CREATE TABLE IF NOT EXISTS product_specifications (
+    id TEXT PRIMARY KEY,
+    product_id TEXT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    label TEXT NOT NULL DEFAULT '',
+    label_en TEXT NOT NULL DEFAULT '',
+    value TEXT NOT NULL DEFAULT '',
+    value_en TEXT NOT NULL DEFAULT '',
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_product_specifications_product ON product_specifications(product_id, sort_order);
+
 CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
     email TEXT UNIQUE,
@@ -196,4 +221,19 @@ def initialize_database() -> None:
         mapping_columns = {row[1] for row in connection.execute("PRAGMA table_info(product_options)").fetchall()}
         if "description_override_en" not in mapping_columns:
             connection.execute("ALTER TABLE product_options ADD COLUMN description_override_en TEXT")
+        motor_price_columns = {row[1] for row in connection.execute("PRAGMA table_info(product_motor_prices)").fetchall()}
+        if "base_price_cny" not in motor_price_columns:
+            connection.execute("ALTER TABLE product_motor_prices ADD COLUMN base_price_cny INTEGER NOT NULL DEFAULT 0")
+        if "base_price_usd" not in motor_price_columns:
+            connection.execute("ALTER TABLE product_motor_prices ADD COLUMN base_price_usd INTEGER NOT NULL DEFAULT 0")
+        if "updated_at" not in motor_price_columns:
+            connection.execute("ALTER TABLE product_motor_prices ADD COLUMN updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP")
+        connection.execute("""
+            INSERT OR IGNORE INTO product_motor_prices (product_id, motor_option_id, base_price_cny, base_price_usd)
+            SELECT po.product_id, po.option_id, p.base_price, p.price_usd
+            FROM product_options po
+            JOIN options o ON o.id = po.option_id AND o.category_id = 'motor'
+            JOIN products p ON p.id = po.product_id
+            WHERE po.enabled = 1
+        """)
         connection.execute("PRAGMA optimize")

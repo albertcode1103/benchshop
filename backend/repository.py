@@ -11,7 +11,7 @@ def list_products(lang: str = "zh") -> List[Dict[str, Any]]:
     with get_connection() as connection:
         rows = connection.execute(
             """
-            SELECT id, name, title_name, description, name_en, title_name_en, description_en, base_price
+            SELECT id, name, title_name, description, name_en, title_name_en, description_en, base_price, price_usd
             FROM products
             WHERE enabled = 1
             ORDER BY sort_order, name
@@ -28,7 +28,7 @@ def get_product(product_id: str, lang: str = "zh") -> Optional[Dict[str, Any]]:
     with get_connection() as connection:
         product_row = connection.execute(
             """
-            SELECT id, name, title_name, description, name_en, title_name_en, description_en, base_price
+            SELECT id, name, title_name, description, name_en, title_name_en, description_en, base_price, price_usd
             FROM products
             WHERE id = ? AND enabled = 1
             """,
@@ -59,13 +59,20 @@ def get_product(product_id: str, lang: str = "zh") -> Optional[Dict[str, Any]]:
                 po.description_override, po.description_override_en,
                 COALESCE(po.image_override, o.image_path) AS image_path,
                 COALESCE(po.price_override, o.price) AS price,
-                po.mapping_id
+                po.mapping_id,
+                mp.base_price_cny AS motor_base_price_cny,
+                mp.base_price_usd AS motor_base_price_usd
             FROM product_options po
             JOIN options o ON o.id = po.option_id
             JOIN categories c ON c.id = o.category_id
+            LEFT JOIN product_motor_prices mp ON mp.product_id = po.product_id AND mp.motor_option_id = po.option_id
             WHERE po.product_id = ? AND po.enabled = 1 AND o.enabled = 1
             ORDER BY c.sort_order, po.sort_order, o.sort_order, o.name
             """,
+            (product_id,),
+        ).fetchall()
+        specification_rows = connection.execute(
+            "SELECT id, label, label_en, value, value_en, sort_order FROM product_specifications WHERE product_id = ? ORDER BY sort_order, id",
             (product_id,),
         ).fetchall()
 
@@ -118,4 +125,11 @@ def get_product(product_id: str, lang: str = "zh") -> Optional[Dict[str, Any]]:
         item.pop("description_override_en", None)
         category["options"].append(item)
     product["categories"] = list(categories.values())
+    product["specifications"] = []
+    for row in specification_rows:
+        spec = dict(row)
+        if lang.startswith("en"):
+            spec["label"] = spec.get("label_en") or spec["label"]
+            spec["value"] = spec.get("value_en") or spec["value"]
+        product["specifications"].append(spec)
     return product

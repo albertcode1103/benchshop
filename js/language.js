@@ -13,7 +13,7 @@
       admin: "管理员", logout: "退出登录", shareTitle: "配置分享码", shareDesc: "将此 6 位代码发给业务员。",
       copyHint: "点击代码复制", expires: "有效期至", cartEmpty: "购物车为空", close: "关闭",
       closeCart: "关闭购物车", closeShare: "关闭分享", footer: "配置仅供参考，请联系销售报价。",
-      selectAll: "全选", clearAll: "全不选", shareAction: "分享", deleteAction: "删除",
+      selectAll: "全选", clearAll: "全不选", shareAction: "分享", deleteAction: "删除", overview: "设备概况",
       createAccount: "创建账号", registerContinue: "注册并继续", registering: "注册中…", signingIn: "登录中…",
       accountFallback: "账号", signInToSave: "登录后可保存配置", noSaved: "暂无配置", generating: "生成中…",
       copied: "已复制", copyCode: "复制分享码", confirmClear: "删除全部配置？", requestFailed: "请求失败",
@@ -32,7 +32,7 @@
       admin: "Admin", logout: "Sign out", shareTitle: "Share Code", shareDesc: "Send this 6-digit code to sales.",
       copyHint: "Tap code to copy", expires: "Expires", cartEmpty: "Cart is empty", close: "Close",
       closeCart: "Close cart", closeShare: "Close share", footer: "For reference only. Contact sales for a quote.",
-      selectAll: "Select all", clearAll: "Clear all", shareAction: "Share", deleteAction: "Delete",
+      selectAll: "Select all", clearAll: "Clear all", shareAction: "Share", deleteAction: "Delete", overview: "Overview",
       createAccount: "Create account", registerContinue: "Register", registering: "Registering…", signingIn: "Signing in…",
       accountFallback: "Account", signInToSave: "Sign in to save", noSaved: "No saved items", generating: "Generating…",
       copied: "Copied", copyCode: "Copy code", confirmClear: "Delete all items?", requestFailed: "Request failed",
@@ -67,7 +67,8 @@
       "auth-password-label": "password", "auth-submit": "login", "guest-continue": "guest",
       "auth-hint": "authHint", "account-name": "user", "account-role": "customer",
       "account-logout": "logout", "share-title": "shareTitle", "share-description": "shareDesc",
-      "share-copy-status": "copyHint", "share-expiry-label": "expires", "cart-empty": "cartEmpty"
+      "share-copy-status": "copyHint", "share-expiry-label": "expires", "cart-empty": "cartEmpty",
+      "overview-title": "overview"
     };
     if (account && !account.dataset.userName) account.textContent = text.account;
     if (deviceLabel) deviceLabel.textContent = text.device;
