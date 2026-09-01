@@ -10,7 +10,7 @@
 ## 部署前准备
 
 1. NAS/Linux 已安装 Docker Engine 与 Docker Compose v2，并可执行 `docker compose version`。
-2. 已将项目代码复制或克隆到服务器，例如 FNOS：`/vol1/docker/Benchshop`。
+2. 已将项目代码复制或克隆到服务器，例如群晖：`/volume1/docker/benchshop`。
 3. 将当前运行中的业务数据迁移到部署目录：
 
    ```text
@@ -27,8 +27,8 @@
 
 在项目根目录执行。下面示例使用 NAS 默认的相对数据目录 `./data`：
 
-```sh
-cd /vol1/docker/Benchshop
+   ```sh
+cd /volume1/docker/benchshop
 cp deploy/.env.example deploy/.env
 ```
 
@@ -41,7 +41,7 @@ BOTEN_DATA_DIR=./data
 # LAN 阶段可保留本地地址；公网部署时替换为唯一的正式 HTTPS 域名。
 BOTEN_CORS_ORIGINS=http://127.0.0.1:8080,http://localhost:8080
 
-# 容器内的中文 PDF 字体路径，通常无需修改。
+# 可选：若自行挂载了 CJK 字体，可填写容器内路径；默认使用内置回退字体。
 BOTEN_PDF_FONT_PATH=/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc
 ```
 
@@ -62,15 +62,57 @@ http://<NAS-LAN-IP>:8080/admin/
 http://<NAS-LAN-IP>:8080/api/v1/health
 ```
 
-## 更新项目代码
+## 从 Git 更新（BOTEN-NAS 推荐流程）
+
+BOTEN-NAS 已验证可通过 IPv4 访问 GitHub，但 Linux 不支持 Windows 的
+`schannel` SSL 后端。首次配置或出现 SSL 错误时，只需在项目目录设置一次：
+
+```sh
+cd /volume1/docker/benchshop
+git config --local http.sslBackend openssl
+git lfs install --local
+```
+
+每次从本机确认并推送到 GitHub 后，按以下顺序更新。数据库不在 Git 中，更新前会先生成备份：
+
+```sh
+cd /volume1/docker/benchshop
+git fetch --ipv4 origin
+git merge --ff-only origin/main
+git lfs pull
+sudo docker compose exec api python -m backend.database_maintenance backup --output-dir /data/backups --keep 30
+sudo docker compose build --progress=plain api
+sudo docker compose up -d --force-recreate
+sudo docker compose ps
+```
+
+确认 `api` 为 `healthy`、`web` 为 `Up` 后再访问 `http://<NAS-IP>:8080/`。
+若更新前服务尚未运行，先执行备份命令会失败，此时可跳过该行，但应确认
+`data/boten.db` 已有独立备份。若 `git fetch` 报 `schannel`，重新执行上面的
+`git config`；若提示 IPv6 连接失败，保留 `--ipv4`。
+
+### 回滚到上一版本
+
+不要使用 `git reset --hard` 覆盖未确认的数据。先查看可用提交，再按指定提交构建：
+
+```sh
+git log --oneline -10
+git checkout <已确认的提交或标签>
+sudo docker compose build --progress=plain api
+sudo docker compose up -d --force-recreate
+```
+
+回滚完成后，下一次正常更新前执行 `git switch main`。
+
+## 从 Git 更新项目代码（通用说明）
 
 更新前先备份数据。拉取或复制新代码后，在项目根目录执行：
 
 ```sh
-docker compose exec api python -m backend.database_maintenance backup --output-dir /data/backups --keep 30
-docker compose build --no-cache
-docker compose up -d --force-recreate
-docker compose ps
+sudo docker compose exec api python -m backend.database_maintenance backup --output-dir /data/backups --keep 30
+sudo docker compose build --no-cache
+sudo docker compose up -d --force-recreate
+sudo docker compose ps
 ```
 
 如更新了网页样式或脚本，请在浏览器按 `Ctrl+F5`（macOS 为 `Cmd+Shift+R`）刷新缓存。

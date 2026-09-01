@@ -12,6 +12,13 @@
 - 最新源码、文档、价格源表和运行数据库已同步至群晖 `BOTEN_NAS` 的 `/volume1/docker/benchshop`。NAS 旧库已备份到 `data/backups/boten-before-local-sync-20260901-160000.db`，当前 `data/boten.db` 已完成完整性与校验和验证。
 - NAS Compose 项目已成功启动：`benchshop-api-1` 为 `healthy`，`benchshop-web-1` 为 `running`，局域网入口为 `http://<NAS-IP>:8080/`，后台入口为 `http://<NAS-IP>:8080/admin/`。
 - 首次启动发现数据库已有 `product_motor_prices` 表而 Alembic 版本停留在 `20260831_0004`；已核对表结构、索引、外键和数据正常后，使用 `alembic stamp 20260901_0005` 修复迁移记录，随后由启动流程完成 `20260901_0006`。今后不要手动删除 `alembic_version` 或重复执行旧迁移。
+- 已将群晖 Git 更新流程固化到 `deploy/README.md`：BOTEN-NAS 使用 `openssl` SSL 后端、`--ipv4` 拉取、Git LFS 同步，更新前备份数据库，再仅重建 API 并强制重建容器。API 构建已移除 Debian 字体下载，避免 NAS 构建因 APT 网络停滞；PDF 使用 ReportLab 内置中文字体回退。
+
+### BOTEN-NAS 最终更新基线
+
+- 本机 E 盘是唯一日常开发源；确认后的代码推送到 GitHub `main`，BOTEN-NAS 只通过 `git fetch --ipv4` 和 `git merge --ff-only` 获取版本。
+- `data/`、`deploy/.env`、上传图片和数据库备份不纳入 Git；每次更新前使用 `database_maintenance backup`，更新后确认 `api` 为 `healthy`、`web` 为 `Up`。
+- 若需回滚，先查看提交并检出已确认版本，不覆盖 `data/`；迁移异常时先备份并核对 `alembic_version`，禁止删除迁移记录或手动重复执行旧迁移。
 
 ## 今日优先事项
 
