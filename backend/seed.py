@@ -229,6 +229,9 @@ def seed() -> None:
                         ),
                     )
 
+    # Product/motor mappings are inserted above; run the compatibility backfill
+    # afterwards so every mapped motor receives its initial dual-currency price.
+    initialize_database()
     print("Seeded {} products and {} shared options.".format(len(products), len(option_lookup)))
 
 

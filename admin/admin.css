@@ -186,7 +186,7 @@ dialog > .toast { z-index: 10; }
   th, td { padding: 13px 18px; }.form-grid { grid-template-columns: 1fr; }.form-grid .full { grid-column: auto; }
   .color-editor-row { grid-template-columns: 1fr 1fr; }.color-editor-row .color-image-field { grid-column: 1/-1; }.mapping-options { grid-template-columns: 1fr; }
 }
-.specification-editor{border-top:1px solid var(--line);padding-top:16px}.specification-editor h3{font-size:14px;margin:0 0 10px}.specification-row{display:grid;grid-template-columns:1fr 1fr 1fr 1fr auto;gap:8px;align-items:center;margin-bottom:8px}.specification-row input{min-width:0}@media(max-width:760px){.specification-row{grid-template-columns:1fr 1fr}.specification-row button{justify-self:start}}
+.specification-editor{border-top:1px solid var(--line);padding-top:16px}.specification-editor h3{font-size:14px;margin:0 0 10px}.specification-row{display:grid;grid-template-columns:repeat(4,minmax(0,1fr)) auto auto auto;gap:8px;align-items:center;margin-bottom:8px}.specification-row input{min-width:0}@media(max-width:920px){.specification-row{grid-template-columns:1fr 1fr}.specification-row button{justify-self:start}}
  .mapping-override { display:block; width:100%; margin-top:6px; font-size:12px; }
  .mapping-option > input { flex: 0 0 auto; width: 17px; height: 17px; margin-top: 2px; accent-color: var(--orange); }
  .mapping-option-copy { min-width: 0; flex: 1; }

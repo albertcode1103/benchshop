@@ -349,10 +349,12 @@
   border-radius: var(--radius-lg);
   background: var(--color-surface);
 }
+.device-overview summary{display:flex;align-items:center;justify-content:space-between;gap:16px;cursor:pointer;list-style:none}.device-overview summary::-webkit-details-marker{display:none}.device-overview summary::after{content:"⌄";font-size:18px;transition:transform .18s ease}.device-overview:not([open]) summary::after{transform:rotate(-90deg)}.overview-toggle-hint{margin-left:auto;color:var(--muted,#6b7280);font-size:12px;font-weight:400}.device-overview .overview-grid{padding-top:16px}
 .overview-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(320px,1fr);gap:24px;align-items:start}.overview-grid h3{font-size:14px;margin:0 0 8px}.overview-specifications table{width:100%;border-collapse:collapse}.overview-specifications th,.overview-specifications td{padding:8px 10px;border-bottom:1px solid var(--line,#e5e7eb);text-align:left;vertical-align:top}.overview-specifications th{font-weight:600;width:38%}
 @media (max-width: 760px){.overview-grid{grid-template-columns:1fr;gap:16px}.overview-specifications{overflow-x:auto}.overview-specifications table{min-width:280px}}
 
-.device-overview h2 {
+.device-overview h2,
+.device-overview summary > span:first-child {
   margin: 0 0 var(--space-sm);
   font-size: 1.125rem;
   line-height: 1.35;

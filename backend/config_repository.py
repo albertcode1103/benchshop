@@ -40,6 +40,9 @@ def build_snapshot(product_id: str, color: str, selections: Dict[str, Any], lang
         requested = selections.get(category["id"])
         requested_ids = requested if isinstance(requested, list) else [requested] if requested else []
         option_map = {option["id"]: option for option in category["options"]}
+        if category["id"] == "motor" and not requested_ids and option_map:
+            # Preserve existing saved-config/quote callers while keeping motor single-select.
+            requested_ids = [next(iter(option_map))]
         invalid = [option_id for option_id in requested_ids if option_id not in option_map]
         if invalid:
             raise ValueError("Unsupported option: " + ", ".join(invalid))
@@ -58,8 +61,10 @@ def build_snapshot(product_id: str, color: str, selections: Dict[str, Any], lang
     if not motor_category or len(motor_category["options"]) != 1:
         raise ValueError("Exactly one motor option is required")
     motor = motor_category["options"][0]
-    snapshot["product"]["base_price"] = motor.get("motor_base_price_cny") if motor.get("motor_base_price_cny") is not None else snapshot["product"]["base_price"]
-    snapshot["product"]["price_usd"] = motor.get("motor_base_price_usd") if motor.get("motor_base_price_usd") is not None else snapshot["product"]["price_usd"]
+    if motor.get("motor_base_price_cny") is None or motor.get("motor_base_price_usd") is None:
+        raise ValueError("Selected motor does not have CNY and USD base prices")
+    snapshot["product"]["base_price"] = motor["motor_base_price_cny"]
+    snapshot["product"]["price_usd"] = motor["motor_base_price_usd"]
     snapshot["product"]["motor_option_id"] = motor.get("id")
     return snapshot
 

@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 from .auth_routes import require_admin, require_catalog_manager
 from .user_repository import create_user, get_user_by_id, list_users, set_user_enabled, update_user
 from .config_repository import deactivate_share, list_shares
-from .audit_repository import list_audit_logs
+from .audit_repository import list_audit_logs, write_audit
 from .admin_catalog_repository import (
     get_admin_product,
     list_admin_products,
@@ -30,13 +30,25 @@ from .admin_catalog_repository import (
 )
 from .excel_service import catalog_template, parse_xlsx
 from .database import get_connection
+from .database_maintenance import create_backup
 
 
 router = APIRouter(prefix="/api/v1/admin", tags=["admin"], dependencies=[Depends(require_catalog_manager)])
 
+CATALOG_SHEET_HEADERS = [
+    ["设备型号", "中文名称", "英文名称", "人民币参考价", "美元参考价", "启用"],
+    ["配置编号", "分类编号", "中文名称", "英文名称", "中文描述", "英文描述", "备注", "人民币价格", "美元价格", "启用"],
+    ["设备型号", "电机配置编号", "人民币基础价", "美元基础价"],
+    ["设备型号", "参数ID", "中文项目", "英文项目", "中文数据", "英文数据", "排序"],
+]
+
 @router.get("/catalog-template.xlsx")
 def export_catalog_template():
-    return Response(content=catalog_template(list_admin_products(), list_config_categories()), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": "attachment; filename=boten-catalog-template.xlsx"})
+    with get_connection() as db:
+        motor_prices = [dict(row) for row in db.execute("SELECT product_id, motor_option_id, base_price_cny, base_price_usd FROM product_motor_prices ORDER BY product_id, motor_option_id")]
+        specifications = [dict(row) for row in db.execute("SELECT id, product_id, label, label_en, value, value_en, sort_order FROM product_specifications ORDER BY product_id, sort_order, id")]
+    content = catalog_template(list_admin_products(), list_config_categories(), motor_prices, specifications)
+    return Response(content=content, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": "attachment; filename=boten-catalog-template.xlsx"})
 
 @router.post("/catalog-template/preview")
 async def preview_catalog_template(request: Request):
@@ -47,7 +59,6 @@ async def preview_catalog_template(request: Request):
         sheets = parse_xlsx(data)
     except Exception as exc:
         raise HTTPException(status_code=400, detail="无法解析 Excel 文件") from exc
-    expected = [["设备型号","中文名称","英文名称","人民币参考价","美元参考价","启用"], ["配置编号","分类编号","中文名称","英文名称","中文描述","英文描述","备注","人民币价格","美元价格","启用"], ["设备型号","电机配置编号","人民币基础价","美元基础价"], ["设备型号","参数ID","中文项目","英文项目","中文数据","英文数据","排序"]]
     report=[]
     with get_connection() as db:
         product_ids={r[0] for r in db.execute("SELECT id FROM products").fetchall()}
@@ -55,7 +66,7 @@ async def preview_catalog_template(request: Request):
     for index, rows in enumerate(sheets):
         headers=rows[0] if rows else []
         errors=[]
-        if headers != expected[index]: errors.append("表头不匹配")
+        if headers != CATALOG_SHEET_HEADERS[index]: errors.append("表头不匹配")
         for line, row in enumerate(rows[1:], 2):
             key=row[0] if row else ""
             if index in (0,3) and key not in product_ids: errors.append(f"第{line}行：未知设备型号 {key}")
@@ -65,14 +76,17 @@ async def preview_catalog_template(request: Request):
     return {"valid": all(not item["errors"] for item in report), "sheets": report}
 
 @router.post("/catalog-template/commit")
-async def commit_catalog_template(request: Request):
+async def commit_catalog_template(request: Request, user=Depends(require_catalog_manager)):
     data = await request.body()
+    if len(data) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="Excel 文件不能超过 10MB")
     try:
         sheets = parse_xlsx(data)
     except Exception as exc:
         raise HTTPException(status_code=400, detail="无法解析 Excel 文件") from exc
-    if not sheets or not sheets[0] or sheets[0][0] != ["设备型号","中文名称","英文名称","人民币参考价","美元参考价","启用"]:
-        raise HTTPException(status_code=400, detail="设备目录表头不匹配")
+    if len(sheets) != 4 or any(not sheet or sheet[0] != CATALOG_SHEET_HEADERS[index] for index, sheet in enumerate(sheets)):
+        raise HTTPException(status_code=400, detail="Excel 工作表或表头不匹配，请使用最新模板")
+    backup = create_backup(keep=30)
     updates=[]
     with get_connection() as db:
         for row in sheets[0][1:]:
@@ -111,7 +125,9 @@ async def commit_catalog_template(request: Request):
                 if db.execute("SELECT 1 FROM products WHERE id=?", (row[0],)).fetchone() is None: raise HTTPException(status_code=400, detail=f"未知设备型号 {row[0]}")
                 if row[1] and db.execute("SELECT 1 FROM product_specifications WHERE id=? AND product_id=?", (row[1],row[0])).fetchone() is not None:
                     db.execute("UPDATE product_specifications SET label=?,label_en=?,value=?,value_en=?,sort_order=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND product_id=?", (row[2],row[3],row[4],row[5],int(row[6] or 0),row[1],row[0])); specs_updated+=1
-    return {"updated": len(updates), "options_updated": len(option_updates), "motor_prices_updated": len(motor_updates), "specifications_updated": specs_updated}
+    counts = {"updated": len(updates), "options_updated": len(option_updates), "motor_prices_updated": len(motor_updates), "specifications_updated": specs_updated}
+    write_audit(user["id"], "catalog_import", "catalog", "excel", {**counts, "backup": backup.name})
+    return {**counts, "backup": backup.name}
 
 
 class CreateStaffRequest(BaseModel):

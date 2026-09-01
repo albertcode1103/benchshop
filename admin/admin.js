@@ -301,11 +301,12 @@ async function openProductEditor(productId) {
     form.elements.sort_order.value = product.sort_order;
     form.elements.enabled.checked = product.enabled;
     const specificationEditor = $("#product-specifications-editor");
-    const renderSpecifications = () => { specificationEditor.innerHTML = (state.editingProduct.specifications || []).map((s, i) => `<div class="specification-row"><input data-spec="label" value="${escapeHtml(s.label || "")}" placeholder="项目"><input data-spec="label_en" value="${escapeHtml(s.label_en || "")}" placeholder="Project"><input data-spec="value" value="${escapeHtml(s.value || "")}" placeholder="数据"><input data-spec="value_en" value="${escapeHtml(s.value_en || "")}" placeholder="Value"><button type="button" class="button button-quiet" data-remove-spec="${i}">删除</button></div>`).join(""); };
+    const renderSpecifications = () => { specificationEditor.innerHTML = (state.editingProduct.specifications || []).map((s, i) => `<div class="specification-row" data-id="${escapeHtml(s.id || "")}"><input data-spec="label" aria-label="中文项目" value="${escapeHtml(s.label || "")}" placeholder="中文项目"><input data-spec="label_en" aria-label="英文项目" value="${escapeHtml(s.label_en || "")}" placeholder="英文项目"><input data-spec="value" aria-label="中文数据" value="${escapeHtml(s.value || "")}" placeholder="中文数据"><input data-spec="value_en" aria-label="英文数据" value="${escapeHtml(s.value_en || "")}" placeholder="英文数据"><button type="button" class="button button-quiet" data-move-spec="${i}" data-direction="-1" ${i ? "" : "disabled"}>↑</button><button type="button" class="button button-quiet" data-move-spec="${i}" data-direction="1" ${i === state.editingProduct.specifications.length - 1 ? "" : "disabled"}>↓</button><button type="button" class="button button-quiet" data-remove-spec="${i}">删除</button></div>`).join(""); };
     state.editingProduct.specifications = Array.isArray(product.specifications) ? product.specifications : [];
     renderSpecifications();
     $("#add-specification-button").onclick = () => { state.editingProduct.specifications.push({ label: "", label_en: "", value: "", value_en: "" }); renderSpecifications(); };
-    specificationEditor.onclick = (event) => { const button = event.target.closest("[data-remove-spec]"); if (button) { state.editingProduct.specifications.splice(Number(button.dataset.removeSpec), 1); renderSpecifications(); } };
+    const captureSpecifications = () => { state.editingProduct.specifications = Array.from(specificationEditor.querySelectorAll(".specification-row")).map((row) => ({ id: row.dataset.id || null, label: row.querySelector('[data-spec="label"]').value, label_en: row.querySelector('[data-spec="label_en"]').value, value: row.querySelector('[data-spec="value"]').value, value_en: row.querySelector('[data-spec="value_en"]').value })); };
+    specificationEditor.onclick = (event) => { const remove = event.target.closest("[data-remove-spec]"); const move = event.target.closest("[data-move-spec]"); if (remove) { captureSpecifications(); state.editingProduct.specifications.splice(Number(remove.dataset.removeSpec), 1); renderSpecifications(); } if (move) { captureSpecifications(); const from = Number(move.dataset.moveSpec); const to = from + Number(move.dataset.direction); const items = state.editingProduct.specifications; [items[from], items[to]] = [items[to], items[from]]; renderSpecifications(); } };
     $("#product-dialog-title").textContent = `编辑 ${product.name}`;
     renderColorEditor(product.colors);
     state.mappingEditor = {
@@ -948,8 +949,57 @@ function categoryCard(category = null) { catalogEditorCard({ title: category ? "
 async function addConfigOption(categoryId) { catalogEditorCard({ title:"添加配置", size:"medium", fields:[{name:"code",label:"配置编号",lang:"all",placeholder:"例如：BTK-1019",required:true},{name:"name",label:"配置名称",lang:"zh",placeholder:"例如：共轨喷油器测试套件",required:true},{name:"description",label:"配置描述",lang:"zh",type:"textarea",placeholder:"例如：适用于 Bosch CRIN4.2"},{name:"name_en",label:"配置名称",lang:"en",placeholder:"例如：Injector Test Kit"},{name:"description_en",label:"配置描述",lang:"en",type:"textarea",placeholder:"例如：For Bosch CRIN4.2"},{name:"image_path",label:"配置图片",lang:"all",placeholder:"上传图片或填写现有路径"},{name:"price",label:"人民币单价",lang:"all",type:"number",placeholder:"例如：1500"},{name:"price_usd",label:"美元单价",lang:"all",type:"number",placeholder:"例如：210"}], onSave:data=>api("/api/v1/admin/config-catalog/options",{method:"POST",body:JSON.stringify({...data,category_id:categoryId,price:Number(data.price||0),price_usd:Number(data.price_usd||0),enabled:true})}) }); }
 
 // Unified bilingual add-device editor.
-function addProductButton(){const panel=$('[data-view-panel="products"] .panel-header');if(!panel||$("#add-product-button"))return;const button=document.createElement("button");button.id="add-product-button";button.className="button button-secondary";button.textContent="添加设备";button.addEventListener("click",()=>catalogEditorCard({title:"添加设备",size:"large",fields:[{name:"id",label:"设备编号",lang:"all",placeholder:"例如：CR999",required:true},{name:"name",label:"设备名称",lang:"zh",placeholder:"例如：BOTEN CR999",required:true},{name:"title_name",label:"产品标题",lang:"zh",placeholder:"例如：共轨喷油器试验台",required:true},{name:"description",label:"设备概况",lang:"zh",type:"textarea",placeholder:"例如：适用于共轨喷油器测试"},{name:"name_en",label:"设备名称",lang:"en",placeholder:"例如：BOTEN CR999"},{name:"title_name_en",label:"产品标题",lang:"en",placeholder:"例如：Common Rail Test Bench"},{name:"description_en",label:"设备概况",lang:"en",type:"textarea",placeholder:"例如：Designed for common rail testing"},{name:"base_price",label:"人民币单价",lang:"all",type:"number",placeholder:"例如：158000"},{name:"price_usd",label:"美元单价",lang:"all",type:"number",placeholder:"例如：22000"}],onSave:data=>api("/api/v1/admin/products",{method:"POST",body:JSON.stringify({...data,base_price:Number(data.base_price||0),price_usd:Number(data.price_usd||0)})})}));panel.appendChild(button);const exportButton=document.createElement("a");exportButton.className="button button-quiet";exportButton.href="/api/v1/admin/catalog-template.xlsx";exportButton.textContent="导出 Excel 模板";exportButton.target="_blank";panel.appendChild(exportButton);}
-function addProductButton(){const panel=$('[data-view-panel="products"] .panel-header');if(!panel||$("#add-product-button"))return;const button=document.createElement("button");button.id="add-product-button";button.className="button button-secondary";button.textContent="添加设备";button.addEventListener("click",()=>catalogEditorCard({title:"添加设备",size:"large",fields:[{name:"id",label:"设备编号",lang:"all",placeholder:"例如：CR999",required:true},{name:"name",label:"设备名称",lang:"zh",placeholder:"例如：BOTEN CR999",required:true},{name:"title_name",label:"产品标题",lang:"zh",placeholder:"例如：共轨喷油器试验台",required:true},{name:"description",label:"设备概况",lang:"zh",type:"textarea",placeholder:"例如：适用于共轨喷油器测试"},{name:"name_en",label:"设备名称",lang:"en",placeholder:"例如：BOTEN CR999"},{name:"title_name_en",label:"产品标题",lang:"en",placeholder:"例如：Common Rail Test Bench"},{name:"description_en",label:"设备概况",lang:"en",type:"textarea",placeholder:"例如：Designed for common rail testing"},{name:"base_price",label:"人民币单价",lang:"all",type:"number",placeholder:"例如：158000"},{name:"price_usd",label:"美元单价",lang:"all",type:"number",placeholder:"例如：22000"}],onSave:data=>api("/api/v1/admin/products",{method:"POST",body:JSON.stringify({...data,base_price:Number(data.base_price||0),price_usd:Number(data.price_usd||0)})})}));panel.appendChild(button);const exportButton=document.createElement("a");exportButton.className="button button-quiet";exportButton.href="/api/v1/admin/catalog-template.xlsx";exportButton.textContent="导出 Excel 模板";exportButton.target="_blank";panel.appendChild(exportButton);const input=document.createElement("input");input.type="file";input.accept=".xlsx";input.className="sr-only";input.addEventListener("change",async()=>{if(!input.files[0])return;const data=await input.files[0].arrayBuffer();const preview=await fetch("/api/v1/admin/catalog-template/preview",{method:"POST",headers:{"Content-Type":"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"},body:data});const result=await preview.json();if(!result.valid){showToast("模板校验失败，请检查错误");return;}if(confirm("模板校验通过，确认导入？")){const commit=await fetch("/api/v1/admin/catalog-template/commit",{method:"POST",headers:{"Content-Type":"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"},body:data});if(commit.ok){showToast("Excel 导入成功");loadData();}else showToast("Excel 导入失败");}});document.body.appendChild(input);const upload=document.createElement("button");upload.className="button button-quiet";upload.type="button";upload.textContent="上传 Excel";upload.addEventListener("click",()=>input.click());panel.appendChild(upload);}
+function addProductButton() {
+  const panel = $('[data-view-panel="products"] .panel-header');
+  if (!panel || $("#add-product-button")) return;
+  const button = document.createElement("button");
+  button.id = "add-product-button"; button.className = "button button-secondary"; button.textContent = "添加设备";
+  button.addEventListener("click", () => catalogEditorCard({ title:"添加设备", size:"large", fields:[
+    {name:"id",label:"设备编号",lang:"all",placeholder:"例如：CR999",required:true},
+    {name:"name",label:"设备名称",lang:"zh",placeholder:"例如：BOTEN CR999",required:true},
+    {name:"title_name",label:"产品标题",lang:"zh",placeholder:"例如：共轨喷油器试验台",required:true},
+    {name:"description",label:"设备概况",lang:"zh",type:"textarea",placeholder:"例如：适用于共轨喷油器测试"},
+    {name:"name_en",label:"设备名称",lang:"en",placeholder:"例如：BOTEN CR999"},
+    {name:"title_name_en",label:"产品标题",lang:"en",placeholder:"例如：Common Rail Test Bench"},
+    {name:"description_en",label:"设备概况",lang:"en",type:"textarea",placeholder:"例如：Designed for common rail testing"},
+    {name:"base_price",label:"人民币单价",lang:"all",type:"number",placeholder:"例如：158000"},
+    {name:"price_usd",label:"美元单价",lang:"all",type:"number",placeholder:"例如：22000"}
+  ], onSave:data => api("/api/v1/admin/products",{method:"POST",body:JSON.stringify({...data,base_price:Number(data.base_price||0),price_usd:Number(data.price_usd||0)})}) }));
+  panel.appendChild(button);
+
+  const exportButton = document.createElement("a");
+  exportButton.className = "button button-quiet"; exportButton.href = `${API_BASE}/api/v1/admin/catalog-template.xlsx`;
+  exportButton.textContent = "导出 Excel 模板"; exportButton.target = "_blank"; panel.appendChild(exportButton);
+
+  const input = document.createElement("input");
+  input.type = "file"; input.accept = ".xlsx"; input.className = "sr-only";
+  input.addEventListener("change", async () => {
+    const file = input.files && input.files[0]; if (!file) return;
+    const upload = panel.querySelector("#catalog-upload-button"); const data = await file.arrayBuffer();
+    const headers = {"Content-Type":"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"};
+    const token = sessionStorage.getItem(TOKEN_KEY); if (token) headers.Authorization = `Bearer ${token}`;
+    try {
+      if (upload) { upload.disabled = true; upload.textContent = "校验中…"; }
+      const previewResponse = await fetch(`${API_BASE}/api/v1/admin/catalog-template/preview`, {method:"POST", headers, body:data});
+      const preview = await previewResponse.json().catch(() => ({}));
+      if (!previewResponse.ok) throw new Error(preview.detail || "模板校验失败");
+      const errors = (preview.sheets || []).flatMap((sheet, index) => (sheet.errors || []).map(error => `第${index + 1}张表：${error}`));
+      if (!preview.valid) throw new Error(errors.slice(0, 5).join("；") || "模板校验失败");
+      if (!confirm((preview.sheets || []).map((sheet, index) => `第${index + 1}张表：${sheet.rows} 行`).join("\n") + "\n确认导入？")) return;
+      if (upload) upload.textContent = "导入中…";
+      const commitResponse = await fetch(`${API_BASE}/api/v1/admin/catalog-template/commit`, {method:"POST", headers, body:data});
+      const result = await commitResponse.json().catch(() => ({}));
+      if (!commitResponse.ok) throw new Error(result.detail || "Excel 导入失败");
+      showToast(`Excel 导入成功：设备 ${result.updated || 0}，配置 ${result.options_updated || 0}，电机 ${result.motor_prices_updated || 0}，参数 ${result.specifications_updated || 0}`);
+      await loadData();
+    } catch (failure) { showToast(failure.message || "Excel 导入失败"); }
+    finally { input.value = ""; if (upload) { upload.disabled = false; upload.textContent = "上传 Excel"; } }
+  });
+  document.body.appendChild(input);
+  const upload = document.createElement("button");
+  upload.id = "catalog-upload-button"; upload.className = "button button-quiet"; upload.type = "button"; upload.textContent = "上传 Excel";
+  upload.addEventListener("click", () => input.click()); panel.appendChild(upload);
+}
 
 async function saveConfigOption(event) {
   event.preventDefault(); const form=event.currentTarget; if(event.submitter?.value==="cancel"){form.closest("dialog")?.close();return;}
