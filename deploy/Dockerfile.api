@@ -2,16 +2,13 @@ FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1 \
-    DEBIAN_FRONTEND=noninteractive
+    PIP_NO_CACHE_DIR=1
 
 WORKDIR /app
 
-# Noto CJK supplies Chinese glyphs for server-generated PDF documents.  Force
-# IPv4 because some NAS networks have an unreliable IPv6 route to Debian.
-RUN apt-get -o Acquire::ForceIPv4=true -o Acquire::Retries=5 -o Acquire::http::Timeout=30 update \
-    && apt-get -o Acquire::ForceIPv4=true -o Acquire::Retries=5 -o Acquire::http::Timeout=30 install -y --no-install-recommends fonts-noto-cjk \
-    && rm -rf /var/lib/apt/lists/*
+# PDF generation falls back to ReportLab's built-in STSong-Light CID font when
+# no system CJK font is available. Avoid an external APT download during NAS
+# builds so deployment does not depend on Debian mirror connectivity.
 
 COPY backend/requirements.txt /app/backend/requirements.txt
 RUN pip install --no-cache-dir -r /app/backend/requirements.txt
