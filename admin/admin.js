@@ -966,54 +966,6 @@ function addProductButton() {
     {name:"price_usd",label:"美元单价",lang:"all",type:"number",placeholder:"例如：22000"}
   ], onSave:data => api("/api/v1/admin/products",{method:"POST",body:JSON.stringify({...data,base_price:Number(data.base_price||0),price_usd:Number(data.price_usd||0)})}) }));
   panel.appendChild(button);
-
-  const exportButton = document.createElement("button");
-  exportButton.className = "button button-quiet"; exportButton.type = "button"; exportButton.textContent = "导出 Excel 模板";
-  exportButton.addEventListener("click", async () => {
-    const token = sessionStorage.getItem(TOKEN_KEY);
-    try {
-      exportButton.disabled = true; exportButton.textContent = "导出中…";
-      const response = await fetch(`${API_BASE}/api/v1/admin/catalog-template.xlsx`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
-      if (!response.ok) { const body = await response.json().catch(() => ({})); throw new Error(body.detail || "模板导出失败"); }
-      const url = URL.createObjectURL(await response.blob()); const download = document.createElement("a");
-      download.href = url; download.download = "boten-catalog-template.xlsx"; download.click(); URL.revokeObjectURL(url);
-    } catch (failure) { showToast(failure.message || "模板导出失败"); }
-    finally { exportButton.disabled = false; exportButton.textContent = "导出 Excel 模板"; }
-  });
-  panel.appendChild(exportButton);
-
-  const input = document.createElement("input");
-  input.type = "file"; input.accept = ".xlsx"; input.className = "sr-only";
-  input.addEventListener("change", async () => {
-    const file = input.files && input.files[0]; if (!file) return;
-    const upload = panel.querySelector("#catalog-upload-button"); const data = await file.arrayBuffer();
-    const headers = {"Content-Type":"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"};
-    const token = sessionStorage.getItem(TOKEN_KEY); if (token) headers.Authorization = `Bearer ${token}`;
-    try {
-      if (upload) { upload.disabled = true; upload.textContent = "校验中…"; }
-      const previewResponse = await fetch(`${API_BASE}/api/v1/admin/catalog-template/preview`, {method:"POST", headers, body:data});
-      const preview = await previewResponse.json().catch(() => ({}));
-      if (!previewResponse.ok) throw new Error(preview.detail || "模板校验失败");
-      const errors = (preview.sheets || []).flatMap((sheet, index) => (sheet.errors || []).map(error => `第${index + 1}张表：${error}`));
-      const resultPanel = $("#catalog-import-result");
-      if (resultPanel) { resultPanel.hidden = false; resultPanel.innerHTML = `<div><strong>${preview.valid ? "Excel 校验通过" : "Excel 校验失败"}</strong><span>${(preview.sheets || []).map((sheet, index) => `表 ${index + 1}：${sheet.rows} 行`).join(" · ")}</span></div>${errors.length ? `<ul>${errors.map(error => `<li>${escapeHtml(error)}</li>`).join("")}</ul>` : ""}`; }
-      if (!preview.valid) throw new Error(errors.slice(0, 5).join("；") || "模板校验失败");
-      if (!confirm((preview.sheets || []).map((sheet, index) => `第${index + 1}张表：${sheet.rows} 行`).join("\n") + "\n确认导入？")) return;
-      if (upload) upload.textContent = "导入中…";
-      const commitResponse = await fetch(`${API_BASE}/api/v1/admin/catalog-template/commit`, {method:"POST", headers, body:data});
-      const result = await commitResponse.json().catch(() => ({}));
-      if (!commitResponse.ok) throw new Error(result.detail || "Excel 导入失败");
-      const summary = `设备 ${result.updated || 0}，配置 ${result.options_updated || 0}，电机 ${result.motor_prices_updated || 0}，参数 ${result.specifications_updated || 0}`;
-      if (resultPanel) resultPanel.innerHTML = `<div><strong>Excel 导入成功</strong><span>${summary}</span></div>`;
-      showToast(`Excel 导入成功：${summary}`);
-      await loadData();
-    } catch (failure) { showToast(failure.message || "Excel 导入失败"); }
-    finally { input.value = ""; if (upload) { upload.disabled = false; upload.textContent = "上传 Excel"; } }
-  });
-  document.body.appendChild(input);
-  const upload = document.createElement("button");
-  upload.id = "catalog-upload-button"; upload.className = "button button-quiet"; upload.type = "button"; upload.textContent = "上传 Excel";
-  upload.addEventListener("click", () => input.click()); panel.appendChild(upload);
 }
 
 async function saveConfigOption(event) {

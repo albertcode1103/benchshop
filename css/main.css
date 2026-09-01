@@ -154,9 +154,10 @@ a {
     transition-duration: .01ms !important;
   }
 }
-.language-switcher { display:inline-flex; align-items:center; gap:3px; padding:3px; border:1px solid var(--border, #d8dee8); border-radius:9px; background:var(--surface, #fff); }
-.language-switcher button { min-height:32px; padding:0 10px; border:0; border-radius:7px; color:var(--muted, #667085); background:transparent; font:inherit; font-size:13px; font-weight:700; cursor:pointer; }
-.language-switcher button.active { color:#fff; background:var(--ink, #17202a); }
+.language-switcher { display:inline-flex; align-items:center; gap:3px; padding:3px; border:1px solid var(--color-border); border-radius:var(--radius-md); background:var(--color-surface); }
+.language-switcher button { min-height:32px; padding:0 10px; border:0; border-radius:var(--radius-sm); color:var(--color-text-secondary); background:transparent; font:inherit; font-size:13px; font-weight:700; cursor:pointer; transition:color var(--transition-fast), background-color var(--transition-fast); }
+.language-switcher button:hover { color:var(--color-text); background:var(--color-bg); }
+.language-switcher button.active { color:#fff; background:var(--color-text); }
 
 @media (max-width: 639px) {
   .language-switcher {

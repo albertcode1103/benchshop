@@ -77,6 +77,28 @@
     if (!rendererElements.deviceSelect) return;
     rendererElements.deviceSelect.addEventListener("change", (e) => {
       rendererStateRef.setModel(e.target.value);
+      scrollToModelHeader();
+    });
+  }
+
+  function prefersReducedMotion() {
+    return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  }
+
+  function scrollToModelHeader() {
+    const stageHeader = document.querySelector(".stage-header");
+    const siteHeader = document.querySelector(".site-header");
+    if (!stageHeader) return;
+
+    // Position the selected model immediately below the sticky navigation,
+    // which also moves the selector safely out of view.
+    requestAnimationFrame(() => {
+      const headerHeight = siteHeader?.getBoundingClientRect().height || 0;
+      const targetTop = window.scrollY + stageHeader.getBoundingClientRect().top - headerHeight - 12;
+      window.scrollTo({
+        top: Math.max(0, targetTop),
+        behavior: prefersReducedMotion() ? "auto" : "smooth"
+      });
     });
   }
 
@@ -304,7 +326,12 @@
 
     rendererElements.colorOptions.querySelectorAll(".option-card").forEach((card) => {
       const color = card.dataset.color;
-      const activate = () => rendererStateRef.setColor(color);
+      const activate = () => {
+        const overview = document.querySelector(".device-overview");
+        if (overview?.open) overview.open = false;
+        rendererStateRef.setColor(color);
+        scrollToModelHeader();
+      };
       card.addEventListener("click", activate);
       card.addEventListener("keydown", (e) => {
         if (e.key === "Enter" || e.key === " ") {

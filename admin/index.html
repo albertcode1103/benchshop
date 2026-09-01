@@ -7,10 +7,10 @@
   <meta name="theme-color" content="#182028" />
   <title>BOTEN 管理后台</title>
   <link rel="icon" type="image/png" href="../tb/site/LOGO.png" />
-  <link rel="stylesheet" href="admin.css?v=20260901-10" />
+  <link rel="stylesheet" href="admin.css?v=20260901-11" />
   <script src="../js/runtime-config.js?v=20260831-2"></script>
   <script>window.addEventListener('error',function(e){var s=document.getElementById('api-status');if(s)s.textContent='后台脚本加载失败：'+(e.message||'请按 Ctrl+F5 刷新');});</script>
-  <script src="admin.js?v=20260901-18" defer></script>
+  <script src="admin.js?v=20260901-19" defer></script>
 </head>
 <body>
   <a class="skip-link" href="#admin-content">跳到主要内容</a>
@@ -104,7 +104,6 @@
         <section class="view" data-view-panel="products">
           <section class="panel">
             <header class="panel-header"><div><span class="eyebrow">DEVICE CATALOG</span><h2>设备目录</h2><p>调整设备资料、颜色以及该设备允许使用的配置项目。</p></div><div class="panel-header-actions catalog-header-actions" id="product-catalog-actions"></div></header>
-            <section class="catalog-import-result" id="catalog-import-result" aria-live="polite" hidden></section>
             <div class="table-wrap"><table class="product-catalog-table"><colgroup><col class="product-col-model" /><col class="product-col-title" /><col class="product-col-price" /><col class="product-col-status" /><col class="product-col-actions" /></colgroup><thead><tr><th>型号</th><th>产品名称</th><th>基础价格</th><th>状态</th><th class="align-right">操作</th></tr></thead><tbody id="products-table"></tbody></table></div>
           </section>
         </section>
