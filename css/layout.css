@@ -349,13 +349,12 @@
   border-radius: var(--radius-lg);
   background: var(--color-surface);
 }
-.device-overview summary{display:flex;align-items:center;justify-content:space-between;gap:16px;cursor:pointer;list-style:none}.device-overview summary::-webkit-details-marker{display:none}.device-overview summary::after{content:"⌄";font-size:18px;transition:transform .18s ease}.device-overview:not([open]) summary::after{transform:rotate(-90deg)}.overview-toggle-hint{margin-left:auto;color:var(--muted,#6b7280);font-size:12px;font-weight:400}.device-overview .overview-grid{padding-top:16px}
-.overview-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(320px,1fr);gap:24px;align-items:start}.overview-grid h3{font-size:14px;margin:0 0 8px}.overview-specifications table{width:100%;border-collapse:collapse}.overview-specifications th,.overview-specifications td{padding:8px 10px;border-bottom:1px solid var(--line,#e5e7eb);text-align:left;vertical-align:top}.overview-specifications th{font-weight:600;width:38%}
-@media (max-width: 760px){.overview-grid{grid-template-columns:1fr;gap:16px}.overview-specifications{overflow-x:auto}.overview-specifications table{min-width:280px}}
+.device-overview summary{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:-8px;padding:8px;border-radius:8px;cursor:pointer;list-style:none}.device-overview summary:hover{background:var(--color-surface-muted,#f6f7f8)}.device-overview summary:focus-visible{outline:3px solid var(--color-primary,#9b3c00);outline-offset:3px}.device-overview summary::-webkit-details-marker{display:none}.device-overview summary::after{content:"⌄";flex:0 0 auto;font-size:18px;transition:transform .18s ease}.device-overview:not([open]) summary::after{transform:rotate(-90deg)}.device-overview .overview-grid{padding-top:16px}
+.overview-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(320px,1fr);gap:24px;align-items:start}.overview-grid h3{font-size:14px;margin:0 0 8px}.overview-specifications table{width:100%;border-collapse:collapse}.overview-specifications th,.overview-specifications td{padding:8px 10px;border-bottom:1px solid var(--line,#e5e7eb);text-align:left;vertical-align:top;overflow-wrap:anywhere}.overview-specifications th{font-weight:600;width:38%}
+@media (max-width: 900px){.overview-grid{grid-template-columns:1fr;gap:16px}.overview-specifications{overflow-x:auto;overscroll-behavior:contain}.overview-specifications table{min-width:280px}}
 
-.device-overview h2,
-.device-overview summary > span:first-child {
-  margin: 0 0 var(--space-sm);
+.device-overview h2 {
+  margin: 0;
   font-size: 1.125rem;
   line-height: 1.35;
 }

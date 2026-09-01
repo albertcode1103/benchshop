@@ -10,7 +10,7 @@
   <link rel="shortcut icon" type="image/png" href="tb/site/LOGO.png?v=20260831" />
   <link rel="apple-touch-icon" href="tb/site/LOGO.png?v=20260831" />
   <link rel="stylesheet" href="css/main.css?v=20260831-5" />
-  <link rel="stylesheet" href="css/layout.css?v=20260901-6" />
+  <link rel="stylesheet" href="css/layout.css?v=20260901-7" />
   <link rel="stylesheet" href="css/components.css?v=20260901-7" />
   <link rel="stylesheet" href="css/print.css?v=20260831-1" />
   <script src="js/runtime-config.js?v=20260831-2"></script>
@@ -23,7 +23,7 @@
   <script src="js/cart.js?v=20260831-6" defer></script>
   <script src="js/pdf.js?v=20260831-1" defer></script>
   <script src="js/main.js?v=20260831-1" defer></script>
-  <script src="js/language.js?v=20260901-5" defer></script>
+  <script src="js/language.js?v=20260901-6" defer></script>
 </head>
 <body>
   <a class="skip-link" href="#main-content">跳到主要内容</a>
@@ -82,10 +82,10 @@ stroke-width="2" aria-hidden="true">
       </div>
 
       <details class="device-overview" open>
-        <summary><span id="overview-title">设备概况</span></summary>
+        <summary><h2 id="overview-title">设备概况</h2></summary>
         <div class="overview-grid">
-          <div class="overview-description"><h3>设备描述</h3><p class="page-desc" id="page-desc">--</p></div>
-          <div class="overview-specifications"><h3>参数表</h3><table><tbody id="product-specifications"><tr><td colspan="2">--</td></tr></tbody></table></div>
+          <div class="overview-description"><h3 id="overview-description-title">设备描述</h3><p class="page-desc" id="page-desc">--</p></div>
+          <div class="overview-specifications"><h3 id="overview-specifications-title">参数表</h3><table><thead class="sr-only"><tr><th id="specification-name-heading">参数</th><th id="specification-value-heading">数值</th></tr></thead><tbody id="product-specifications"><tr><td colspan="2">--</td></tr></tbody></table></div>
         </div>
       </details>
 
