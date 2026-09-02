@@ -1,6 +1,5 @@
 """Add per-device motor prices."""
 from alembic import op
-import sqlalchemy as sa
 
 revision = "20260901_0005"
 down_revision = "20260831_0004"
@@ -9,18 +8,21 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.create_table(
-        "product_motor_prices",
-        sa.Column("product_id", sa.Text(), sa.ForeignKey("products.id", ondelete="CASCADE"), nullable=False),
-        sa.Column("motor_option_id", sa.Text(), sa.ForeignKey("options.id", ondelete="CASCADE"), nullable=False),
-        sa.Column("base_price_cny", sa.Integer(), nullable=False, server_default="0"),
-        sa.Column("base_price_usd", sa.Integer(), nullable=False, server_default="0"),
-        sa.Column("updated_at", sa.Text(), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
-        sa.PrimaryKeyConstraint("product_id", "motor_option_id"),
-    )
-    op.create_index("idx_product_motor_prices_product", "product_motor_prices", ["product_id"])
+    # Earlier installations created this table in initialize_database() before
+    # Alembic tracked the migration. Keep the upgrade safe for those databases.
     op.execute("""
-        INSERT INTO product_motor_prices (product_id, motor_option_id, base_price_cny, base_price_usd)
+        CREATE TABLE IF NOT EXISTS product_motor_prices (
+            product_id TEXT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+            motor_option_id TEXT NOT NULL REFERENCES options(id) ON DELETE CASCADE,
+            base_price_cny INTEGER NOT NULL DEFAULT 0,
+            base_price_usd INTEGER NOT NULL DEFAULT 0,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (product_id, motor_option_id)
+        )
+    """)
+    op.execute("CREATE INDEX IF NOT EXISTS idx_product_motor_prices_product ON product_motor_prices(product_id)")
+    op.execute("""
+        INSERT OR IGNORE INTO product_motor_prices (product_id, motor_option_id, base_price_cny, base_price_usd)
         SELECT po.product_id, po.option_id, p.base_price, p.price_usd
         FROM product_options po
         JOIN options o ON o.id = po.option_id AND o.category_id = 'motor'
