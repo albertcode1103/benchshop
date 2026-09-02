@@ -190,7 +190,7 @@
         <label><span>显示名称</span><input name="display_name" required placeholder="例如：销售部 王经理" /></label>
         <label><span>角色</span><select name="role"><option value="sales">业务员</option><option value="customer">客户</option><option value="admin">管理员</option></select></label>
         <label><span>邮箱</span><input name="email" type="email" placeholder="name@example.com" /></label>
-        <label><span>手机号</span><input name="phone" inputmode="tel" placeholder="可代替邮箱登录" /></label>
+        <label class="full"><span>手机号</span><span class="admin-phone-input"><select name="phone_country" aria-label="国家"></select><span id="admin-phone-calling-code" aria-live="polite">+86</span><input name="phone" type="tel" inputmode="numeric" pattern="[0-9]{6,15}" placeholder="纯数字手机号" /></span></label>
         <label class="full"><span id="user-password-label">初始密码</span><input name="password" type="password" minlength="8" required autocomplete="new-password" placeholder="至少8个字符" /></label>
       </div>
       <div class="form-error" id="user-error" role="alert" hidden></div>

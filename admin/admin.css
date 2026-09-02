@@ -264,6 +264,8 @@ select { color: var(--ink); background-color: #fff; }
 .admin-profile span, .login-status { font-size: 12px; }
 .share-device-summary span, .share-device-summary small, .share-detail-group small, .quote-currency-field > span, .quote-edit-head, .quote-item-name small, .color-image-preview { font-size: 12px; }
 .login-brand::after, .share-detail-group header, .share-code-button { font-weight: 700; }
+.admin-phone-input { display: grid; grid-template-columns: minmax(120px, 1.2fr) auto minmax(0, 1fr); gap: 8px; align-items: center; }
+.admin-phone-input > span { min-height: 42px; display: inline-flex; align-items: center; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); color: var(--muted); white-space: nowrap; }
 .mapping-option span, .mapping-option-copy > strong { font-weight: 600; }
 .topbar { min-height: 78px; padding: 14px 34px; }
 .content { padding-top: 24px; }

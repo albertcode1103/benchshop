@@ -106,6 +106,7 @@ CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
     email TEXT UNIQUE,
     phone TEXT UNIQUE,
+    phone_country TEXT,
     password_hash TEXT,
     role TEXT NOT NULL CHECK (role IN ('guest', 'customer', 'sales', 'admin')),
     display_name TEXT NOT NULL DEFAULT '',
@@ -208,6 +209,10 @@ def initialize_database() -> None:
         columns = {row[1] for row in connection.execute("PRAGMA table_info(options)").fetchall()}
         if "notes" not in columns:
             connection.execute("ALTER TABLE options ADD COLUMN notes TEXT NOT NULL DEFAULT ''")
+        user_columns = {row[1] for row in connection.execute("PRAGMA table_info(users)").fetchall()}
+        if "phone_country" not in user_columns:
+            connection.execute("ALTER TABLE users ADD COLUMN phone_country TEXT")
+            connection.execute("UPDATE users SET phone_country = 'CN' WHERE phone LIKE '+86%'")
         text_columns = (("products", "name_en"), ("products", "title_name_en"), ("products", "description_en"), ("categories", "name_en"), ("categories", "description_en"), ("options", "name_en"), ("options", "description_en"))
         integer_columns = (("products", "price_usd"), ("options", "price_usd"))
         for table, column in text_columns + integer_columns:

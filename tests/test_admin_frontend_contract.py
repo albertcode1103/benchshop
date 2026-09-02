@@ -30,22 +30,24 @@ class AdminFrontendContractTests(unittest.TestCase):
         self.assertIn('document.querySelectorAll("dialog[open]")', ADMIN_JS)
         self.assertIn('host.appendChild(toast)', ADMIN_JS)
 
-    def test_auth_ui_uses_separate_email_and_international_phone_inputs(self) -> None:
+    def test_auth_ui_uses_country_selected_phone_inputs(self) -> None:
         customer_html = (PROJECT_ROOT / "index.html").read_text(encoding="utf-8")
         customer_auth = (PROJECT_ROOT / "js" / "auth.js").read_text(encoding="utf-8")
         self.assertIn('data-auth-identifier="email"', customer_html)
-        self.assertIn('id="auth-country-code" value="+86"', customer_html)
+        self.assertIn('id="auth-country"', customer_html)
+        self.assertIn('id="auth-calling-code"', customer_html)
         self.assertIn('id="auth-phone"', customer_html)
         self.assertIn('id="auth-name"', customer_html)
         self.assertIn('register-only', customer_html)
-        self.assertIn('return `${countryCode}${phone}`', customer_auth)
+        self.assertIn('phone_country: authPhone().country', customer_auth)
 
     def test_staff_can_enter_admin_with_their_customer_session(self) -> None:
         customer_html = (PROJECT_ROOT / "index.html").read_text(encoding="utf-8")
         customer_auth = (PROJECT_ROOT / "js" / "auth.js").read_text(encoding="utf-8")
         self.assertIn('id="account-admin-entry"', customer_html)
         self.assertIn('sessionStorage.setItem(ADMIN_TOKEN_KEY, token)', customer_auth)
-        self.assertIn('window.location.assign("./admin/")', customer_auth)
+        self.assertIn('window.open("./admin/", "boten-admin-workspace", "popup,width=1280,height=900")', customer_auth)
+        self.assertIn('["admin", "sales"].includes(currentUser.role)', customer_auth)
         self.assertIn('sessionStorage.getItem(CUSTOMER_TOKEN_KEY)', ADMIN_JS)
 
     def test_color_editor_uses_bilingual_names_and_image_preview(self) -> None:

@@ -21,6 +21,7 @@
     categoryTabs: document.getElementById("category-tabs"),
     specChips: document.getElementById("spec-chips"),
     optionsPanel: document.getElementById("options-panel"),
+    summaryModelCode: document.getElementById("summary-model-code"),
     summaryModelName: document.getElementById("summary-model-name"),
     summaryList: document.getElementById("summary-list"),
     summaryEmpty: document.getElementById("summary-empty"),
@@ -543,10 +544,8 @@
   function renderSummary(model, snapshot) {
     const groups = buildSummaryGroups(model, snapshot);
 
-    const modelHeading = [model.name, model.titleName]
-      .filter((value, index, values) => value && values.indexOf(value) === index)
-      .join(" · ");
-    rendererElements.summaryModelName.textContent = modelHeading;
+    rendererElements.summaryModelCode.textContent = model.name || "--";
+    rendererElements.summaryModelName.textContent = model.titleName || model.name || "--";
 
     if (groups.length === 0) {
       rendererElements.summaryList.innerHTML = "";

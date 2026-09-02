@@ -31,6 +31,7 @@ from .admin_catalog_repository import (
 from .excel_service import catalog_template, parse_xlsx
 from .database import get_connection
 from .database_maintenance import create_backup
+from .account_validation import normalize_email, normalize_phone, validate_contact, validate_display_name, validate_password, validate_role
 
 
 router = APIRouter(prefix="/api/v1/admin", tags=["admin"], dependencies=[Depends(require_catalog_manager)])
@@ -133,6 +134,7 @@ async def commit_catalog_template(request: Request, user=Depends(require_catalog
 class CreateStaffRequest(BaseModel):
     email: Optional[str] = None
     phone: Optional[str] = None
+    phone_country: Optional[str] = None
     password: str
     display_name: str = ""
     role: str = "sales"
@@ -144,6 +146,7 @@ class UserStatusRequest(BaseModel):
 class UserUpdateRequest(BaseModel):
     email: Optional[str] = None
     phone: Optional[str] = None
+    phone_country: Optional[str] = None
     display_name: Optional[str] = None
     role: Optional[str] = None
     password: Optional[str] = None
@@ -418,19 +421,15 @@ def edit_product_option_override(product_id: str, option_id: str, payload: Produ
 
 @router.post("/users", status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_admin)])
 def add_user(payload: CreateStaffRequest):
-    if payload.role not in ("customer", "sales", "admin"):
-        raise HTTPException(status_code=422, detail="Unsupported role")
-    if not payload.email and not payload.phone:
-        raise HTTPException(status_code=422, detail="Email or phone is required")
-    if len(payload.password) < 8:
-        raise HTTPException(status_code=422, detail="Password must contain at least 8 characters")
     try:
+        email = normalize_email(payload.email)
+        phone = normalize_phone(payload.phone_country, payload.phone) if payload.phone else None
+        validate_contact(email, phone)
+        display_name = validate_display_name(payload.display_name)
+        password = validate_password(payload.password)
+        role = validate_role(payload.role)
         return create_user(
-            payload.email.strip().lower() if payload.email else None,
-            payload.phone.strip() if payload.phone else None,
-            payload.password,
-            role=payload.role,
-            display_name=payload.display_name,
+            email, phone, password, role=role, display_name=display_name, phone_country=payload.phone_country.upper() if phone else None,
         )
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error))
@@ -461,6 +460,27 @@ def edit_user(user_id: str, payload: UserUpdateRequest, current=Depends(require_
         if field in values and values[field] is not None:
             values[field] = values[field].strip().lower() if field == "email" else values[field].strip()
             values[field] = values[field] or None
+    try:
+        if "email" in values: values["email"] = normalize_email(values["email"])
+        if "phone_country" in values:
+            values["phone_country"] = (values["phone_country"] or "").upper() or None
+        if "phone" in values:
+            if not values["phone"]:
+                values["phone"] = None
+                values["phone_country"] = None
+            else:
+                country = values.get("phone_country") or existing.get("phone_country")
+                values["phone"] = normalize_phone(country, values["phone"])
+                values["phone_country"] = country
+        elif "phone_country" in values:
+            raise ValueError("修改国家时必须同时填写手机号")
+        if "email" in values or "phone" in values:
+            validate_contact(values.get("email", existing.get("email")), values.get("phone", existing.get("phone")))
+        if "display_name" in values: values["display_name"] = validate_display_name(values["display_name"])
+        if values.get("password") is not None: values["password"] = validate_password(values["password"])
+        if "role" in values: values["role"] = validate_role(values["role"])
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error))
     if not values.get("email", existing.get("email")) and not values.get("phone", existing.get("phone")):
         raise HTTPException(status_code=422, detail="Email or phone is required")
     if "display_name" in values:
@@ -468,7 +488,7 @@ def edit_user(user_id: str, payload: UserUpdateRequest, current=Depends(require_
         if not values["display_name"]: raise HTTPException(status_code=422, detail="Display name is required")
     if values.get("role") and values["role"] not in ("customer", "sales", "admin"):
         raise HTTPException(status_code=422, detail="Unsupported role")
-    if existing["role"] == "admin" and values.get("role") != "admin":
+    if existing["role"] == "admin" and "role" in values and values["role"] != "admin":
         enabled_admins = sum(1 for user in list_users() if user["role"] == "admin" and user["enabled"])
         if enabled_admins <= 1:
             raise HTTPException(status_code=422, detail="At least one enabled admin account is required")

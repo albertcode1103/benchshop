@@ -11,19 +11,19 @@
   <link rel="apple-touch-icon" href="tb/site/LOGO.png?v=20260831" />
   <link rel="stylesheet" href="css/main.css?v=20260831-5" />
   <link rel="stylesheet" href="css/layout.css?v=20260901-9" />
-  <link rel="stylesheet" href="css/components.css?v=20260901-7" />
+  <link rel="stylesheet" href="css/components.css?v=20260902-12" />
   <link rel="stylesheet" href="css/print.css?v=20260831-1" />
   <script src="js/runtime-config.js?v=20260831-2"></script>
   <script src="js/data.js" defer></script>
   <script src="js/catalog-api.js?v=20260831-2" defer></script>
   <script src="js/state.js?v=20260831-1" defer></script>
   <script src="js/price.js?v=20260831-4" defer></script>
-  <script src="js/renderer.js?v=20260901-9" defer></script>
-  <script src="js/auth.js?v=20260831-6" defer></script>
-  <script src="js/cart.js?v=20260831-6" defer></script>
+  <script src="js/renderer.js?v=20260902-1" defer></script>
+  <script src="js/auth.js?v=20260902-3" defer></script>
+  <script src="js/cart.js?v=20260902-2" defer></script>
   <script src="js/pdf.js?v=20260831-1" defer></script>
   <script src="js/main.js?v=20260831-1" defer></script>
-  <script src="js/language.js?v=20260901-7" defer></script>
+  <script src="js/language.js?v=20260902-2" defer></script>
 </head>
 <body>
   <a class="skip-link" href="#main-content">跳到主要内容</a>
@@ -151,7 +151,7 @@ stroke-width="2" aria-hidden="true">
 
         <div class="summary-model" id="summary-model">
           <span class="summary-label" id="summary-model-label">型号</span>
-          <span class="summary-value" id="summary-model-name">--</span>
+          <span class="summary-value"><span class="summary-model-code" id="summary-model-code">--</span><span class="summary-model-name" id="summary-model-name">--</span></span>
         </div>
 
         <ul class="summary-list" id="summary-list">
@@ -200,14 +200,14 @@ aria-controls="summary-panel" aria-label="查看配置清单">
       </header>
 
       <div id="auth-form-view">
-        <form id="auth-form">
+        <form id="auth-form" novalidate>
           <label class="auth-field register-only" id="auth-name-field" hidden><span data-auth-text="name">姓名</span><input id="auth-name" name="display_name" autocomplete="name" placeholder="请输入姓名" /></label>
           <div class="auth-method-tabs" role="tablist" aria-label="登录方式">
             <button class="auth-method-tab active" id="auth-tab-email" role="tab" aria-selected="true" aria-controls="auth-email-field" tabindex="0" type="button" data-auth-identifier="email">邮箱</button>
             <button class="auth-method-tab" id="auth-tab-phone" role="tab" aria-selected="false" aria-controls="auth-phone-field" tabindex="-1" type="button" data-auth-identifier="phone">手机号</button>
           </div>
           <label class="auth-field" id="auth-email-field" role="tabpanel" aria-labelledby="auth-tab-email"><span data-auth-text="email">邮箱</span><input id="auth-email" name="email" type="email" autocomplete="email" spellcheck="false" required placeholder="name@example.com" /></label>
-          <label class="auth-field" id="auth-phone-field" role="tabpanel" aria-labelledby="auth-tab-phone" hidden><span data-auth-text="phone">手机号</span><span class="phone-input-group"><input id="auth-country-code" value="+86" name="country_code" type="tel" inputmode="tel" autocomplete="tel-country-code" spellcheck="false" pattern="\+[1-9][0-9]{0,3}" aria-label="国家区号" /><input id="auth-phone" name="phone" type="tel" inputmode="numeric" autocomplete="tel-national" spellcheck="false" pattern="[0-9]{7,15}" aria-label="实际手机号" placeholder="1590000000" /></span></label>
+          <div class="auth-field phone-contact-field" id="auth-phone-field" role="tabpanel" aria-labelledby="auth-tab-phone" hidden><div class="country-select-row"><span data-auth-text="country">国家</span><select id="auth-country" name="phone_country" class="device-select country-select" aria-label="国家" required></select></div><label class="phone-number-row"><span data-auth-text="phone">手机号</span><span class="phone-input-group"><span id="auth-calling-code" class="calling-code" aria-live="polite">+86</span><input id="auth-phone" name="phone" type="tel" inputmode="numeric" autocomplete="tel-national" spellcheck="false" pattern="[0-9]{6,15}" aria-label="实际手机号" placeholder="1590000000" /></span></label></div>
           <label class="auth-field"><span id="auth-password-label">密码</span><input id="auth-password" name="password" type="password" minlength="8" required autocomplete="current-password" placeholder="至少8个字符" /></label>
           <div id="auth-error" class="auth-error" role="alert" hidden></div>
           <button id="auth-submit" class="btn btn-primary btn-block" type="submit">登录</button>
@@ -220,8 +220,32 @@ aria-controls="summary-panel" aria-label="查看配置清单">
         <h3 id="account-name">用户</h3>
         <p id="account-contact">--</p>
         <span class="account-role" id="account-role">客户</span>
-        <button id="account-admin-entry" class="btn btn-primary btn-block" type="button" hidden>进入后台</button>
+        <button id="account-admin-entry" class="btn btn-primary btn-block account-admin-entry" type="button" hidden aria-hidden="true">进入后台</button>
+        <button id="account-manage" class="btn btn-secondary btn-block" type="button">账号管理</button>
         <button id="account-logout" class="btn btn-secondary btn-block" type="button">退出登录</button>
+      </div>
+      <div id="account-manage-view" class="account-view account-manage-view" hidden>
+        <section class="account-manage-section" aria-labelledby="profile-contact-heading">
+          <h3 id="profile-contact-heading" data-account-section="contact">联系方式</h3>
+          <form id="account-contact-form" class="auth-form" novalidate>
+            <label class="auth-field"><span data-account-copy="email">邮箱</span><input id="profile-email" name="email" type="email" autocomplete="email" spellcheck="false" /></label>
+            <div class="auth-field phone-contact-field"><div class="country-select-row"><span data-auth-text="country">国家</span><select id="profile-country" name="phone_country" class="device-select country-select" aria-label="国家"></select></div><label class="phone-number-row"><span data-account-copy="phone">手机号</span><span class="phone-input-group"><span id="profile-calling-code" class="calling-code" aria-live="polite"></span><input id="profile-phone" name="phone" type="tel" inputmode="numeric" autocomplete="tel-national" pattern="[0-9]{6,15}" spellcheck="false" /></span></label></div>
+            <label class="auth-field"><span data-account-copy="currentPassword">当前密码</span><input id="profile-contact-password" name="current_password" type="password" autocomplete="current-password" required /></label>
+            <div id="profile-contact-error" class="auth-error" role="alert" hidden></div>
+            <div class="auth-form-actions"><button id="profile-contact-submit" class="btn btn-primary btn-block" type="submit">保存并重新登录</button></div>
+          </form>
+        </section>
+        <section class="account-manage-section" aria-labelledby="profile-password-heading">
+          <h3 id="profile-password-heading" data-account-section="password">修改密码</h3>
+          <form id="account-password-form" class="auth-form" novalidate>
+            <label class="auth-field"><span data-account-copy="currentPassword">当前密码</span><input id="profile-current-password" name="current_password" type="password" autocomplete="current-password" required /></label>
+            <label class="auth-field"><span data-account-copy="newPassword">新密码</span><input id="profile-new-password" name="new_password" type="password" minlength="8" autocomplete="new-password" required /></label>
+            <label class="auth-field"><span data-account-copy="confirmPassword">确认新密码</span><input id="profile-confirm-password" name="confirm_password" type="password" minlength="8" autocomplete="new-password" required /></label>
+            <div id="profile-password-error" class="auth-error" role="alert" hidden></div>
+            <div class="auth-form-actions"><button id="profile-password-submit" class="btn btn-secondary btn-block" type="submit">修改密码并重新登录</button></div>
+          </form>
+        </section>
+        <div class="auth-form-actions"><button id="account-manage-back" class="btn btn-ghost btn-block" type="button">返回</button></div>
       </div>
     </div>
   </dialog>

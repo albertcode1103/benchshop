@@ -20,7 +20,11 @@
       accountFallback: "账号", signInToSave: "登录后可保存配置", noSaved: "暂无配置", generating: "生成中…",
       copied: "已复制", copyCode: "复制分享码", confirmClear: "删除全部配置？", requestFailed: "请求失败",
       email: "邮箱", phone: "手机号", loginMethod: "登录方式", countryCode: "国家区号", phoneNumber: "实际手机号",
-      emailHint: "name@example.com", phoneHint: "1590000000", invalidPhone: "请输入国家区号和7至15位手机号"
+      emailHint: "name@example.com", phoneHint: "1590000000", invalidPhone: "请选择国家并输入有效手机号",
+      country: "国家", accountManage: "账号管理", currentPassword: "当前密码", newPassword: "新密码", confirmPassword: "确认新密码",
+      saveRelogin: "保存并重新登录", changeRelogin: "修改密码并重新登录", back: "返回",
+      contactInfo: "联系方式", changePassword: "修改密码", enterAdmin: "进入后台",
+      currentPasswordRequired: "请输入当前密码", contactRequired: "请至少填写邮箱或手机号", newPasswordLength: "新密码至少 8 个字符", passwordMismatch: "两次输入的新密码不一致"
     },
     en: {
       account: "Sign in", device: "Select Test Bench", cart: "Cart", clear: "Clear Cart",
@@ -41,7 +45,11 @@
       accountFallback: "Account", signInToSave: "Sign in to save", noSaved: "No saved items", generating: "Generating…",
       copied: "Copied", copyCode: "Copy code", confirmClear: "Delete all items?", requestFailed: "Request failed",
       email: "Email", phone: "Phone", loginMethod: "Sign-in method", countryCode: "Country code", phoneNumber: "Phone number",
-      emailHint: "name@example.com", phoneHint: "1590000000", invalidPhone: "Enter a country code and a 7–15 digit phone number"
+      emailHint: "name@example.com", phoneHint: "1590000000", invalidPhone: "Select a country and enter a valid phone number",
+      country: "Country", accountManage: "Account management", currentPassword: "Current password", newPassword: "New password", confirmPassword: "Confirm password",
+      saveRelogin: "Save and sign in again", changeRelogin: "Change password and sign in again", back: "Back",
+      contactInfo: "Contact details", changePassword: "Change password", enterAdmin: "Open admin",
+      currentPasswordRequired: "Enter your current password", contactRequired: "Enter an email or phone number", newPasswordLength: "New password must be at least 8 characters", passwordMismatch: "New passwords do not match"
     }
   };
 

@@ -13,7 +13,7 @@ function descriptionText(value) {
 function savedConfigToCartItem(saved) {
   const snapshot = saved.snapshot;
   const colorName = snapshot.color.label || snapshot.color.code;
-  const groups = [{ type: "single", category: localStorage.getItem("boten-language") === "en" ? "Appearance" : "外观颜色", value: colorName }];
+  const groups = [{ id: "color", type: "single", category: localStorage.getItem("boten-language") === "en" ? "Appearance" : "外观颜色", value: colorName }];
   snapshot.categories.forEach((category) => {
     const values = category.options.map((option) => {
       const details = [option.description, option.special_note].map(descriptionText).filter(Boolean);
@@ -22,8 +22,8 @@ function savedConfigToCartItem(saved) {
     });
     if (!values.length) return;
     groups.push(category.multiple
-      ? { type: "multi", category: category.name, value: values, count: values.length }
-      : { type: "single", category: category.name, value: values[0] });
+      ? { id: category.id, type: "multi", category: category.name, value: values, count: values.length }
+      : { id: category.id, type: "single", category: category.name, value: values[0], count: 1 });
   });
   return {
     id: saved.id,
@@ -74,13 +74,33 @@ function renderCartPanel() {
   }
   emptyEl.hidden = true;
   itemsEl.innerHTML = serverCart.map((item) => {
-    const groupsHtml = item.groups.map((group) => group.type === "multi"
-      ? `<div class="cart-item-group"><div class="cart-item-group-header"><span>${escapeCartHtml(group.category)}</span><span class="cart-item-count">${group.count}</span></div><ul>${group.value.map((name) => `<li>${escapeCartHtml(name)}</li>`).join("")}</ul></div>`
-      : `<div class="cart-item-group"><div class="cart-item-group-header"><span class="cart-item-category">${escapeCartHtml(group.category)}</span></div><div class="cart-item-value">${escapeCartHtml(group.value)}</div></div>`).join("");
-    return `<article class="cart-item"><header class="cart-item-header"><div><div class="cart-item-model">${escapeCartHtml(item.modelName)}</div><div class="cart-item-title">${escapeCartHtml(item.titleName)} · ${escapeCartHtml(item.colorName)}</div></div><div class="cart-item-actions"><button class="btn btn-secondary btn-sm cart-item-share" type="button" data-id="${escapeCartHtml(item.id)}">${cartText("shareAction", "分享", "Share")}</button><button class="btn btn-text btn-sm cart-item-remove" type="button" data-id="${escapeCartHtml(item.id)}">${cartText("deleteAction", "删除", "Delete")}</button></div></header><div class="cart-item-body">${groupsHtml}</div></article>`;
+    const coreHtml = item.groups.filter((group) => ["color", "motor", "voltage"].includes(group.id)).map((group) =>
+      `<div class="cart-item-core-row"><span>${escapeCartHtml(group.category)}</span><strong>${escapeCartHtml(Array.isArray(group.value) ? group.value.join("、") : group.value)}</strong></div>`).join("");
+    const summaryHtml = item.groups.filter((group) => !["color", "motor", "voltage"].includes(group.id)).map((group) => {
+      const count = group.count || (Array.isArray(group.value) ? group.value.length : 1);
+      return `<div class="cart-item-summary-row"><span>${escapeCartHtml(group.category)}</span><strong>${count}</strong></div>`;
+    }).join("");
+    return `<article class="cart-item"><header class="cart-item-header"><div class="cart-item-heading"><div class="cart-item-model">${escapeCartHtml(item.titleName || item.modelName)}</div></div><div class="cart-item-actions"><button class="btn btn-secondary btn-sm cart-item-share" type="button" data-id="${escapeCartHtml(item.id)}">${cartText("shareAction", "分享", "Share")}</button><button class="btn btn-text btn-sm cart-item-remove" type="button" data-id="${escapeCartHtml(item.id)}">${cartText("deleteAction", "删除", "Delete")}</button></div></header><div class="cart-item-core">${coreHtml}</div>${summaryHtml ? `<div class="cart-item-summary">${summaryHtml}</div>` : ""}<button class="btn btn-secondary btn-sm cart-item-details" type="button" data-id="${escapeCartHtml(item.id)}">${cartLocale("查看详情", "View details")}</button></article>`;
   }).join("");
   itemsEl.querySelectorAll(".cart-item-share").forEach((button) => button.addEventListener("click", () => shareSavedConfig(button.dataset.id, button)));
   itemsEl.querySelectorAll(".cart-item-remove").forEach((button) => button.addEventListener("click", () => removeCartItem(button.dataset.id)));
+  itemsEl.querySelectorAll(".cart-item-details").forEach((button) => button.addEventListener("click", () => showCartDetails(button.dataset.id)));
+}
+
+function showCartDetails(id) {
+  const item = serverCart.find((candidate) => candidate.id === id);
+  if (!item) return;
+  const groupsHtml = item.groups.map((group) => group.type === "multi"
+    ? `<section class="cart-item-group"><div class="cart-item-group-header"><span>${escapeCartHtml(group.category)}</span><span class="cart-item-count">${group.count}</span></div><ul>${group.value.map((name) => `<li>${escapeCartHtml(name)}</li>`).join("")}</ul></section>`
+    : `<section class="cart-item-group"><div class="cart-item-group-header"><span class="cart-item-category">${escapeCartHtml(group.category)}</span></div><div class="cart-item-value">${escapeCartHtml(group.value)}</div></section>`).join("");
+  const dialog = document.createElement("dialog");
+  dialog.className = "share-dialog cart-detail-dialog";
+  dialog.setAttribute("aria-labelledby", "cart-detail-title");
+  dialog.innerHTML = `<div class="share-dialog-card"><header class="share-dialog-header"><div><span class="auth-kicker">${cartLocale("配置详情", "CONFIGURATION DETAILS")}</span><h2 id="cart-detail-title">${escapeCartHtml(item.titleName)}</h2><p class="cart-detail-model">${escapeCartHtml(item.modelName)} · ${escapeCartHtml(item.colorName)}</p></div><button class="btn btn-text btn-sm" type="button" aria-label="${cartLocale("关闭", "Close")}">✕</button></header><div class="cart-detail-content">${groupsHtml}</div></div>`;
+  document.body.appendChild(dialog);
+  dialog.querySelector("button")?.addEventListener("click", () => dialog.close());
+  dialog.addEventListener("close", () => dialog.remove(), { once: true });
+  dialog.showModal();
 }
 
 async function createCurrentSavedConfig() {

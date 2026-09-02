@@ -37,6 +37,15 @@ app.add_middleware(
 
 
 @app.middleware("http")
+async def allow_local_private_network(request: Request, call_next):
+    """Allow Chrome/WebView local-port requests during standalone development."""
+    response = await call_next(request)
+    if request.headers.get("access-control-request-private-network", "").lower() == "true":
+        response.headers["Access-Control-Allow-Private-Network"] = "true"
+    return response
+
+
+@app.middleware("http")
 async def audit_mutations(request: Request, call_next):
     response = await call_next(request)
     path = request.url.path

@@ -70,14 +70,15 @@ class BackendWorkflowTests(unittest.TestCase):
 
     def test_phone_registration_and_login_use_international_format(self) -> None:
         with TestClient(app) as client:
-            registered = client.post("/api/v1/auth/register", json={"display_name": "Phone User", "email": "phone-user@example.com", "phone": "+861590000000", "password": "password123"})
+            registered = client.post("/api/v1/auth/register", json={"display_name": "Phone User", "email": "phone-user@example.com", "phone_country": "CN", "phone": "1590000000", "password": "password123"})
             self.assertEqual(201, registered.status_code, registered.text)
-            self.assertEqual("+861590000000", registered.json()["user"]["phone"])
-            logged_in = client.post("/api/v1/auth/login", json={"identifier": "+861590000000", "password": "password123"})
+            self.assertEqual("1590000000", registered.json()["user"]["phone"])
+            self.assertEqual("CN", registered.json()["user"]["phone_country"])
+            logged_in = client.post("/api/v1/auth/login", json={"phone_country": "CN", "phone": "1590000000", "password": "password123"})
             self.assertEqual(200, logged_in.status_code, logged_in.text)
-            invalid = client.post("/api/v1/auth/register", json={"display_name": "Invalid Phone", "email": "invalid-phone@example.com", "phone": "1590000000", "password": "password123"})
+            invalid = client.post("/api/v1/auth/register", json={"display_name": "Invalid Phone", "email": "invalid-phone@example.com", "phone_country": "CN", "phone": "1590000000x", "password": "password123"})
             self.assertEqual(422, invalid.status_code, invalid.text)
-            incomplete = client.post("/api/v1/auth/register", json={"email": "missing-name@example.com", "phone": "+861590000001", "password": "password123"})
+            incomplete = client.post("/api/v1/auth/register", json={"email": "missing-name@example.com", "phone_country": "CN", "phone": "1590000001", "password": "password123"})
             self.assertEqual(422, incomplete.status_code, incomplete.text)
 
     def test_save_and_share_configuration(self) -> None:
@@ -271,6 +272,32 @@ class BackendWorkflowTests(unittest.TestCase):
             response = client.patch("/api/v1/admin/users/{}/status".format(admin["id"]), headers=headers, json={"enabled": False})
         self.assertEqual(422, response.status_code)
 
+    def test_admin_account_edit_validation_and_password_reset(self) -> None:
+        admin = create_user("account-guard@example.com", None, "password123", role="admin", display_name="Account Guard")
+        customer = create_user("account-customer@example.com", "+861590000091", "password123", display_name="Account Customer")
+        admin_token = create_session(admin)["token"]
+        customer_token = create_session(customer)["token"]
+        headers = {"Authorization": "Bearer {}".format(admin_token)}
+        with TestClient(app) as client:
+            invalid = client.post("/api/v1/admin/users", headers=headers, json={"display_name": "Invalid", "email": "invalid", "password": "password123", "role": "customer"})
+            self.assertEqual(422, invalid.status_code, invalid.text)
+            renamed = client.patch("/api/v1/admin/users/{}".format(admin["id"]), headers=headers, json={"display_name": "Renamed admin"})
+            self.assertEqual(200, renamed.status_code, renamed.text)
+            reset = client.patch("/api/v1/admin/users/{}".format(customer["id"]), headers=headers, json={"password": "newpassword123"})
+            self.assertEqual(200, reset.status_code, reset.text)
+            self.assertEqual(401, client.get("/api/v1/auth/me", headers={"Authorization": "Bearer {}".format(customer_token)}).status_code)
+            self.assertIsNotNone(authenticate("account-customer@example.com", "newpassword123"))
+
+    def test_profile_contact_change_requires_password_and_revokes_session(self) -> None:
+        user = create_user("profile-user@example.com", "+861590000092", "password123", display_name="Profile User", phone_country="CN")
+        token = create_session(user)["token"]
+        headers = {"Authorization": "Bearer {}".format(token)}
+        with TestClient(app) as client:
+            changed = client.patch("/api/v1/auth/profile/contact", headers=headers, json={"current_password": "password123", "email": "profile-new@example.com", "phone_country": "CN", "phone": "1590000092"})
+            self.assertEqual(200, changed.status_code, changed.text)
+            self.assertEqual("1590000092", changed.json()["phone"])
+            self.assertEqual(401, client.get("/api/v1/auth/me", headers=headers).status_code)
+
     def test_saved_quote_can_be_downloaded_as_pdf(self) -> None:
         staff = create_user("quote-pdf@example.com", None, "password123", role="sales", display_name="Quote PDF")
         config_owner = create_user("quote-config@example.com", None, "password123", display_name="Quote Config")
@@ -345,7 +372,7 @@ class BackendWorkflowTests(unittest.TestCase):
             finally:
                 connection.close()
             self.assertIsNotNone(version_row, process.stdout + process.stderr)
-            self.assertEqual("20260901_0006", version_row[0])
+            self.assertEqual("20260902_0007", version_row[0])
             self.assertTrue({"products", "options", "users", "quotes", "audit_logs", "product_motor_prices", "product_specifications"}.issubset(tables))
             self.assertIn("description_override_en", columns)
             self.assertIn("label_en", color_columns)

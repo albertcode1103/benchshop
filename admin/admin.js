@@ -6,29 +6,43 @@ const TOKEN_KEY = "boten_admin_token";
 const CUSTOMER_TOKEN_KEY = "boten_user_token";
 
 function getStoredCollapsedCategories() { try { const value = JSON.parse(localStorage.getItem("boten-admin-collapsed-categories") || "[]"); return Array.isArray(value) ? value : []; } catch (_) { return []; } }
-const state = { user: null, products: [], users: [], shares: [], quotes: [], audits: [], editingProduct: null, mappingEditor: null, userRoleFilter: "all", catalogLanguage: localStorage.getItem("boten-admin-language") || "zh", configCatalog: [], collapsedCategories: new Set(getStoredCollapsedCategories()) };
+const state = { user: null, products: [], users: [], shares: [], quotes: [], audits: [], countries: [], editingProduct: null, mappingEditor: null, userRoleFilter: "all", catalogLanguage: localStorage.getItem("boten-admin-language") || "zh", configCatalog: [], collapsedCategories: new Set(getStoredCollapsedCategories()) };
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
 
 async function api(path, requestOptions = {}) {
   const token = sessionStorage.getItem(TOKEN_KEY);
-  const { timeout: timeoutMs = 6000, ...options } = requestOptions;
-  const controller = new AbortController(); const timeout = setTimeout(() => controller.abort(), timeoutMs);
-  let response;
-  try {
-    response = await fetch(`${API_BASE}${path}`, {
-      ...options,
-      headers: {
-        "Content-Type": "application/json",
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        ...(options.headers || {})
-      }, signal: controller.signal
-    });
-  } finally { clearTimeout(timeout); }
-  if (response.status === 204) return null;
-  const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(body.detail || `请求失败 (${response.status})`);
-  return body;
+  const { timeout: timeoutMs = 15000, ...options } = requestOptions;
+  const method = String(options.method || "GET").toUpperCase();
+  // 页面首次进入会并发读取多个目录。仅对不会修改数据的 GET 请求重试一次，
+  // 避免 NAS 冷启动或 SQLite 短暂繁忙时把正常页面误显示成加载失败。
+  const attempts = method === "GET" ? 2 : 1;
+  let failure;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const controller = new AbortController();
+    let timedOut = false;
+    const timeout = setTimeout(() => { timedOut = true; controller.abort(); }, timeoutMs);
+    try {
+      const response = await fetch(`${API_BASE}${path}`, {
+        ...options,
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...(options.headers || {})
+        }, signal: controller.signal
+      });
+      if (response.status === 204) return null;
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.detail || `请求失败 (${response.status})`);
+      return body;
+    } catch (error) {
+      failure = timedOut ? new Error("请求超时，请稍后重试") : error;
+      if (attempt + 1 < attempts) await new Promise(resolve => setTimeout(resolve, 500));
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+  throw failure;
 }
 
 function escapeHtml(value) {
@@ -207,12 +221,14 @@ async function loadData() {
     state.shares = shares.items || [];
     state.quotes = quotes?.items || [];
 
-    const [products, configCatalog] = await Promise.all([
+    const [products, configCatalog, countries] = await Promise.all([
       api("/api/v1/admin/products"),
-      api("/api/v1/admin/config-catalog")
+      api("/api/v1/admin/config-catalog"),
+      api("/api/v1/auth/countries?lang=zh")
     ]);
     state.products = products.items || [];
     state.configCatalog = configCatalog.items || [];
+    state.countries = countries.items || [];
     renderConfigCatalog(state.configCatalog);
     setTimeout(() => {
       addCatalogLanguageSwitches();
@@ -235,7 +251,7 @@ async function loadData() {
   } catch (failure) {
     ["#products-table", "#users-table", "#shares-table"].forEach((selector) => {
       const target = $(selector);
-      if (target) target.innerHTML = `<tr><td colspan="6" class="empty">无法加载数据：${escapeHtml(failure.message)}<br><small>请确认 API 服务运行在 8001 端口，且使用的是 backend/boten.db</small></td></tr>`;
+      if (target) target.innerHTML = `<tr><td colspan="6" class="empty">无法加载数据：${escapeHtml(failure.message)}<br><small>请稍后刷新重试；若持续出现，请检查 NAS 中 API 容器状态与日志。</small></td></tr>`;
     });
     showToast(failure.message);
     if (/session|token|401/i.test(failure.message)) logout();
@@ -569,6 +585,9 @@ function openUserEditor(user = null) {
   form.elements.role.value = user?.role || "sales";
   form.elements.email.value = user?.email || "";
   form.elements.phone.value = user?.phone || "";
+  form.elements.phone_country.innerHTML = state.countries.map((country) => `<option value="${escapeHtml(country.code)}">${escapeHtml(country.name)}</option>`).join("");
+  form.elements.phone_country.value = user?.phone_country || "CN";
+  updateAdminPhoneCallingCode();
   form.elements.password.required = !editing;
   form.elements.password.placeholder = editing ? "留空表示不修改密码" : "至少8个字符";
   $("#user-dialog-eyebrow").textContent = editing ? "EDIT ACCOUNT" : "NEW ACCOUNT";
@@ -577,6 +596,12 @@ function openUserEditor(user = null) {
   $("#create-user-submit").textContent = editing ? "保存账号" : "创建账号";
   $("#user-error").hidden = true;
   dialog.showModal();
+}
+
+function updateAdminPhoneCallingCode() {
+  const country = state.countries.find((item) => item.code === $("#user-form [name='phone_country']")?.value);
+  const output = $("#admin-phone-calling-code");
+  if (output) output.textContent = country?.calling_code || "—";
 }
 
 function editUser(user) { openUserEditor(user); }
@@ -591,6 +616,7 @@ async function createUser(event) {
   data.display_name = data.display_name.trim();
   data.email = data.email.trim();
   data.phone = data.phone.trim();
+  data.phone_country = data.phone_country || "";
   const error = $("#user-error"); error.hidden = true;
   if (!data.display_name) { error.textContent = "请填写显示名称"; error.hidden = false; return; }
   if ((!userId && !data.password) || (data.password && data.password.length < 8)) { error.textContent = "密码至少 8 位"; error.hidden = false; return; }
@@ -834,6 +860,7 @@ function bindEvents() {
     renderUsers();
   });
   $("#user-form").addEventListener("submit", createUser);
+  $("#user-form [name='phone_country']")?.addEventListener("change", updateAdminPhoneCallingCode);
   $("#product-form").addEventListener("submit", saveProduct);
   $("#config-option-form").addEventListener("submit", saveConfigOption);
   $("#delete-config-option").addEventListener("click", deleteCurrentConfigOption);
