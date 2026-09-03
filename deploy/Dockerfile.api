@@ -15,6 +15,7 @@ RUN pip install --no-cache-dir -r /app/backend/requirements.txt
 
 COPY alembic.ini /app/alembic.ini
 COPY backend /app/backend
+COPY assets/fonts /app/assets/fonts
 COPY deploy/api-entrypoint.sh /app/deploy/api-entrypoint.sh
 RUN chmod 755 /app/deploy/api-entrypoint.sh
 

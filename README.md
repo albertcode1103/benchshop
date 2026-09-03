@@ -48,7 +48,8 @@
 - API：FastAPI + Uvicorn
 - 数据库：SQLite + Alembic 版本迁移
 - 认证：Bearer 会话令牌，PBKDF2-SHA256 密码散列
-- PDF：ReportLab 后端生成，自动使用微软雅黑/黑体/Noto CJK，缺失时回退内置中文字体
+- 字体：用户端、管理后台和 PDF 统一使用项目内嵌的 HarmonyOS Sans；浏览器和 NAS 不依赖系统字体。字体授权见 `assets/fonts/harmonyos-sans/LICENSE.txt`。
+- PDF：ReportLab 后端生成，优先使用项目内嵌的 HarmonyOS Sans SC，缺失时回退系统中文字体或内置中文字体
 
 ## 本地运行
 

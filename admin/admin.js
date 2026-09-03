@@ -709,6 +709,13 @@ function openQuoteEditor({ quoteId = null, configId, title, items, currency = "C
       const optionMap = new Map((prices.options || []).flatMap((option) => [[normalizeCode(option.id), option], [normalizeCode(option.code), option]]));
       let matched = 0;
       normalizedItems.forEach((item, index) => {
+        const snapshotPrice = selectedCurrency === "USD" ? Number(item.price_usd || 0) : Number(item.price_cny || 0);
+        const isSnapshotProduct = item.kind === "product" && (Object.prototype.hasOwnProperty.call(item, "price_cny") || Object.prototype.hasOwnProperty.call(item, "price_usd"));
+        if (isSnapshotProduct) {
+          $(`[data-q="price"][data-i="${index}"]`, dialog).value = snapshotPrice > 0 ? snapshotPrice : 0;
+          if (snapshotPrice > 0) matched += 1;
+          return;
+        }
         const keys = [item.source_id, item.code, item.name].map(normalizeCode).filter(Boolean);
         let record = null;
         if (item.kind === "product") record = keys.map((key) => productMap.get(key)).find(Boolean);
@@ -811,7 +818,7 @@ async function exportSharePdf(code) {
 async function quoteShare(code) {
   try {
     const share = await api(`/api/v1/shares/${code}`);
-    const items = [{ kind: "product", source_id: share.snapshot.product.id, name: share.snapshot.product.name, code: share.snapshot.product.id, price: Number(share.snapshot.product.base_price || 0), quantity: 1 }];
+    const items = [{ kind: "product", source_id: share.snapshot.product.id, name: share.snapshot.product.name, code: share.snapshot.product.id, price: Number(share.snapshot.product.base_price || 0), price_cny: Number(share.snapshot.product.base_price || 0), price_usd: Number(share.snapshot.product.price_usd || 0), quantity: 1 }];
     (share.snapshot.categories || []).forEach((category) => (category.options || []).forEach((option) => items.push({ kind: "option", source_id: option.id, name: option.name, code: option.code, price: Number(option.price || 0), quantity: 1 })));
     openQuoteEditor({ configId: share.config_id, title: `分享配置 ${code}`, items, currency: "CNY", exportAfterSave: true });
   } catch (failure) { showToast(failure.message); }

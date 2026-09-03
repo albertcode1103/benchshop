@@ -1,3 +1,30 @@
+/* Keep the admin panel on the same bundled typeface as the public site. */
+@font-face {
+  font-family: "HarmonyOS Sans";
+  src: url("../assets/fonts/harmonyos-sans/HarmonyOS_Sans.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  unicode-range: U+0000-024F;
+}
+
+@font-face {
+  font-family: "HarmonyOS Sans";
+  src: url("../assets/fonts/harmonyos-sans/HarmonyOS_Sans_SC.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  unicode-range: U+3000-303F, U+3400-4DBF, U+4E00-9FFF, U+F900-FAFF;
+}
+
+@font-face {
+  font-family: "HarmonyOS Sans";
+  src: url("../assets/fonts/harmonyos-sans/HarmonyOS_Sans_Italic.ttf") format("truetype");
+  font-style: italic;
+  font-weight: 100 900;
+  font-display: swap;
+}
+
 :root {
   --ink: #17202a;
   --muted: #66717e;
@@ -13,7 +40,7 @@
   --nav: #182028;
   --radius: 14px;
   --shadow: 0 16px 44px rgba(27, 35, 42, .09);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", Arial, sans-serif;
+  font-family: "HarmonyOS Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", Arial, sans-serif;
 }
 
 * { box-sizing: border-box; }

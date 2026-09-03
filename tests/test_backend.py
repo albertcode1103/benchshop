@@ -306,14 +306,15 @@ class BackendWorkflowTests(unittest.TestCase):
         config = save_config(config_owner["id"], "Quote PDF configuration", product["id"], snapshot)
         headers = {"Authorization": "Bearer {}".format(create_session(staff)["token"])}
         with TestClient(app) as client:
-            created = client.post("/api/v1/quotes", headers=headers, json={
-                "config_id": config["id"], "title": "Quote PDF", "items": [{"code": "CR1016", "name": "Test Bench", "quantity": 1, "price": 1000}], "total_price": 1000, "currency": "CNY",
-            })
-            self.assertEqual(201, created.status_code, created.text)
-            response = client.get("/api/v1/quotes/{}/pdf".format(created.json()["id"]), headers=headers)
-        self.assertEqual(200, response.status_code, response.text)
-        self.assertEqual("application/pdf", response.headers["content-type"])
-        self.assertGreater(len(response.content), 100)
+            for currency, price in (("CNY", 1000), ("USD", 150)):
+                created = client.post("/api/v1/quotes", headers=headers, json={
+                    "config_id": config["id"], "title": "{} Quote PDF".format(currency), "items": [{"code": "CR1016", "name": "Test Bench", "quantity": 1, "price": price}], "total_price": price, "currency": currency,
+                })
+                self.assertEqual(201, created.status_code, created.text)
+                response = client.get("/api/v1/quotes/{}/pdf".format(created.json()["id"]), headers=headers)
+                self.assertEqual(200, response.status_code, response.text)
+                self.assertEqual("application/pdf", response.headers["content-type"])
+                self.assertGreater(len(response.content), 100)
 
     def test_cross_platform_pdf_generation(self) -> None:
         from io import BytesIO

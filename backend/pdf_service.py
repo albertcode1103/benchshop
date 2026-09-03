@@ -35,8 +35,10 @@ TEXT_GRAY = colors.HexColor("#566573")
 
 
 def _register_font() -> str:
+    bundled_font = Path(__file__).resolve().parent.parent / "assets" / "fonts" / "harmonyos-sans" / "HarmonyOS_Sans_SC.ttf"
     candidates = [
         os.getenv("BOTEN_PDF_FONT_PATH", "").strip(),
+        str(bundled_font),
         r"C:\Windows\Fonts\msyh.ttc",
         r"C:\Windows\Fonts\simhei.ttf",
         "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",

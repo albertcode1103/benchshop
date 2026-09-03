@@ -26,6 +26,11 @@ class AdminFrontendContractTests(unittest.TestCase):
         self.assertIn('document.body.appendChild(link);', ADMIN_JS)
         self.assertNotIn('printWindow.document.write', ADMIN_JS)
 
+    def test_quote_prefill_uses_selected_motor_snapshot_price(self) -> None:
+        self.assertIn('price_cny: Number(share.snapshot.product.base_price || 0)', ADMIN_JS)
+        self.assertIn('price_usd: Number(share.snapshot.product.price_usd || 0)', ADMIN_JS)
+        self.assertIn('const snapshotPrice = selectedCurrency === "USD"', ADMIN_JS)
+
     def test_toast_is_promoted_above_open_dialogs(self) -> None:
         self.assertIn('document.querySelectorAll("dialog[open]")', ADMIN_JS)
         self.assertIn('host.appendChild(toast)', ADMIN_JS)

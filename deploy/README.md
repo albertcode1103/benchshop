@@ -41,8 +41,8 @@ BOTEN_DATA_DIR=./data
 # LAN 阶段可保留本地地址；公网部署时替换为唯一的正式 HTTPS 域名。
 BOTEN_CORS_ORIGINS=http://127.0.0.1:8080,http://localhost:8080
 
-# 可选：若自行挂载了 CJK 字体，可填写容器内路径；默认使用内置回退字体。
-BOTEN_PDF_FONT_PATH=/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc
+# 默认使用随镜像内嵌的 HarmonyOS Sans SC；仅在需要替换 PDF 字体时修改。
+BOTEN_PDF_FONT_PATH=/app/assets/fonts/harmonyos-sans/HarmonyOS_Sans_SC.ttf
 ```
 
 确认 `data/boten.db` 已就位后启动：
