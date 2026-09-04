@@ -226,3 +226,12 @@
 - [x] JavaScript 语法、前端契约及混合购物车业务回归通过。
 - [x] 用户授权更新项目文档、提交并推送 Git、同步源码和最新版数据库到 Albert-NAS。
 - [ ] 本轮不更新 BOTEN-NAS；待 Albert-NAS 验证和用户另行确认。
+
+### 11.5 Albert-NAS 同步记录
+
+- Git 功能检查点：`3236395 feat: unify catalog cart and administration workflows`，已推送至 GitHub `origin/main`。
+- Albert-NAS 的 Windows 共享目录 `\\albert-nas\Docker\benchshop` 对应 Linux 项目根目录 `/vol1/1000/Docker/benchshop`；`/vol1/1000/Docker/benchshop/js` 仅为前端脚本子目录。源码已从本机 E 盘复制，运行数据目录、服务器私有 `.env` 和 NAS 备份目录未被源码同步覆盖。
+- 本地一致性快照：`backups/boten-20260904-172717-005111.db`；恢复后的 NAS `data/boten.db` 与该快照 SHA-256 一致，数据库迁移版本为 `20260904_0014`，完整性检查为 `ok`。
+- NAS 原运行库已自动备份为 `data/backups/boten-20260904-172726-569128.db`，可用于回滚。
+- NAS 健康接口仍返回 `200 / ok`，但当前容器是同步前构建的旧镜像；源码与数据库同步完成后仍须进入 `/vol1/1000/Docker/benchshop` 执行 `docker compose up -d --build --force-recreate`，再验证新目录接口和页面静态资源。
+- 当前执行环境没有 Docker CLI，且 Albert-NAS SSH 未配置免密认证，因此未代替用户重建容器；此项不影响已完成的文件和数据库同步。
