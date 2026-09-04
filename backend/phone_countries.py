@@ -43,6 +43,6 @@ def get_country(country: str):
 
 def public_countries(language: str = "zh"):
     return [
-        {"code": iso, "name": en if language == "en" else zh, "name_zh": zh, "name_en": en, "calling_code": calling}
-        for iso, zh, en, calling, _minimum, _maximum in COUNTRIES
+        {"code": iso, "name": en if language == "en" else zh, "name_zh": zh, "name_en": en, "calling_code": calling, "minimum_length": minimum, "maximum_length": maximum}
+        for iso, zh, en, calling, minimum, maximum in COUNTRIES
     ]

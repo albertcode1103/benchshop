@@ -1,7 +1,3 @@
-function formatPrice(value) {
-  return "¥" + value.toLocaleString("zh-CN");
-}
-
 function getColorLabel(color, model = null) {
   if (model?.colorNames?.[color]) return model.colorNames[color];
   return color;
@@ -10,63 +6,6 @@ function getColorLabel(color, model = null) {
 function getSpecLabel(categoryId, name) {
   // Option names are already localized by the catalog API.
   return name;
-}
-
-function calculateTotal(modelId, selections) {
-  const model = configData.models.find((m) => m.id === modelId);
-  if (!model) return 0;
-
-  let total = model.basePrice;
-
-  model.categories.forEach((cat) => {
-    const selected = selections[cat.id];
-    if (!selected) return;
-
-    if (cat.multiple) {
-      selected.forEach((optId) => {
-        const option = cat.options.find((o) => o.id === optId);
-        if (option) total += option.price;
-      });
-    } else {
-      const option = cat.options.find((o) => o.id === selected);
-      if (option) total += option.price;
-    }
-  });
-
-  return total;
-}
-
-function getSelectedOptions(model, selections) {
-  const items = [];
-
-  model.categories.forEach((cat) => {
-    const selected = selections[cat.id];
-    if (!selected || (Array.isArray(selected) && selected.length === 0)) return;
-
-    if (cat.multiple) {
-      selected.forEach((optId) => {
-        const option = cat.options.find((o) => o.id === optId);
-        if (option) {
-          items.push({
-            category: cat.name,
-            name: option.name,
-            price: option.price
-          });
-        }
-      });
-    } else {
-      const option = cat.options.find((o) => o.id === selected);
-      if (option) {
-        items.push({
-          category: cat.name,
-          name: option.name,
-          price: option.price
-        });
-      }
-    }
-  });
-
-  return items;
 }
 
 function buildSummaryGroups(model, snapshot) {
@@ -117,4 +56,15 @@ function buildSummaryGroups(model, snapshot) {
   });
 
   return groups;
+}
+
+function pricePreviewText(key, zh, en) {
+  return window.botenI18n?.t(key) || (localStorage.getItem("boten-language") === "en" ? en : zh);
+}
+
+function initPricePreview() {
+  const title = document.getElementById("pricing-preview-title");
+  const message = document.getElementById("pricing-enquiry-message");
+  if (title) title.textContent = pricePreviewText("requestQuote", "获取报价", "Request a Quote");
+  if (message) message.textContent = pricePreviewText("contactSalesQuote", "请联系销售人员获取报价", "Please contact our sales team for a quotation");
 }

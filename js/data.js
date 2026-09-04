@@ -317,7 +317,7 @@
   }
 
   function getDefaultColor(model) {
-    return model.colors.includes("Green") ? "Green" : model.colors[0];
+    return model.defaultColor || (model.colors.includes("Green") ? "Green" : model.colors[0]);
   }
 
   const configData = {

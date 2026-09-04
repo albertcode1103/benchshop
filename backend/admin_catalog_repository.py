@@ -3,6 +3,9 @@ from typing import Any, Dict, List, Optional
 from .database import get_connection
 import uuid
 
+
+CATALOG_ROOT_IDS = ("catalog-optional", "catalog-tools", "catalog-accessories")
+
 def create_product(values: Dict[str, Any]) -> Dict[str, Any]:
     product_id = values["id"].strip().lower()
     with get_connection() as db:
@@ -13,7 +16,15 @@ def create_product(values: Dict[str, Any]) -> Dict[str, Any]:
 
 def list_config_categories() -> List[Dict[str, Any]]:
     with get_connection() as connection:
-        categories = connection.execute("SELECT id, name, name_en, description, description_en, multiple, sort_order FROM categories ORDER BY sort_order, name").fetchall()
+        categories = connection.execute(
+            """
+            SELECT id, name, name_en, description, description_en, multiple, sort_order
+            FROM categories
+            WHERE id NOT IN (?, ?, ?)
+            ORDER BY sort_order, name
+            """,
+            CATALOG_ROOT_IDS,
+        ).fetchall()
         result = []
         for category in categories:
             item = dict(category); item["multiple"] = bool(item["multiple"])
@@ -113,7 +124,7 @@ def config_category_references(category_id: str) -> Optional[Dict[str, Any]]:
             (category_id,),
         ).fetchall()
     result = dict(category)
-    result["protected"] = category_id in ("motor", "voltage")
+    result["protected"] = category_id in ("motor", "voltage", *CATALOG_ROOT_IDS)
     result["options"] = [dict(row) for row in options]
     result["option_count"] = len(result["options"])
     result["mapping_count"] = sum(row["mapping_count"] for row in result["options"])
@@ -251,23 +262,32 @@ def save_product_configuration(
     """Save every editable part of one product in one SQLite transaction."""
     allowed = ("name", "title_name", "name_en", "title_name_en", "description", "description_en", "base_price", "price_usd", "enabled", "sort_order")
     updates = {key: values[key] for key in allowed if key in values and values[key] is not None}
+    option_ids = list(dict.fromkeys(str(option_id).strip() for option_id in option_ids if str(option_id).strip()))
     if not option_ids:
-        raise ValueError("At least one motor and voltage option is required")
+        raise ValueError("设备至少需要保留一个电机和一个供电配置")
 
     with get_connection() as connection:
         if connection.execute("SELECT 1 FROM products WHERE id = ?", (product_id,)).fetchone() is None:
             return None
+
+        # A catalog option can be removed while another browser tab is editing
+        # this product. Only remove dangling mappings; valid disabled mappings
+        # remain because they can legitimately retain a product-specific note.
+        connection.execute("DELETE FROM product_options WHERE product_id = ? AND option_id NOT IN (SELECT id FROM options)", (product_id,))
+        connection.execute("DELETE FROM product_motor_prices WHERE product_id = ? AND motor_option_id NOT IN (SELECT id FROM options)", (product_id,))
 
         placeholders = ",".join("?" for _ in option_ids)
         option_rows = connection.execute(
             "SELECT id, category_id, code FROM options WHERE id IN ({}) AND enabled = 1".format(placeholders),
             option_ids,
         ).fetchall()
-        if len(option_rows) != len(set(option_ids)):
-            raise ValueError("One or more options do not exist")
+        if len(option_rows) != len(option_ids):
+            existing_ids = {row["id"] for row in option_rows}
+            missing_ids = [option_id for option_id in option_ids if option_id not in existing_ids]
+            raise ValueError("以下配置已从配置目录移除或已停用，请刷新设备编辑页后重新选择：{}".format(", ".join(missing_ids)))
         categories = {row["category_id"] for row in option_rows}
         if "motor" not in categories or "voltage" not in categories:
-            raise ValueError("Each product requires at least one motor and voltage option")
+            raise ValueError("设备至少需要保留一个电机和一个供电配置")
 
         if updates:
             assignments = ", ".join("{} = ?".format(key) for key in updates)
@@ -291,7 +311,8 @@ def save_product_configuration(
                 ).fetchall()
             }
             if valid_override_ids != override_ids:
-                raise ValueError("One or more option overrides do not exist")
+                missing_ids = sorted(override_ids - valid_override_ids)
+                raise ValueError("以下专有标注对应的配置已被删除，请刷新后重新保存：{}".format(", ".join(missing_ids)))
 
         existing_rows = connection.execute(
             """SELECT option_id, mapping_id, description_override, description_override_en,
@@ -395,8 +416,9 @@ def replace_colors(product_id: str, colors: List[Dict[str, Any]]) -> Optional[Di
 
 
 def replace_option_mappings(product_id: str, option_ids: List[str]) -> Optional[Dict[str, Any]]:
+    option_ids = list(dict.fromkeys(str(option_id).strip() for option_id in option_ids if str(option_id).strip()))
     if not option_ids:
-        raise ValueError("At least one motor and voltage option is required")
+        raise ValueError("设备至少需要保留一个电机和一个供电配置")
     with get_connection() as connection:
         exists = connection.execute("SELECT 1 FROM products WHERE id = ?", (product_id,)).fetchone()
         if exists is None:
@@ -406,12 +428,14 @@ def replace_option_mappings(product_id: str, option_ids: List[str]) -> Optional[
             "SELECT id, category_id, code FROM options WHERE id IN ({}) AND enabled = 1".format(placeholders),
             option_ids,
         ).fetchall()
-        if len(option_rows) != len(set(option_ids)):
-            raise ValueError("One or more options do not exist")
+        if len(option_rows) != len(option_ids):
+            existing_ids = {row["id"] for row in option_rows}
+            missing_ids = [option_id for option_id in option_ids if option_id not in existing_ids]
+            raise ValueError("以下配置已从配置目录移除或已停用，请刷新设备编辑页后重新选择：{}".format(", ".join(missing_ids)))
 
         categories = {row["category_id"] for row in option_rows}
         if "motor" not in categories or "voltage" not in categories:
-            raise ValueError("Each product requires at least one motor and voltage option")
+            raise ValueError("设备至少需要保留一个电机和一个供电配置")
 
         existing_rows = connection.execute(
             """
@@ -459,6 +483,8 @@ def update_product_option_override(product_id: str, option_id: str, description:
         if product_exists is None or option is None:
             return None
         mapping_id = "{}-{}-{}".format(product_id.upper(), option["category_id"].upper(), option["code"])
+        description = description.strip() if description else None
+        description_en = description_en.strip() if description_en else None
         db.execute(
             """INSERT INTO product_options
                (product_id, option_id, mapping_id, description_override, description_override_en, price_override, enabled)

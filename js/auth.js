@@ -6,6 +6,7 @@ let authIdentifierMode = "email";
 let pendingAuthenticatedAction = null;
 const authSubscribers = [];
 let phoneCountries = [];
+let authSubmitting = false;
 const authText = (key, zh, en) => {
   const translated = window.botenI18n?.t(key);
   return translated && translated !== key ? translated : (localStorage.getItem("boten-language") === "en" ? en : zh);
@@ -39,20 +40,72 @@ function refreshAuthCopy() {
   document.getElementById("account-manage-back").textContent = text("back", "返回", "Back");
 }
 
+class AuthRequestError extends Error {
+  constructor(message, { code = "REQUEST_FAILED", field = null, status = 0, requestId = "", retryAfter = 0 } = {}) {
+    super(message); this.name = "AuthRequestError"; this.code = code; this.field = field; this.status = status; this.requestId = requestId; this.retryAfter = retryAfter;
+  }
+}
+
+const AUTH_ERROR_COPY = {
+  ACCOUNT_EMAIL_INVALID: ["请输入有效的邮箱地址。", "Enter a valid email address."],
+  ACCOUNT_EMAIL_DUPLICATE: ["该邮箱已被其他账号使用。", "This email is already used by another account."],
+  ACCOUNT_PHONE_INVALID: ["手机号格式或长度与所选国家不匹配。", "Enter a valid phone number for the selected country."],
+  ACCOUNT_PHONE_DUPLICATE: ["该手机号已被其他账号使用。", "This phone number is already used by another account."],
+  ACCOUNT_PHONE_COUNTRY_INVALID: ["请选择有效国家。", "Select a valid country."],
+  ACCOUNT_CONTACT_REQUIRED: ["邮箱和手机号至少保留一项。", "Keep at least an email address or phone number."],
+  ACCOUNT_NAME_REQUIRED: ["请填写姓名。", "Enter your name."],
+  ACCOUNT_PASSWORD_TOO_SHORT: ["密码至少需要 8 个字符。", "The password must contain at least 8 characters."],
+  ACCOUNT_PASSWORD_TOO_LONG: ["密码不能超过 128 个字符。", "The password cannot exceed 128 characters."],
+  ACCOUNT_CURRENT_PASSWORD_INVALID: ["当前密码不正确，请重新输入。", "The current password is incorrect. Try again."],
+  ACCOUNT_PASSWORD_CONFIRMATION_MISMATCH: ["两次输入的新密码不一致。", "The new passwords do not match."],
+  ACCOUNT_IDENTIFIER_REQUIRED: ["请填写邮箱或手机号。", "Enter an email address or phone number."],
+  ACCOUNT_CREDENTIALS_INVALID: ["账号或密码不正确，请重新输入。", "The account or password is incorrect. Try again."],
+  ACCOUNT_SESSION_EXPIRED: ["登录状态已失效，请重新登录。", "Your session has expired. Sign in again."],
+  ACCOUNT_PERMISSION_DENIED: ["当前账号没有执行此操作的权限。", "Your account does not have permission for this action."],
+  ACCOUNT_RATE_LIMITED: ["尝试次数过多，请稍后再试。", "Too many attempts. Try again later."],
+  ACCOUNT_VALIDATION_FAILED: ["请检查填写内容后重试。", "Check the entered information and try again."],
+  SERVER_UNAVAILABLE: ["服务器暂时无法处理请求，请稍后重试。", "The server cannot complete the request right now. Try again later."],
+  REQUEST_TIMEOUT: ["服务器响应超时，请确认网络后重试。", "The server took too long to respond. Check your connection and try again."],
+  NETWORK_UNAVAILABLE: ["网络暂不可用，请检查连接或服务状态后重试。", "Network unavailable. Check your connection or service status and try again."]
+};
+
+function authErrorCopy(code) {
+  const copy = AUTH_ERROR_COPY[code];
+  return copy?.[localStorage.getItem("boten-language") === "en" ? 1 : 0];
+}
+
 async function authRequest(path, options = {}) {
   const token = sessionStorage.getItem(USER_TOKEN_KEY);
-  const response = await fetch(`${CATALOG_API_BASE}/api/v1${path}`, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(options.headers || {})
+  const { timeout = 15000, ...requestOptions } = options;
+  const controller = new AbortController();
+  const timeoutHandle = setTimeout(() => controller.abort(), timeout);
+  try {
+    const response = await fetch(`${CATALOG_API_BASE}/api/v1${path}`, {
+      ...requestOptions,
+      headers: {
+        "Content-Type": "application/json",
+        "X-UI-Language": localStorage.getItem("boten-language") === "en" ? "en" : "zh-CN",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(requestOptions.headers || {})
+      },
+      signal: controller.signal
+    });
+    if (response.status === 204) return null;
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const code = body.error?.code || response.headers.get("X-Error-Code") || `HTTP_${response.status}`;
+      const requestId = body.request_id || response.headers.get("X-Request-ID") || "";
+      const message = response.status >= 500 ? authErrorCopy("SERVER_UNAVAILABLE") : (authErrorCopy(code) || body.detail || `${authText("requestFailed", "请求失败", "Request failed")} (${response.status})`);
+      throw new AuthRequestError(message, { code, field: body.error?.field, status: response.status, requestId, retryAfter: Number(response.headers.get("Retry-After") || 0) });
     }
-  });
-  if (response.status === 204) return null;
-  const body = await response.json().catch(() => ({}));
-  if (!response.ok) { const error = new Error(body.detail || `${authText("requestFailed", "请求失败", "Request failed")} (${response.status})`); error.status = response.status; throw error; }
-  return body;
+    return body;
+  } catch (failure) {
+    if (failure instanceof AuthRequestError) throw failure;
+    if (failure?.name === "AbortError") throw new AuthRequestError(authErrorCopy("REQUEST_TIMEOUT"), { code: "REQUEST_TIMEOUT" });
+    throw new AuthRequestError(authErrorCopy("NETWORK_UNAVAILABLE"), { code: "NETWORK_UNAVAILABLE" });
+  } finally {
+    clearTimeout(timeoutHandle);
+  }
 }
 
 function isAuthenticated() {
@@ -195,12 +248,15 @@ function enterAdmin() {
 
 async function submitAuth(event) {
   event.preventDefault();
+  if (authSubmitting) return;
+  authSubmitting = true;
   const error = document.getElementById("auth-error");
   const submit = document.getElementById("auth-submit");
   const password = document.getElementById("auth-password").value;
   error.hidden = true;
   document.querySelectorAll("#auth-form [aria-invalid]").forEach((field) => field.removeAttribute("aria-invalid"));
   submit.disabled = true;
+  submit.setAttribute("aria-busy", "true");
   submit.textContent = authMode === "register" ? authText("registering", "注册中…", "Registering…") : authText("signingIn", "登录中…", "Signing in…");
   try {
     if (authMode === "register" && !document.getElementById("auth-name").value.trim()) throw new Error(authText("nameHint", "请输入姓名", "Enter your name"));
@@ -234,10 +290,13 @@ async function submitAuth(event) {
     const candidates = authMode === "register"
       ? [document.getElementById("auth-name"), document.getElementById("auth-email"), document.getElementById("auth-country"), document.getElementById("auth-phone"), document.getElementById("auth-password")]
       : [document.getElementById(authIdentifierMode === "email" ? "auth-email" : "auth-phone"), document.getElementById("auth-password")];
-    const target = candidates.find((field) => field && !field.value.trim()) || candidates[0];
+    const fieldMap = { display_name: "auth-name", email: "auth-email", phone_country: "auth-country", phone: "auth-phone", identifier: authIdentifierMode === "email" ? "auth-email" : "auth-phone", password: "auth-password" };
+    const target = document.getElementById(fieldMap[failure.field]) || candidates.find((field) => field && !field.value.trim()) || (failure.code === "ACCOUNT_CREDENTIALS_INVALID" ? document.getElementById("auth-password") : candidates[0]);
     target?.setAttribute("aria-invalid", "true"); target?.focus();
   } finally {
+    authSubmitting = false;
     submit.disabled = false;
+    submit.removeAttribute("aria-busy");
     submit.textContent = authMode === "register" ? authText("registerContinue", "注册并继续", "Register") : authText("login", "登录", "Sign in");
   }
 }
@@ -298,11 +357,12 @@ async function savePassword(event) {
 
 function formatAuthError(error, context = "login") {
   const lang = localStorage.getItem("boten-language") === "en";
-  const status = error?.status;
-  if (status === 401) return lang ? "Verification failed. Check your account and password." : "验证失败，请检查账号和密码。";
-  if (status === 409) return lang ? "This email or phone number is already in use." : "该邮箱或手机号已被使用。";
-  if (status === 422) return lang ? "Please check the highlighted fields and try again." : "请检查标红的输入项后重试。";
-  if (error?.name === "TypeError") return lang ? "Network unavailable. Please try again." : "网络暂不可用，请稍后重试。";
+  const translated = authErrorCopy(error?.code);
+  if (translated) {
+    if (error.code === "ACCOUNT_RATE_LIMITED" && error.retryAfter) return lang ? `${translated} Retry in about ${error.retryAfter} seconds.` : `${translated} 约 ${error.retryAfter} 秒后可重试。`;
+    if (error.code === "SERVER_UNAVAILABLE" && error.requestId) return lang ? `${translated} Reference: ${error.requestId}` : `${translated} 问题编号：${error.requestId}`;
+    return translated;
+  }
   if (context === "password") return lang ? "Password change failed. Check your current password and requirements." : "修改密码失败，请检查当前密码和新密码要求。";
   if (context === "contact") return lang ? "Account details could not be saved. Check the fields and current password." : "账号信息保存失败，请检查填写内容和当前密码。";
   return error?.message || (lang ? "Unable to complete the request." : "操作未完成，请稍后重试。");
@@ -319,6 +379,10 @@ async function initAuth() {
   ["auth", "profile"].forEach((prefix) => document.getElementById(`${prefix}-country`)?.addEventListener("change", () => { localStorage.setItem("boten-phone-country", document.getElementById(`${prefix}-country`).value); updateCallingCode(prefix); }));
   document.getElementById("account-admin-entry")?.addEventListener("click", enterAdmin);
   document.getElementById("auth-form")?.addEventListener("submit", submitAuth);
+  document.getElementById("auth-form")?.addEventListener("input", (event) => {
+    event.target.removeAttribute?.("aria-invalid");
+    const error = document.getElementById("auth-error"); if (error) error.hidden = true;
+  });
   document.getElementById("auth-mode-switch")?.addEventListener("click", (event) => {
     const trigger = event.target.closest("[data-auth-mode]");
     if (trigger) setAuthMode(trigger.dataset.authMode);

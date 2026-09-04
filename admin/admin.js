@@ -6,9 +6,41 @@ const TOKEN_KEY = "boten_admin_token";
 const CUSTOMER_TOKEN_KEY = "boten_user_token";
 
 function getStoredCollapsedCategories() { try { const value = JSON.parse(localStorage.getItem("boten-admin-collapsed-categories") || "[]"); return Array.isArray(value) ? value : []; } catch (_) { return []; } }
-const state = { user: null, products: [], users: [], shares: [], quotes: [], audits: [], countries: [], editingProduct: null, mappingEditor: null, userRoleFilter: "all", catalogLanguage: localStorage.getItem("boten-admin-language") || "zh", configCatalog: [], collapsedCategories: new Set(getStoredCollapsedCategories()) };
+const state = { user: null, products: [], users: [], userTotal: 0, userPage: 1, userPageSize: 20, userQuery: "", userRoleFilter: "all", userStatusFilter: "all", userArchivedFilter: false, shares: [], shareTotal: 0, sharePage: 1, sharePageSize: 20, shareQuery: "", shareStatus: "all", shareProduct: "", shareCreatedFrom: "", shareCreatedTo: "", shareActiveTotal: 0, shareViewTotal: 0, quotes: [], audits: [], countries: [], editingProduct: null, mappingEditor: null, catalogLanguage: localStorage.getItem("boten-admin-language") || "zh", configCatalog: [], collapsedCategories: new Set(getStoredCollapsedCategories()) };
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
+let shareDrawerElement = null;
+let shareDrawerBackdrop = null;
+let shareSearchTimer = null;
+let previousShareFocus = null;
+
+class ApiError extends Error {
+  constructor(message, { code = "REQUEST_FAILED", field = null, status = 0, requestId = "", params = {} } = {}) {
+    super(String(message || "请求未完成")); this.name = "ApiError"; this.code = code; this.field = field; this.status = status; this.requestId = requestId; this.params = params;
+  }
+}
+
+const ACCOUNT_ERROR_TEXT_ZH = {
+  ACCOUNT_NOT_FOUND: "账号不存在或已被移除", ACCOUNT_EMAIL_INVALID: "请输入有效的邮箱地址", ACCOUNT_EMAIL_DUPLICATE: "该邮箱已被其他账号使用",
+  ACCOUNT_PHONE_INVALID: "手机号格式或长度与所选国家不匹配", ACCOUNT_PHONE_DUPLICATE: "该手机号已被其他账号使用", ACCOUNT_PHONE_COUNTRY_INVALID: "请选择有效国家",
+  ACCOUNT_CONTACT_REQUIRED: "邮箱和手机号至少保留一项", ACCOUNT_NAME_REQUIRED: "请填写显示名称", ACCOUNT_NAME_TOO_LONG: "显示名称不能超过 100 个字符",
+  ACCOUNT_PASSWORD_TOO_SHORT: "密码至少需要 8 个字符", ACCOUNT_PASSWORD_TOO_LONG: "密码不能超过 128 个字符", ACCOUNT_PASSWORD_CONFIRMATION_MISMATCH: "两次输入的新密码不一致",
+  ACCOUNT_ROLE_INVALID: "请选择有效角色", ACCOUNT_SELF_DISABLE_FORBIDDEN: "不能停用当前登录账号", ACCOUNT_SELF_ROLE_CHANGE_FORBIDDEN: "不能移除当前登录账号的管理员角色",
+  ACCOUNT_SELF_ARCHIVE_FORBIDDEN: "不能归档当前登录账号", ACCOUNT_LAST_ADMIN_REQUIRED: "系统必须至少保留一个可用管理员账号", ACCOUNT_VERSION_CONFLICT: "该账号已被其他管理员修改，请重新加载后再编辑",
+  ACCOUNT_ARCHIVED: "该账号已归档", ACCOUNT_NOT_ARCHIVED: "该账号未归档", ACCOUNT_SESSION_EXPIRED: "登录状态已失效，请重新登录", ACCOUNT_PERMISSION_DENIED: "当前账号没有执行此操作的权限", ACCOUNT_CURRENT_PASSWORD_INVALID: "当前密码不正确", ACCOUNT_IDENTIFIER_REQUIRED: "请填写邮箱或手机号", ACCOUNT_CREDENTIALS_INVALID: "邮箱、手机号或密码不正确",
+  ACCOUNT_RATE_LIMITED: "操作过于频繁，请稍后再试", ACCOUNT_VALIDATION_FAILED: "请检查填写内容", SERVER_UNAVAILABLE: "服务器处理失败，请稍后重试"
+};
+const ACCOUNT_ERROR_TEXT_EN = {
+  ACCOUNT_NOT_FOUND: "The account no longer exists", ACCOUNT_EMAIL_INVALID: "Enter a valid email address", ACCOUNT_EMAIL_DUPLICATE: "This email is already used by another account",
+  ACCOUNT_PHONE_INVALID: "Enter a valid phone number for the selected country", ACCOUNT_PHONE_DUPLICATE: "This phone number is already used by another account", ACCOUNT_PHONE_COUNTRY_INVALID: "Select a valid country",
+  ACCOUNT_CONTACT_REQUIRED: "Keep at least an email address or phone number", ACCOUNT_NAME_REQUIRED: "Enter a display name", ACCOUNT_NAME_TOO_LONG: "The display name cannot exceed 100 characters",
+  ACCOUNT_PASSWORD_TOO_SHORT: "The password must contain at least 8 characters", ACCOUNT_PASSWORD_TOO_LONG: "The password cannot exceed 128 characters", ACCOUNT_PASSWORD_CONFIRMATION_MISMATCH: "The new passwords do not match",
+  ACCOUNT_ROLE_INVALID: "Select a supported account role", ACCOUNT_SELF_DISABLE_FORBIDDEN: "You cannot disable your current account", ACCOUNT_SELF_ROLE_CHANGE_FORBIDDEN: "You cannot remove your own administrator access",
+  ACCOUNT_SELF_ARCHIVE_FORBIDDEN: "You cannot archive your current account", ACCOUNT_LAST_ADMIN_REQUIRED: "At least one enabled administrator account is required", ACCOUNT_VERSION_CONFLICT: "This account was changed by another administrator. Reload it and try again",
+  ACCOUNT_ARCHIVED: "This account is archived", ACCOUNT_NOT_ARCHIVED: "This account is not archived", ACCOUNT_SESSION_EXPIRED: "Your session has expired. Sign in again", ACCOUNT_PERMISSION_DENIED: "You do not have permission to perform this action", ACCOUNT_CURRENT_PASSWORD_INVALID: "The current password is incorrect", ACCOUNT_IDENTIFIER_REQUIRED: "Enter an email address or phone number", ACCOUNT_CREDENTIALS_INVALID: "The email, phone number, or password is incorrect",
+  ACCOUNT_RATE_LIMITED: "Too many requests. Try again later", ACCOUNT_VALIDATION_FAILED: "Check the entered information", SERVER_UNAVAILABLE: "The server could not complete the request. Try again later"
+};
+function accountErrorText(code) { return (document.documentElement.lang || "zh-CN").toLowerCase().startsWith("en") ? ACCOUNT_ERROR_TEXT_EN[code] : ACCOUNT_ERROR_TEXT_ZH[code]; }
 
 async function api(path, requestOptions = {}) {
   const token = sessionStorage.getItem(TOKEN_KEY);
@@ -28,16 +60,28 @@ async function api(path, requestOptions = {}) {
         headers: {
           "Content-Type": "application/json",
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          "X-UI-Language": document.documentElement.lang || "zh-CN",
           ...(options.headers || {})
         }, signal: controller.signal
       });
       if (response.status === 204) return null;
       const body = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(body.detail || `请求失败 (${response.status})`);
+      if (!response.ok) {
+        const code = body.error?.code || response.headers.get("X-Error-Code") || `HTTP_${response.status}`;
+        const responseDetail = typeof body.detail === "string" ? body.detail : "";
+        const safeMessage = response.status >= 500 ? "服务器处理失败，请稍后重试" : (accountErrorText(code) || responseDetail || `请求失败 (${response.status})`);
+        throw new ApiError(safeMessage, { code, field: body.error?.field, status: response.status, requestId: body.request_id || response.headers.get("X-Request-ID") || "", params: body.error?.params || {} });
+      }
       return body;
     } catch (error) {
-      failure = timedOut ? new Error("请求超时，请稍后重试") : error;
-      if (attempt + 1 < attempts) await new Promise(resolve => setTimeout(resolve, 500));
+      if (timedOut) failure = new ApiError("请求超时，请稍后重试", { code: "REQUEST_TIMEOUT" });
+      else if (error instanceof ApiError) failure = error;
+      else failure = new ApiError("网络暂不可用，请检查连接后重试", { code: "NETWORK_UNAVAILABLE" });
+      const retryable = failure.code === "REQUEST_TIMEOUT"
+        || failure.code === "NETWORK_UNAVAILABLE"
+        || [502, 503, 504].includes(failure.status);
+      if (attempt + 1 < attempts && retryable) await new Promise(resolve => setTimeout(resolve, 500));
+      else break;
     } finally {
       clearTimeout(timeout);
     }
@@ -73,27 +117,39 @@ async function uploadCatalogImage(file, control) {
       timeout: 30000
     });
     if (pathInput) pathInput.value = result.path;
-    const preview = $("[data-color-image-preview]", control);
-    if (preview) preview.innerHTML = `<img src="${escapeHtml(catalogAssetUrl(result.path))}" alt="颜色图片缩略图" width="152" height="92" />`;
+    const widthInput = $('[name="image_width"],[data-color-field="image_width"]', control);
+    const heightInput = $('[name="image_height"],[data-color-field="image_height"]', control);
+    if (widthInput) widthInput.value = result.width || "";
+    if (heightInput) heightInput.value = result.height || "";
+    const preview = $("[data-color-image-preview],[data-catalog-image-preview]", control);
+    if (preview) preview.innerHTML = `<img src="${escapeHtml(catalogAssetUrl(result.path))}" alt="图片缩略图" width="152" height="92" />`;
     showToast("图片上传成功");
   } catch (failure) {
     showToast(failure.name === "AbortError" ? "图片上传超时" : failure.message);
   } finally {
-    if (button) { button.disabled = false; button.textContent = "上传"; }
+    if (button) { button.disabled = false; button.textContent = button.dataset.idleLabel || "上传图片"; }
   }
 }
 
 function confirmAction(title, message, confirmLabel = "确认删除") {
   return new Promise((resolve) => {
     const dialog = document.createElement("dialog");
-    dialog.className = "product-dialog";
+    const token = `confirm-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const titleId = `${token}-title`;
+    const descriptionId = `${token}-description`;
+    const cancelLabel = confirmLabel === "放弃修改" ? "继续编辑" : "取消";
+    const opener = document.activeElement;
+    dialog.className = "confirm-dialog";
     dialog.dataset.dynamic = "true";
-    dialog.innerHTML = `<form method="dialog" class="dialog-card confirm-card"><header><div><span class="eyebrow">CONFIRM ACTION</span><h2>${escapeHtml(title)}</h2></div><button class="icon-button" value="cancel" aria-label="关闭">×</button></header><p>${escapeHtml(message)}</p><footer><button class="button button-quiet" value="cancel">取消</button><button class="button button-danger" value="confirm">${escapeHtml(confirmLabel)}</button></footer></form>`;
+    dialog.setAttribute("aria-labelledby", titleId);
+    dialog.setAttribute("aria-describedby", descriptionId);
+    dialog.innerHTML = `<form method="dialog" class="dialog-card confirm-card"><header class="confirm-card-header"><span class="confirm-card-icon" aria-hidden="true">!</span><div class="confirm-card-heading"><span class="eyebrow">请确认操作</span><h2 id="${titleId}">${escapeHtml(title)}</h2></div><button class="icon-button" value="cancel" aria-label="关闭确认窗口">×</button></header><div class="confirm-card-body"><p id="${descriptionId}">${escapeHtml(message)}</p></div><footer><button class="button button-quiet" value="cancel">${cancelLabel}</button><button class="button button-danger" value="confirm">${escapeHtml(confirmLabel)}</button></footer></form>`;
     document.body.appendChild(dialog);
     let settled = false;
-    dialog.addEventListener("close", () => { if (!settled) resolve(false); dialog.remove(); });
+    dialog.addEventListener("close", () => { if (!settled) resolve(false); dialog.remove(); if (opener?.isConnected) opener.focus(); });
     dialog.querySelector("form").addEventListener("submit", (event) => { event.preventDefault(); settled = true; const confirmed = event.submitter?.value === "confirm"; dialog.close(); resolve(confirmed); });
     dialog.showModal();
+    queueMicrotask(() => dialog.querySelector('button[value="cancel"]')?.focus());
   });
 }
 
@@ -103,12 +159,23 @@ function renderCatalogThumbnail(option) {
   return `<span class="config-thumbnail"><img src="${escapeHtml(source)}" alt="${escapeHtml(option.code)}" width="112" height="72" loading="lazy" onerror="this.parentElement.classList.add('missing')" /><span aria-hidden="true">—</span></span>`;
 }
 
-function showToast(message) {
+function toFiniteNumber(value, fallback = 0) {
+  const amount = typeof value === "number" ? value : Number(String(value ?? "").trim());
+  return Number.isFinite(amount) ? amount : fallback;
+}
+
+function toPositiveInteger(value, fallback = 1) {
+  return Math.max(1, Math.floor(toFiniteNumber(value, fallback)));
+}
+
+function showToast(message, type = "status") {
   const toast = $("#toast");
   const openDialogs = Array.from(document.querySelectorAll("dialog[open]"));
   const host = openDialogs.at(-1) || document.body;
   if (toast.parentElement !== host) host.appendChild(toast);
   toast.textContent = message;
+  toast.classList.toggle("error", type === "error");
+  toast.setAttribute("role", type === "error" ? "alert" : "status");
   toast.hidden = false;
   clearTimeout(showToast.timer);
   showToast.timer = setTimeout(() => {
@@ -121,9 +188,10 @@ async function runButtonAction(button, pendingLabel, action) {
   if (!button || button.disabled) return;
   const originalLabel = button.textContent;
   button.disabled = true;
+  button.setAttribute("aria-busy", "true");
   button.textContent = pendingLabel;
   try { return await action(); }
-  finally { button.disabled = false; button.textContent = originalLabel; }
+  finally { button.disabled = false; button.removeAttribute("aria-busy"); button.textContent = originalLabel; }
 }
 
 function formatDate(value) {
@@ -207,62 +275,165 @@ async function enterAdmin() {
   $(".sidebar-brand span").textContent = isAdmin ? "管理后台" : "业务员工作台";
   await loadData();
   const requestedView = window.location.hash.slice(1);
-  const allowed = isAdmin ? ["dashboard", "products", "config-catalog", "shares", "quotes", "audit", "users"] : ["products", "config-catalog", "shares", "quotes"];
+  const catalogViews = ["config-catalog", "tool-catalog", "accessory-catalog"];
+  const allowed = isAdmin ? ["dashboard", "products", ...catalogViews, "shares", "quotes", "audit", "users"] : ["products", ...catalogViews, "shares", "quotes"];
   switchView(allowed.includes(requestedView) ? requestedView : (isAdmin ? "dashboard" : "products"), false);
 }
 
-async function loadData() {
-  try {
-    const isAdmin = state.user.role === "admin";
-    const [shares, quotes] = await Promise.all([
-      api(isAdmin ? "/api/v1/admin/shares" : "/api/v1/staff/shares"),
-      api("/api/v1/quotes")
-    ]);
-    state.shares = shares.items || [];
-    state.quotes = quotes?.items || [];
+function userListPath() {
+  const query = new URLSearchParams({ page: String(state.userPage), page_size: String(state.userPageSize), status: state.userStatusFilter, archived: String(state.userArchivedFilter) });
+  if (state.userQuery) query.set("q", state.userQuery);
+  if (state.userRoleFilter !== "all") query.set("role", state.userRoleFilter);
+  return `/api/v1/admin/users?${query}`;
+}
 
-    const [products, configCatalog, countries] = await Promise.all([
-      api("/api/v1/admin/products"),
-      api("/api/v1/admin/config-catalog"),
-      api("/api/v1/auth/countries?lang=zh")
-    ]);
-    state.products = products.items || [];
-    state.configCatalog = configCatalog.items || [];
-    state.countries = countries.items || [];
-    renderConfigCatalog(state.configCatalog);
-    setTimeout(() => {
-      addCatalogLanguageSwitches();
-      applyCatalogLanguage(state.catalogLanguage);
-      restoreCollapsedCategories();
-    }, 0);
-    if (isAdmin) {
-      const [users, audits] = await Promise.all([
-        api("/api/v1/admin/users"),
-        api("/api/v1/admin/audit-logs")
-      ]);
-      state.users = users.items || [];
-      state.audits = audits.items || [];
-    } else {
-      state.products = [];
-      state.users = [];
-      state.configCatalog = [];
-    }
-    renderAll();
-  } catch (failure) {
-    ["#products-table", "#users-table", "#shares-table"].forEach((selector) => {
-      const target = $(selector);
-      if (target) target.innerHTML = `<tr><td colspan="6" class="empty">无法加载数据：${escapeHtml(failure.message)}<br><small>请稍后刷新重试；若持续出现，请检查 NAS 中 API 容器状态与日志。</small></td></tr>`;
-    });
-    showToast(failure.message);
-    if (/session|token|401/i.test(failure.message)) logout();
+function syncUserFilterUrl() {
+  const url = new URL(window.location.href);
+  [["userQuery", state.userQuery], ["userRole", state.userRoleFilter], ["userStatus", state.userStatusFilter], ["userArchived", state.userArchivedFilter ? "1" : ""], ["userPage", state.userPage > 1 ? String(state.userPage) : ""]].forEach(([key, value]) => value && value !== "all" ? url.searchParams.set(key, value) : url.searchParams.delete(key));
+  history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+}
+
+function restoreUserFilterState() {
+  const query = new URLSearchParams(window.location.search);
+  state.userQuery = query.get("userQuery") || "";
+  state.userRoleFilter = ["admin", "sales", "customer"].includes(query.get("userRole")) ? query.get("userRole") : "all";
+  state.userStatusFilter = ["enabled", "disabled"].includes(query.get("userStatus")) ? query.get("userStatus") : "all";
+  state.userArchivedFilter = query.get("userArchived") === "1";
+  state.userPage = Math.max(1, Number(query.get("userPage") || 1) || 1);
+  if ($("#user-search")) $("#user-search").value = state.userQuery;
+  if ($("#user-status-filter")) $("#user-status-filter").value = state.userStatusFilter;
+  if ($("#user-archived-filter")) $("#user-archived-filter").checked = state.userArchivedFilter;
+  $$("[data-user-role]", $("#user-role-filter")).forEach((item) => { const active = item.dataset.userRole === state.userRoleFilter; item.classList.toggle("active", active); item.setAttribute("aria-pressed", String(active)); });
+}
+
+async function loadUsers() {
+  const response = await api(userListPath());
+  state.users = response.items || [];
+  state.userTotal = Number(response.total || 0);
+  state.userPage = Number(response.page || 1);
+  renderUsers();
+  syncUserFilterUrl();
+}
+
+function shareListPath() {
+  const query = new URLSearchParams({ page: String(state.sharePage), page_size: String(state.sharePageSize), status: state.shareStatus });
+  if (state.shareQuery) query.set("query", state.shareQuery);
+  const endpoint = state.user?.role === "admin" ? "/api/v1/admin/shares" : "/api/v1/staff/shares";
+  return `${endpoint}?${query}`;
+}
+
+async function loadShares() {
+  const response = await api(shareListPath());
+  state.shares = response.items || [];
+  state.shareTotal = Number(response.total || 0);
+  state.sharePage = Number(response.page || 1);
+  state.shareActiveTotal = Number(response.active_total || 0);
+  state.shareViewTotal = Number(response.view_total || 0);
+  renderShares(); renderDashboard();
+}
+
+async function refreshUsersAfterMutation() {
+  try { await loadUsers(); }
+  catch (_) { showToast("操作已保存，但列表同步失败，请手动刷新", "error"); }
+}
+
+function userMatchesCurrentFilters(user) {
+  const needle = state.userQuery.toLowerCase();
+  const searchable = `${user.display_name || ""} ${user.email || ""} ${user.phone || ""}`.toLowerCase();
+  return Boolean(user.archived) === state.userArchivedFilter
+    && (state.userRoleFilter === "all" || user.role === state.userRoleFilter)
+    && (state.userStatusFilter === "all" || (state.userStatusFilter === "enabled") === Boolean(user.enabled))
+    && (!needle || searchable.includes(needle));
+}
+
+function applyUserMutation(user, { created = false } = {}) {
+  const index = state.users.findIndex((item) => item.id === user.id);
+  const matches = userMatchesCurrentFilters(user);
+  if (matches && index >= 0) state.users[index] = user;
+  else if (matches && index < 0 && state.userPage === 1) { state.users.unshift(user); if (state.users.length > state.userPageSize) state.users.pop(); }
+  else if (!matches && index >= 0) state.users.splice(index, 1);
+  if (created && matches) state.userTotal += 1;
+  else if (!matches && index >= 0) state.userTotal = Math.max(0, state.userTotal - 1);
+  renderUsers();
+}
+
+async function loadData() {
+  const isAdmin = state.user.role === "admin";
+  const requests = {
+    shares: api(shareListPath()),
+    quotes: api("/api/v1/quotes"),
+    products: api("/api/v1/admin/products"),
+    configCatalog: api("/api/v1/admin/catalog-tree"),
+    countries: api("/api/v1/auth/countries?lang=zh")
+  };
+  if (isAdmin) {
+    requests.users = api(userListPath());
+    requests.audits = api("/api/v1/admin/audit-logs");
+  }
+
+  const keys = Object.keys(requests);
+  const settled = await Promise.allSettled(Object.values(requests));
+  const results = Object.fromEntries(keys.map((key, index) => [key, settled[index]]));
+  const failures = [];
+  const value = (key) => {
+    const result = results[key];
+    if (result?.status === "fulfilled") return result.value;
+    if (result?.reason) failures.push({ key, error: result.reason });
+    return null;
+  };
+
+  const shares = value("shares");
+  const quotes = value("quotes");
+  const products = value("products");
+  const configCatalog = value("configCatalog");
+  const countries = value("countries");
+  const users = isAdmin ? value("users") : null;
+  const audits = isAdmin ? value("audits") : null;
+
+  state.shares = shares?.items || [];
+  state.shareTotal = Number(shares?.total || state.shares.length);
+  state.shareActiveTotal = Number(shares?.active_total || 0);
+  state.shareViewTotal = Number(shares?.view_total || 0);
+  state.quotes = quotes?.items || [];
+  state.products = products?.items || [];
+  state.configCatalog = configCatalog?.items || [];
+  state.countries = countries?.items || [];
+  state.users = users?.items || [];
+  state.userTotal = Number(users?.total || 0);
+  state.audits = audits?.items || [];
+
+  renderConfigCatalog(state.configCatalog);
+  renderAll();
+  setTimeout(() => {
+    addCatalogLanguageSwitches();
+    applyCatalogLanguage(state.catalogLanguage);
+    restoreCollapsedCategories();
+  }, 0);
+
+  const errorTargets = {
+    shares: ["#shares-table", 7], quotes: ["#quotes-table", 5], products: ["#products-table", 4],
+    configCatalog: ["#config-catalog-list", 0], users: ["#users-table", 5], audits: ["#audit-table", 5]
+  };
+  failures.forEach(({ key, error }) => {
+    const targetInfo = errorTargets[key];
+    if (!targetInfo) return;
+    const target = $(targetInfo[0]);
+    if (!target) return;
+    const message = `无法加载数据：${escapeHtml(error.message)}<br><small>请稍后重试；若持续出现，请检查 API 服务状态。</small>`;
+    target.innerHTML = targetInfo[1] ? `<tr><td colspan="${targetInfo[1]}" class="empty">${message}</td></tr>` : `<div class="empty">${message}</div>`;
+  });
+  if (failures.length) {
+    const authFailure = failures.find(({ error }) => error.status === 401 || /session|token|401/i.test(error.message));
+    if (authFailure) logout();
+    else showToast(`部分数据加载失败（${failures.length} 项），其他功能仍可继续使用`, "error");
   }
 }
 
 function renderAll() {
   $("#metric-products").textContent = state.products.length;
-  $("#metric-users").textContent = state.users.length;
-  $("#metric-shares").textContent = state.shares.filter((item) => item.active && new Date(item.expires_at) > new Date()).length;
-  $("#metric-views").textContent = state.shares.reduce((sum, item) => sum + item.view_count, 0);
+  $("#metric-users").textContent = state.userTotal;
+  $("#metric-shares").textContent = state.shareActiveTotal;
+  $("#metric-views").textContent = state.shareViewTotal;
     renderProducts(); renderUsers(); renderShares(); renderQuotes(); renderAudits(); renderDashboard();
 }
 
@@ -334,7 +505,7 @@ async function openProductEditor(productId) {
       filter: "all",
       collapsed: new Set(product.categories.map((category) => category.id))
     };
-    renderMappingEditor();
+    window.renderMappingEditor();
     switchEditorTab("basic");
     $("#product-error").hidden = true;
     const zhButton = $(`.lang-toggle[data-lang="${state.catalogLanguage}"]`, $("#product-dialog")); if (zhButton) toggleDialogLanguage(zhButton);
@@ -437,22 +608,27 @@ function openMappingNoteEditor(optionId) {
   const dialog = document.createElement("dialog");
   dialog.className = "mapping-note-dialog";
   dialog.dataset.dynamic = "true";
-  dialog.innerHTML = `<form method="dialog" class="dialog-card"><header><div><span class="eyebrow">MODEL-SPECIFIC NOTE</span><h2>编辑标注</h2></div><div class="dialog-actions"><div class="catalog-language dialog-language"><button type="button" class="lang-toggle" data-note-lang="zh">中文</button><button type="button" class="lang-toggle" data-note-lang="en">EN</button></div><button class="icon-button" value="cancel" aria-label="关闭">×</button></div></header><p class="mapping-note-option-name"></p><label data-note-field="zh"><span>专有标注</span><textarea name="note_zh" rows="4" placeholder="没有标注可留空">${escapeHtml(note.zh)}</textarea></label><label data-note-field="en"><span>专有标注</span><textarea name="note_en" rows="4" placeholder="没有标注可留空">${escapeHtml(note.en)}</textarea></label><footer><button class="button button-quiet" value="cancel">取消</button><button class="button button-primary" value="save">保存标注</button></footer></form>`;
+  dialog.innerHTML = `<form method="dialog" class="dialog-card"><header><div><span class="eyebrow">MODEL-SPECIFIC NOTE</span><h2>编辑标注</h2></div><div class="dialog-actions"><div class="catalog-language dialog-language"><button type="button" class="lang-toggle" data-note-lang="zh">中文</button><button type="button" class="lang-toggle" data-note-lang="en">EN</button></div><button class="icon-button" value="cancel" aria-label="关闭">×</button></div></header><p class="mapping-note-option-name"></p><label data-note-field="zh"><span>专有标注</span><textarea name="note_zh" rows="4" placeholder="没有标注可留空">${escapeHtml(note.zh)}</textarea></label><label data-note-field="en"><span>专有标注</span><textarea name="note_en" rows="4" placeholder="没有标注可留空">${escapeHtml(note.en)}</textarea></label><footer><button class="button button-quiet" value="cancel">取消</button><button class="button button-danger" value="clear">清空标注</button><button class="button button-primary" value="save">保存标注</button></footer></form>`;
   document.body.appendChild(dialog);
   const form = $("form", dialog);
   const setLang = (lang) => {
     $$('[data-note-field]', dialog).forEach((field) => { field.hidden = field.dataset.noteField !== lang; });
-    $$('[data-note-lang]', dialog).forEach((button) => button.classList.toggle("active", button.dataset.noteLang === lang));
+    $$('[data-note-lang]', dialog).forEach((button) => {
+      const active = button.dataset.noteLang === lang;
+      button.classList.toggle("active", active);
+      button.setAttribute("aria-pressed", String(active));
+    });
     $(".mapping-note-option-name", dialog).textContent = lang === "en" ? (option.name_en || option.name) : option.name;
   };
   $$('[data-note-lang]', dialog).forEach((button) => button.addEventListener("click", (event) => { event.stopPropagation(); setLang(button.dataset.noteLang); }));
   setLang(state.catalogLanguage || "zh");
   form.addEventListener("submit", (event) => {
     event.preventDefault();
-    if (event.submitter?.value !== "save") { dialog.close(); dialog.remove(); return; }
-    editor.notes.set(optionId, { ...note, zh: form.elements.note_zh.value.trim(), en: form.elements.note_en.value.trim(), dirty: true });
+    const action = event.submitter?.value;
+    if (action !== "save" && action !== "clear") { dialog.close(); dialog.remove(); return; }
+    editor.notes.set(optionId, { ...note, zh: action === "clear" ? "" : form.elements.note_zh.value.trim(), en: action === "clear" ? "" : form.elements.note_en.value.trim(), dirty: true });
     dialog.close(); dialog.remove();
-    renderMappingEditor();
+    window.renderMappingEditor();
   });
   dialog.showModal();
 }
@@ -472,6 +648,21 @@ function collectColors() {
   }));
 }
 
+function reconcileMappingEditor() {
+  const editor = state.mappingEditor;
+  if (!editor) return [];
+  const validIds = new Set(editor.categories.flatMap((category) => category.options.map((option) => option.id)));
+  const staleIds = Array.from(editor.selected).filter((optionId) => !validIds.has(optionId));
+  staleIds.forEach((optionId) => editor.selected.delete(optionId));
+  for (const optionId of editor.notes.keys()) {
+    if (!validIds.has(optionId)) editor.notes.delete(optionId);
+  }
+  for (const optionId of editor.motorPrices.keys()) {
+    if (!validIds.has(optionId)) editor.motorPrices.delete(optionId);
+  }
+  return staleIds;
+}
+
 async function saveProduct(event) {
   event.preventDefault();
   const form = event.currentTarget;
@@ -489,21 +680,32 @@ async function saveProduct(event) {
     const colors = collectColors();
     if (!colors.length) throw new Error("至少需要一种外观颜色");
     if (colors.some((color) => !color.code || !color.label || !color.label_en)) throw new Error("请完整填写中英文颜色名称");
-    const optionIds = Array.from(state.mappingEditor?.selected || []);
+    const staleOptionIds = reconcileMappingEditor();
+    if (staleOptionIds.length) {
+      renderMappingEditor();
+      throw new Error("配置目录已更新，已移除不存在的配置项。请确认当前勾选后再次保存。");
+    }
+    const validOptionIds = new Set(state.mappingEditor?.categories.flatMap((category) => category.options.map((option) => option.id)) || []);
+    const optionIds = Array.from(state.mappingEditor?.selected || []).filter((optionId) => validOptionIds.has(optionId));
     const optionOverrides = {};
     for (const [optionId, note] of state.mappingEditor?.notes || []) {
-      if (note.mapped || note.dirty || note.zh || note.en || state.mappingEditor.selected.has(optionId)) {
+      if (validOptionIds.has(optionId) && (note.mapped || note.dirty || note.zh || note.en || state.mappingEditor.selected.has(optionId))) {
         optionOverrides[optionId] = { description_override: note.zh || null, description_override_en: note.en || null };
       }
     }
-    const motorPrices = Object.fromEntries(Array.from(state.mappingEditor?.motorPrices || []).filter(([optionId]) => state.mappingEditor.selected.has(optionId)));
-    $$("[data-motor-price-cny]").forEach((field) => { const id = field.dataset.motorPriceCny; const usd = $(`[data-motor-price-usd="${CSS.escape(id)}"]`); motorPrices[id] = { base_price_cny: Number(field.value || 0), base_price_usd: Number(usd?.value || 0) }; });
+    const motorPrices = Object.fromEntries(Array.from(state.mappingEditor?.motorPrices || []).filter(([optionId]) => validOptionIds.has(optionId) && state.mappingEditor.selected.has(optionId)));
+    $$("[data-motor-price-cny]").forEach((field) => {
+      const id = field.dataset.motorPriceCny;
+      if (!validOptionIds.has(id) || !state.mappingEditor?.selected.has(id)) return;
+      const usd = $(`[data-motor-price-usd="${CSS.escape(id)}"]`);
+      motorPrices[id] = { base_price_cny: Math.max(0, toFiniteNumber(field.value)), base_price_usd: Math.max(0, toFiniteNumber(usd?.value)) };
+    });
     await api(`/api/v1/admin/products/${productId}/configuration`, {
       method: "PUT",
       body: JSON.stringify({
         name: form.elements.name.value.trim(), name_en: form.elements.name_en.value.trim(), title_name: form.elements.title_name.value.trim(), title_name_en: form.elements.title_name_en.value.trim(),
-        description: form.elements.description.value.trim(), description_en: form.elements.description_en.value.trim(), base_price: Number(form.elements.base_price.value || 0), price_usd: Number(form.elements.price_usd?.value || 0),
-        sort_order: Number(form.elements.sort_order.value || 0), enabled: form.elements.enabled.checked,
+        description: form.elements.description.value.trim(), description_en: form.elements.description_en.value.trim(), base_price: Math.max(0, toFiniteNumber(form.elements.base_price.value)), price_usd: Math.max(0, toFiniteNumber(form.elements.price_usd?.value)),
+        sort_order: Math.max(0, Math.floor(toFiniteNumber(form.elements.sort_order.value))), enabled: form.elements.enabled.checked,
         colors, option_ids: optionIds, option_overrides: optionOverrides, motor_prices: motorPrices,
         specifications: Array.from($("#product-specifications-editor").querySelectorAll(".specification-row")).map((row, i) => ({ id: row.dataset.id || null, label: row.querySelector('[data-spec="label"]').value, label_en: row.querySelector('[data-spec="label_en"]').value, value: row.querySelector('[data-spec="value"]').value, value_en: row.querySelector('[data-spec="value_en"]').value, sort_order: i }))
       })
@@ -519,17 +721,18 @@ async function saveProduct(event) {
 }
 
 function renderUsers() {
-  const users = state.userRoleFilter === "all"
-    ? state.users
-    : state.users.filter((user) => user.role === state.userRoleFilter);
-  $("#users-table").innerHTML = users.map((user) => `
+  $("#users-table").innerHTML = state.users.map((user) => `
     <tr>
       <td><div class="user-cell"><div class="avatar">${escapeHtml((user.display_name || user.email || "U").charAt(0).toUpperCase())}</div><strong>${escapeHtml(user.display_name || "未命名用户")}</strong></div></td>
-      <td>${escapeHtml(user.email || user.phone || "—")}</td><td><span class="badge">${roleLabel(user.role)}</span></td>
-      <td><span class="badge ${user.enabled ? "good" : "off"}">${user.enabled ? "正常" : "已禁用"}</span></td>
-      <td class="align-right"><button class="table-action" data-edit-user='${escapeHtml(JSON.stringify(user))}'>编辑</button> <button class="table-action ${user.enabled ? "danger" : ""}" data-user-status="${user.id}" data-enabled="${!user.enabled}">${user.enabled ? "禁用" : "启用"}</button></td>
+      <td><div class="account-contact"><span>${escapeHtml(user.email || "未填写邮箱")}</span><span>${escapeHtml(user.phone ? `${user.phone_calling_code || ""} ${user.phone}` : "未填写手机号")}</span></div></td><td><span class="badge">${roleLabel(user.role)}</span></td>
+      <td><span class="badge ${user.archived ? "off" : user.enabled ? "good" : "off"}">${user.archived ? "已归档" : user.enabled ? "正常" : "已停用"}</span></td>
+      <td class="align-right">${user.archived ? `<button class="table-action" data-restore-user="${user.id}">恢复</button>` : `<span class="table-actions"><button class="table-action" data-edit-user="${user.id}">编辑资料</button><details class="table-actions-menu"><summary aria-label="更多账号操作">更多</summary><div><button class="table-action" data-edit-user-role="${user.id}">修改角色</button><button class="table-action" data-reset-user-password="${user.id}">重置密码</button><button class="table-action ${user.enabled ? "danger" : ""}" data-user-status="${user.id}" data-user-version="${user.version}" data-enabled="${!user.enabled}">${user.enabled ? "停用账号" : "启用账号"}</button><button class="table-action danger" data-archive-user="${user.id}">归档账号</button></div></details></span>`}</td>
     </tr>
-  `).join("") || '<tr><td colspan="5" class="empty">该分类暂无账号</td></tr>';
+  `).join("") || '<tr><td colspan="5" class="empty">该筛选条件下暂无账号</td></tr>';
+  const pages = Math.max(1, Math.ceil(state.userTotal / state.userPageSize));
+  $("#user-page-summary").textContent = `共 ${state.userTotal} 个账号 · 第 ${state.userPage}/${pages} 页`;
+  $("#user-page-prev").disabled = state.userPage <= 1;
+  $("#user-page-next").disabled = state.userPage >= pages;
 }
 
 function renderShares() {
@@ -538,9 +741,17 @@ function renderShares() {
     const valid = share.active && new Date(share.expires_at) > new Date();
     const sender = share.sender_name || share.sender_email || share.sender_phone || "未填写";
     const contact = share.sender_email || share.sender_phone || "—";
-    const actions = valid ? `<span class="table-actions"><button class="table-action" data-lookup-share="${escapeHtml(share.code)}">查看</button><details class="table-actions-menu"><summary aria-label="更多分享操作">更多</summary><div><button class="table-action" data-export-share="${escapeHtml(share.code)}">导出 PDF</button><button class="table-action" data-quote-share="${escapeHtml(share.code)}">报价</button>${isAdmin ? `<button class="table-action danger" data-close-share="${share.id}">关闭</button>` : ""}</div></details></span>` : "—";
-    return `<tr><td><button class="share-code-button" data-lookup-share="${escapeHtml(share.code)}" ${valid ? "" : "disabled"}>${escapeHtml(share.code)}</button></td><td>${escapeHtml(share.name)}<br><small>${escapeHtml(share.product_id.toUpperCase())}</small></td><td><strong>${escapeHtml(sender)}</strong><br><small>${escapeHtml(contact)}</small></td><td>${share.view_count} 次</td><td>${formatDate(share.expires_at)}</td><td><span class="badge ${valid ? "good" : "off"}">${valid ? "有效" : "已失效"}</span></td><td class="align-right">${actions}</td></tr>`;
+    const canReopen = isAdmin && !share.active && new Date(share.expires_at) > new Date();
+    const actions = valid ? `<span class="table-actions"><button class="table-action" data-lookup-share="${escapeHtml(share.code)}">查看</button><details class="table-actions-menu"><summary aria-label="更多分享操作">更多</summary><div><button class="table-action" data-export-share="${escapeHtml(share.code)}">导出 PDF</button><button class="table-action" data-quote-share="${escapeHtml(share.code)}">报价</button>${isAdmin ? `<button class="table-action danger" data-close-share="${share.id}">关闭</button>` : ""}</div></details></span>` : canReopen ? `<button class="table-action" data-open-share="${share.id}">重新启用</button>` : "—";
+    const itemCount = Number(share.item_count || 1);
+    const itemCountLabel = share.document_version === 2 ? `${itemCount} 项` : `${itemCount} 台设备`;
+    const statusText = !share.active ? "已关闭" : valid ? "有效" : "已过期";
+    return `<tr><td><button class="share-code-button" data-lookup-share="${escapeHtml(share.code)}" ${valid ? "" : "disabled"}>${escapeHtml(share.code)}</button><br><small>${escapeHtml(formatDateTime(share.created_at))}</small></td><td>${escapeHtml(share.name)}<br><small>${escapeHtml(itemCountLabel)} · ${escapeHtml((share.product_summary || share.product_id || "").toUpperCase())}</small></td><td><strong>${escapeHtml(sender)}</strong><br><small>${escapeHtml(contact)}</small></td><td>${share.view_count} 次<br><small>${share.last_viewed_at ? escapeHtml(formatDateTime(share.last_viewed_at)) : "尚未查看"}</small></td><td>${formatDate(share.expires_at)}</td><td><span class="badge ${valid ? "good" : "off"}">${statusText}</span></td><td class="align-right">${actions}</td></tr>`;
   }).join("") || '<tr><td colspan="7" class="empty">暂无分享记录</td></tr>';
+  const pages = Math.max(1, Math.ceil(state.shareTotal / state.sharePageSize));
+  if ($("#share-page-summary")) $("#share-page-summary").textContent = `共 ${state.shareTotal} 条 · 第 ${state.sharePage}/${pages} 页`;
+  if ($("#share-page-prev")) $("#share-page-prev").disabled = state.sharePage <= 1;
+  if ($("#share-page-next")) $("#share-page-next").disabled = state.sharePage >= pages;
 }
 
 function renderQuotes() {
@@ -558,12 +769,36 @@ function renderAudits() {
 }
 
 function switchView(view, updateHistory = true) {
-  if (state.user?.role === "sales" && !["shares", "quotes"].includes(view)) view = "shares";
-  const titles = { dashboard: "管理概览", products: "设备目录", "config-catalog": "配置目录", users: "账号管理", shares: "分享记录", quotes: "报价管理", audit: "操作审计" };
-  if (!titles[view]) view = state.user?.role === "admin" ? "dashboard" : "shares";
+  const catalogViews = {
+    "config-catalog": { rootId: "catalog-optional", title: "配置目录", eyebrow: "CONFIGURATION CATALOG", description: "维护设备可勾选的扩展配置；参考价格用于后续报价默认单价。" },
+    "tool-catalog": { rootId: "catalog-tools", title: "工具目录", eyebrow: "TOOL CATALOG", description: "维护可独立加入购物车、分享和报价的维修工具。" },
+    "accessory-catalog": { rootId: "catalog-accessories", title: "附件目录", eyebrow: "ACCESSORY CATALOG", description: "维护可独立加入购物车、分享和报价的设备附件。" }
+  };
+  const salesViews = ["products", ...Object.keys(catalogViews), "shares", "quotes"];
+  if (state.user?.role === "sales" && !salesViews.includes(view)) view = "products";
+  const titles = { dashboard: "管理概览", products: "设备目录", "config-catalog": "配置目录", "tool-catalog": "工具目录", "accessory-catalog": "附件目录", users: "账号管理", shares: "分享记录", quotes: "报价管理", audit: "操作审计" };
+  if (!titles[view]) view = state.user?.role === "admin" ? "dashboard" : "products";
+  const catalogView = catalogViews[view];
   $$(".nav-item").forEach((item) => item.classList.toggle("active", item.dataset.view === view));
-  $$(".view").forEach((panel) => panel.classList.toggle("active", panel.dataset.viewPanel === view));
+  $$(".view").forEach((panel) => panel.classList.toggle("active", panel.dataset.viewPanel === (catalogView ? "config-catalog" : view)));
   $("#view-title").textContent = titles[view];
+  if (catalogView) {
+    $("#catalog-view-eyebrow").textContent = catalogView.eyebrow;
+    $("#catalog-view-title").textContent = catalogView.title;
+    $("#catalog-view-description").textContent = catalogView.description;
+    const catalogAction = $("#add-config-category");
+    delete catalogAction.dataset.addCatalogCategory;
+    delete catalogAction.dataset.addCatalogItem;
+    catalogAction.hidden = false;
+    if (catalogView.rootId === "catalog-optional") {
+      catalogAction.textContent = "添加分类";
+      catalogAction.dataset.addCatalogCategory = "";
+    } else {
+      catalogAction.textContent = catalogView.rootId === "catalog-tools" ? "添加工具" : "添加附件";
+      catalogAction.dataset.addCatalogItem = catalogView.rootId;
+    }
+    window.selectCatalogRootFromNavigation?.(catalogView.rootId);
+  }
   if (updateHistory && window.location.hash !== `#${view}`) window.location.hash = view;
   if ($("#primary-action")) $("#primary-action").hidden = true;
   closeSidebar();
@@ -572,15 +807,37 @@ function switchView(view, updateHistory = true) {
 async function setUserStatus(button) {
   const enabled = button.dataset.enabled === "true";
   if (!await confirmAction(enabled ? "启用账号" : "禁用账号", enabled ? "确定恢复该账号的访问权限吗？" : "确定禁用该账号并撤销其当前会话吗？", enabled ? "确认启用" : "确认禁用")) return;
-  try { await runButtonAction(button, "处理中…", async () => { await api(`/api/v1/admin/users/${button.dataset.userStatus}/status`, { method: "PATCH", body: JSON.stringify({ enabled }) }); showToast("账号状态已更新"); await loadData(); }); }
-  catch (failure) { showToast(failure.message); }
+  try { await runButtonAction(button, "处理中…", async () => { const result = await api(`/api/v1/admin/users/${button.dataset.userStatus}/status`, { method: "PATCH", body: JSON.stringify({ enabled, version: Number(button.dataset.userVersion) }) }); applyUserMutation(result); showToast(enabled ? "账号已启用" : "账号已停用"); void refreshUsersAfterMutation(); }); }
+  catch (failure) { showToast(failure.message, "error"); }
 }
-function openUserEditor(user = null) {
+
+function findUser(userId) { return state.users.find((item) => item.id === userId); }
+function clearAccountErrors(form) {
+  $$('[aria-invalid="true"]', form).forEach((field) => field.removeAttribute("aria-invalid"));
+  $$("[data-field-error]", form).forEach((error) => { error.hidden = true; error.textContent = ""; });
+  const summary = $(".form-error", form); if (summary) { summary.hidden = true; summary.textContent = ""; }
+}
+function showAccountError(form, failure, fallbackField = "") {
+  clearAccountErrors(form);
+  const fieldName = failure.field || fallbackField;
+  const field = fieldName ? form.elements[fieldName] : null;
+  const inline = fieldName ? $(`[data-field-error="${fieldName}"]`, form) : null;
+  if (field && inline) { field.setAttribute("aria-invalid", "true"); inline.textContent = failure.message; inline.hidden = false; field.focus(); return; }
+  const summary = $(".form-error", form); if (summary) { summary.textContent = failure.requestId ? `${failure.message}（编号 ${failure.requestId}）` : failure.message; summary.hidden = false; }
+}
+function prepareAccountDialog(dialog, user, trigger) {
+  dialog._returnFocus = trigger || document.activeElement;
+  const target = $("[data-account-target]", dialog); if (target) target.textContent = `${user.display_name || "未命名用户"} · ${user.email || `${user.phone_calling_code || ""} ${user.phone || ""}`}`;
+  clearAccountErrors($("form", dialog)); dialog.showModal();
+  requestAnimationFrame(() => $("input:not([type=hidden]), select, textarea", dialog)?.focus());
+}
+function openUserEditor(user = null, trigger = null) {
   const dialog = $("#user-dialog");
   const form = $("#user-form");
   const editing = Boolean(user);
   form.reset();
   form.elements.user_id.value = user?.id || "";
+  form.elements.version.value = user?.version || "";
   form.elements.display_name.value = user?.display_name || "";
   form.elements.role.value = user?.role || "sales";
   form.elements.email.value = user?.email || "";
@@ -589,13 +846,12 @@ function openUserEditor(user = null) {
   form.elements.phone_country.value = user?.phone_country || "CN";
   updateAdminPhoneCallingCode();
   form.elements.password.required = !editing;
-  form.elements.password.placeholder = editing ? "留空表示不修改密码" : "至少8个字符";
-  $("#user-dialog-eyebrow").textContent = editing ? "EDIT ACCOUNT" : "NEW ACCOUNT";
-  $("#user-dialog-title").textContent = editing ? "编辑账号" : "创建账号";
-  $("#user-password-label").textContent = editing ? "新密码（可选）" : "初始密码";
-  $("#create-user-submit").textContent = editing ? "保存账号" : "创建账号";
-  $("#user-error").hidden = true;
-  dialog.showModal();
+  $$('[data-create-only]', form).forEach((element) => { element.hidden = editing; });
+  $("#user-dialog-eyebrow").textContent = editing ? "EDIT PROFILE" : "NEW ACCOUNT";
+  $("#user-dialog-title").textContent = editing ? "编辑账号资料" : "创建账号";
+  $("#create-user-submit").textContent = editing ? "保存资料" : "创建账号";
+  clearAccountErrors(form); form.dataset.initialSnapshot = JSON.stringify(Object.fromEntries(new FormData(form)));
+  dialog._returnFocus = trigger || document.activeElement; dialog.showModal(); requestAnimationFrame(() => form.elements.display_name.focus());
 }
 
 function updateAdminPhoneCallingCode() {
@@ -603,8 +859,6 @@ function updateAdminPhoneCallingCode() {
   const output = $("#admin-phone-calling-code");
   if (output) output.textContent = country?.calling_code || "—";
 }
-
-function editUser(user) { openUserEditor(user); }
 
 async function createUser(event) {
   event.preventDefault();
@@ -614,23 +868,37 @@ async function createUser(event) {
   const userId = data.user_id;
   delete data.user_id;
   data.display_name = data.display_name.trim();
-  data.email = data.email.trim();
-  data.phone = data.phone.trim();
-  data.phone_country = data.phone_country || "";
-  const error = $("#user-error"); error.hidden = true;
-  if (!data.display_name) { error.textContent = "请填写显示名称"; error.hidden = false; return; }
-  if ((!userId && !data.password) || (data.password && data.password.length < 8)) { error.textContent = "密码至少 8 位"; error.hidden = false; return; }
-  if (!data.email && !data.phone) { error.textContent = "邮箱和手机号至少填写一项"; error.hidden = false; return; }
-  if (!data.password) delete data.password;
+  data.email = data.email.trim() || null; data.phone = data.phone.trim() || null; data.phone_country = data.phone ? data.phone_country : null;
+  clearAccountErrors(form);
+  if (!data.display_name) { showAccountError(form, new ApiError("请填写显示名称", { field: "display_name" })); return; }
+  if (!data.email && !data.phone) { showAccountError(form, new ApiError("邮箱和手机号至少填写一项", { field: "email" })); return; }
+  if (!userId && (!data.password || data.password.length < 8)) { showAccountError(form, new ApiError("密码至少需要 8 个字符", { field: "password" })); return; }
+  const original = userId ? findUser(userId) : null;
+  const selfSensitive = userId === state.user?.id && original && (data.email !== original.email || data.phone !== original.phone || data.phone_country !== original.phone_country);
+  if (userId) { delete data.role; delete data.password; }
+  else delete data.version;
   const submit = event.submitter;
-  try { await runButtonAction(submit, "正在保存…", async () => { await api(userId ? `/api/v1/admin/users/${userId}` : "/api/v1/admin/users", { method: userId ? "PATCH" : "POST", body: JSON.stringify(data) }); $("#user-dialog").close(); form.reset(); showToast(userId ? "账号已更新" : "账号创建成功"); await loadData(); }); }
-  catch (failure) { error.textContent = failure.message; error.hidden = false; }
+  try { await runButtonAction(submit, "正在保存…", async () => { const result = await api(userId ? `/api/v1/admin/users/${userId}` : "/api/v1/admin/users", { method: userId ? "PATCH" : "POST", body: JSON.stringify(data) }); applyUserMutation(result, { created: !userId }); $("#user-dialog").close(); form.reset(); showToast(selfSensitive ? "登录信息已更新，请重新登录" : userId ? "账号资料已保存" : "账号创建成功"); if (selfSensitive) setTimeout(logout, 900); else void refreshUsersAfterMutation(); }); }
+  catch (failure) { showAccountError(form, failure); }
 }
+
+function openRoleEditor(user, trigger) { const dialog = $("#user-role-dialog"), form = $("#user-role-form"); form.reset(); form.elements.user_id.value = user.id; form.elements.version.value = user.version; form.elements.role.value = user.role; form.dataset.initialSnapshot = JSON.stringify(Object.fromEntries(new FormData(form))); prepareAccountDialog(dialog, user, trigger); }
+function openPasswordEditor(user, trigger) { const dialog = $("#user-password-dialog"), form = $("#user-password-form"); form.reset(); form.elements.user_id.value = user.id; form.elements.version.value = user.version; form.dataset.initialSnapshot = JSON.stringify(Object.fromEntries(new FormData(form))); prepareAccountDialog(dialog, user, trigger); }
+function openArchiveEditor(user, trigger) { const dialog = $("#user-archive-dialog"), form = $("#user-archive-form"); form.reset(); form.elements.user_id.value = user.id; form.elements.version.value = user.version; form.dataset.initialSnapshot = JSON.stringify(Object.fromEntries(new FormData(form))); prepareAccountDialog(dialog, user, trigger); }
+async function submitRole(event) { event.preventDefault(); const form = event.currentTarget, submit = event.submitter; if (submit?.value === "cancel") return; clearAccountErrors(form); try { await runButtonAction(submit, "保存中…", async () => { const result = await api(`/api/v1/admin/users/${form.elements.user_id.value}/role`, { method: "PATCH", body: JSON.stringify({ role: form.elements.role.value, version: Number(form.elements.version.value) }) }); applyUserMutation(result); form.closest("dialog").close(); showToast("账号角色已更新"); void refreshUsersAfterMutation(); }); } catch (failure) { showAccountError(form, failure); } }
+async function submitPassword(event) { event.preventDefault(); const form = event.currentTarget, submit = event.submitter; if (submit?.value === "cancel") return; clearAccountErrors(form); if (form.elements.password.value !== form.elements.password_confirmation.value) { showAccountError(form, new ApiError("两次输入的新密码不一致", { field: "password_confirmation" })); return; } try { await runButtonAction(submit, "重置中…", async () => { const result = await api(`/api/v1/admin/users/${form.elements.user_id.value}/password`, { method: "PATCH", body: JSON.stringify({ password: form.elements.password.value, version: Number(form.elements.version.value) }) }); applyUserMutation(result); form.closest("dialog").close(); showToast("密码已重置，原有登录状态已撤销"); void refreshUsersAfterMutation(); }); } catch (failure) { showAccountError(form, failure); } }
+async function submitArchive(event) { event.preventDefault(); const form = event.currentTarget, submit = event.submitter; if (submit?.value === "cancel") return; clearAccountErrors(form); try { await runButtonAction(submit, "归档中…", async () => { const result = await api(`/api/v1/admin/users/${form.elements.user_id.value}/archive`, { method: "POST", body: JSON.stringify({ reason: form.elements.reason.value.trim(), version: Number(form.elements.version.value) }) }); applyUserMutation(result); form.closest("dialog").close(); showToast("账号已归档，历史数据仍保留"); void refreshUsersAfterMutation(); }); } catch (failure) { showAccountError(form, failure); } }
+async function restoreUser(button) { const user = findUser(button.dataset.restoreUser); if (!user || !await confirmAction("恢复账号", "恢复后账号将重新启用，但用户仍需重新登录。", "确认恢复")) return; try { await runButtonAction(button, "恢复中…", async () => { const result = await api(`/api/v1/admin/users/${user.id}/restore`, { method: "POST", body: JSON.stringify({ version: user.version }) }); applyUserMutation(result); showToast("账号已恢复"); void refreshUsersAfterMutation(); }); } catch (failure) { showToast(failure.message, "error"); } }
 
 async function closeShare(button) {
   if (!await confirmAction("关闭分享码", "确定关闭这个分享码吗？关闭后将无法再次查询。", "确认关闭")) return;
-  try { await runButtonAction(button, "关闭中…", async () => { await api(`/api/v1/admin/shares/${button.dataset.closeShare}`, { method: "DELETE" }); showToast("分享码已关闭"); await loadData(); }); }
+  try { await runButtonAction(button, "关闭中…", async () => { await api(`/api/v1/admin/shares/${button.dataset.closeShare}/status`, { method: "PATCH", body: JSON.stringify({ active: false }) }); showToast("分享码已关闭"); await loadShares(); }); }
   catch (failure) { showToast(failure.message); }
+}
+
+async function reopenShare(button) {
+  try { await runButtonAction(button, "启用中…", async () => { await api(`/api/v1/admin/shares/${button.dataset.openShare}/status`, { method: "PATCH", body: JSON.stringify({ active: true }) }); showToast("分享码已重新启用"); await loadShares(); }); }
+  catch (failure) { showToast(failure.message, "error"); }
 }
 
 async function deleteQuote(button) {
@@ -662,11 +930,11 @@ async function exportQuote(quote) {
   }
 }
 
-function openQuoteEditor({ quoteId = null, configId, title, items, currency = "CNY", exportAfterSave = false }) {
+function openQuoteEditor({ quoteId = null, configId = null, title, items, currency = "CNY", sourceShareId = null, customerName = "", customerEmail = "", language = "zh" }) {
   const normalizedItems = (items || []).map((item) => ({
     ...item,
-    quantity: Math.max(1, Number(item.quantity || 1)),
-    price: Math.max(0, Number(item.price || 0))
+    quantity: toPositiveInteger(item.quantity),
+    price: Math.max(0, toFiniteNumber(item.price))
   }));
   const dialog = document.createElement("dialog");
   dialog.className = "product-dialog quote-editor-dialog";
@@ -674,27 +942,37 @@ function openQuoteEditor({ quoteId = null, configId, title, items, currency = "C
   dialog.innerHTML = `<form method="dialog" class="dialog-card quote-editor-card">
     <header><div><span class="eyebrow">QUOTATION</span><h2>${quoteId ? "修改报价" : "创建报价"}</h2></div><button class="icon-button" value="cancel" aria-label="关闭">×</button></header>
     <div class="quote-editor-meta">
-      <label class="quote-title-field"><span>配置名称</span><input name="title" value="${escapeHtml(title || "")}" required /></label>
+      <label class="quote-title-field"><span>配置名称</span><input name="title" autocomplete="off" placeholder="例如：客户 A · CR1016 配置报价" value="${escapeHtml(title || "")}" required /></label>
       <div class="quote-currency-row"><label class="quote-currency-field"><span>报价货币</span><select name="currency" aria-label="报价货币"><option value="CNY" ${currency === "CNY" ? "selected" : ""}>CNY · 人民币</option><option value="USD" ${currency === "USD" ? "selected" : ""}>USD · 美元</option></select></label><button class="button button-secondary quote-auto-price" type="button">自动填价</button></div>
+      <div class="quote-customer-row"><label><span>客户名称</span><input name="customer_name" autocomplete="organization" placeholder="填写客户或公司名称" value="${escapeHtml(customerName)}" /></label><label><span>客户邮箱</span><input name="customer_email" autocomplete="email" spellcheck="false" placeholder="用于报价单页头" value="${escapeHtml(customerEmail)}" /></label></div>
     </div>
+    <p class="quote-editor-error" role="alert" hidden></p>
     <div class="quote-edit-list">
       <div class="quote-edit-head"><span>产品 / 配置</span><span>数量</span><span>单价</span></div>
-      ${normalizedItems.map((item, index) => `<div class="quote-edit-row"><div class="quote-item-name"><strong>${escapeHtml(item.name || "未命名项目")}</strong></div><input class="quote-qty-input" data-q="qty" data-i="${index}" aria-label="数量" type="number" min="1" step="1" value="${item.quantity}"><input class="quote-price-input" data-q="price" data-i="${index}" aria-label="单价" type="number" min="0" step="0.01" value="${item.price}"></div>`).join("")}
+      ${normalizedItems.length ? normalizedItems.map((item, index) => {
+        const context = item.device_label || item.device || item.code || (item.kind === "product" ? "设备" : "可选配置");
+        return `<div class="quote-edit-row"><div class="quote-item-name"><small>${escapeHtml(context)}</small><strong>${escapeHtml(item.name || "未命名项目")}</strong></div><input class="quote-qty-input" data-q="qty" data-i="${index}" aria-label="数量" type="number" min="1" step="1" value="${item.quantity}"><input class="quote-price-input" data-q="price" data-i="${index}" aria-label="单价" type="number" min="0" step="0.01" value="${item.price}"></div>`;
+      }).join("") : '<div class="quote-edit-empty">暂无可报价项目，请返回分享配置重新选择。</div>'}
     </div>
     <div class="quote-total-row"><span>合计</span><strong class="quote-total">0</strong></div>
-    <footer><button class="button button-quiet" value="cancel">取消</button><button class="button button-primary" value="default">${exportAfterSave ? "保存并导出 PDF" : "保存报价"}</button></footer>
+    <footer><button class="button button-quiet" value="cancel">取消</button><button class="button button-secondary" value="save">保存报价</button><button class="button button-primary" value="saveAndExport">保存并导出 PDF</button></footer>
   </form>`;
   document.body.appendChild(dialog);
   const totalElement = $(".quote-total", dialog);
+  const errorElement = $(".quote-editor-error", dialog);
+  const setQuoteError = (message = "") => { errorElement.textContent = message; errorElement.hidden = !message; };
+  const collectQuoteItems = () => normalizedItems.map((item, index) => ({
+    ...item,
+    quantity: toPositiveInteger($(`[data-q="qty"][data-i="${index}"]`, dialog).value),
+    price: Math.max(0, toFiniteNumber($(`[data-q="price"][data-i="${index}"]`, dialog).value))
+  }));
   const updateTotal = () => {
-    const total = normalizedItems.reduce((sum, _, index) => sum
-      + Number($(`[data-q="price"][data-i="${index}"]`, dialog).value || 0)
-      * Number($(`[data-q="qty"][data-i="${index}"]`, dialog).value || 1), 0);
+    const total = collectQuoteItems().reduce((sum, item) => sum + item.price * item.quantity, 0);
     const selectedCurrency = $("[name=currency]", dialog).value;
     totalElement.textContent = `${selectedCurrency} ${total.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     return total;
   };
-  dialog.addEventListener("input", updateTotal);
+  dialog.addEventListener("input", () => { setQuoteError(); updateTotal(); });
   dialog.addEventListener("change", updateTotal);
   $(".quote-auto-price", dialog).addEventListener("click", async (event) => {
     const button = event.currentTarget;
@@ -709,10 +987,10 @@ function openQuoteEditor({ quoteId = null, configId, title, items, currency = "C
       const optionMap = new Map((prices.options || []).flatMap((option) => [[normalizeCode(option.id), option], [normalizeCode(option.code), option]]));
       let matched = 0;
       normalizedItems.forEach((item, index) => {
-        const snapshotPrice = selectedCurrency === "USD" ? Number(item.price_usd || 0) : Number(item.price_cny || 0);
-        const isSnapshotProduct = item.kind === "product" && (Object.prototype.hasOwnProperty.call(item, "price_cny") || Object.prototype.hasOwnProperty.call(item, "price_usd"));
-        if (isSnapshotProduct) {
-          $(`[data-q="price"][data-i="${index}"]`, dialog).value = snapshotPrice > 0 ? snapshotPrice : 0;
+        const hasSnapshotPrice = Object.prototype.hasOwnProperty.call(item, "price_cny") || Object.prototype.hasOwnProperty.call(item, "price_usd");
+        const snapshotPrice = selectedCurrency === "USD" ? toFiniteNumber(item.price_usd) : toFiniteNumber(item.price_cny);
+        if (hasSnapshotPrice) {
+          $(`[data-q="price"][data-i="${index}"]`, dialog).value = Math.max(0, snapshotPrice);
           if (snapshotPrice > 0) matched += 1;
           return;
         }
@@ -722,7 +1000,7 @@ function openQuoteEditor({ quoteId = null, configId, title, items, currency = "C
         else if (item.kind === "option") record = keys.map((key) => optionMap.get(key)).find(Boolean);
         else record = keys.map((key) => optionMap.get(key) || productMap.get(key)).find(Boolean);
         if (!record) return;
-        const price = selectedCurrency === "USD" ? Number(record.price_usd || 0) : Number(record.base_price ?? record.price ?? 0);
+        const price = selectedCurrency === "USD" ? toFiniteNumber(record.price_usd) : toFiniteNumber(record.base_price ?? record.price ?? 0);
         if (price <= 0) return;
         $(`[data-q="price"][data-i="${index}"]`, dialog).value = price;
         matched += 1;
@@ -733,28 +1011,28 @@ function openQuoteEditor({ quoteId = null, configId, title, items, currency = "C
     finally { button.disabled = false; button.textContent = originalText; }
   });
   $("form", dialog).addEventListener("submit", async (event) => {
-    if (event.submitter?.value === "cancel") return;
+    const action = event.submitter?.value;
+    if (action === "cancel") return;
     event.preventDefault();
+    const finalItems = collectQuoteItems();
     const total = updateTotal();
-    const finalItems = normalizedItems.map((item, index) => ({
-      ...item,
-      quantity: Number($(`[data-q="qty"][data-i="${index}"]`, dialog).value || 1),
-      price: Number($(`[data-q="price"][data-i="${index}"]`, dialog).value || 0)
-    }));
+    const quoteTitle = $("[name=title]", dialog).value.trim();
+    if (!quoteTitle) { setQuoteError("请填写配置名称后再保存报价。"); $("[name=title]", dialog).focus(); return; }
+    if (!finalItems.length) { setQuoteError("没有可保存的报价项目，请返回分享配置重新选择。"); return; }
     try { await runButtonAction(event.submitter, "正在保存…", async () => {
-      const savedQuote = await api("/api/v1/quotes", { method: "POST", body: JSON.stringify({ quote_id: quoteId, config_id: configId, title: $("[name=title]", dialog).value.trim(), items: finalItems, total_price: total, currency: $("[name=currency]", dialog).value }) });
-      const exported = exportAfterSave ? await exportQuote(savedQuote) : false;
+      const savedQuote = await api("/api/v1/quotes", { method: "POST", body: JSON.stringify({ quote_id: quoteId, config_id: configId, title: quoteTitle, items: finalItems, total_price: total, currency: $("[name=currency]", dialog).value, source_share_id: sourceShareId, customer_name: $("[name=customer_name]", dialog).value.trim(), customer_email: $("[name=customer_email]", dialog).value.trim(), language }) });
+      const exported = action === "saveAndExport" ? await exportQuote(savedQuote) : false;
       dialog.close(); dialog.remove();
-      showToast(exportAfterSave && exported ? "报价单已保存并开始下载 PDF" : (quoteId ? "报价单已更新" : "报价单已保存"));
+      showToast(action === "saveAndExport" ? (exported ? "报价单已保存并开始下载 PDF" : "报价单已保存，但 PDF 下载失败") : (quoteId ? "报价单已更新" : "报价单已保存"));
       await loadData();
-    }); } catch (error) { showToast(error.message); }
+    }); } catch (error) { setQuoteError(error.message || "保存报价失败，请检查填写内容后重试。"); }
   });
   updateTotal();
   dialog.showModal();
 }
 
 async function editQuote(quote) {
-  openQuoteEditor({ quoteId: quote.id, configId: quote.config_id, title: quote.title, items: quote.items, currency: quote.currency || "CNY" });
+  openQuoteEditor({ quoteId: quote.id, configId: quote.config_id, title: quote.title, items: quote.items, currency: quote.currency || "CNY", sourceShareId: quote.source_share_id, customerName: quote.customer_name, customerEmail: quote.customer_email, language: quote.language || "zh" });
 }
 
 function plainDescription(value) {
@@ -762,44 +1040,136 @@ function plainDescription(value) {
 }
 
 function renderShareDetail(share) {
-  const snapshot = share.snapshot;
-  const categories = (snapshot.categories || []).map((category) => {
-    const options = (category.options || []).map((option) => {
-      const description = plainDescription(option.description);
-      return `<li><strong>${escapeHtml(option.name)}</strong>${description ? `<span>${escapeHtml(description)}</span>` : ""}</li>`;
+  const shareItems = share.items?.length ? share.items : [{ snapshot: share.snapshot, display_name: share.name }];
+  const deviceItems = shareItems.filter((item) => (item.item_type || "device_config") === "device_config");
+  const devices = deviceItems.map((shareItem, index) => {
+    const snapshot = shareItem.snapshot || {};
+    const categoryList = snapshot.categories || [];
+    const baseCategoryIds = new Set(["motor", "voltage", "channel"]);
+    const singleValue = (id) => {
+      const category = categoryList.find((item) => item.id === id);
+      return category?.options?.[0]?.name || "未选择";
+    };
+    const categories = categoryList.filter((category) => !baseCategoryIds.has(category.id)).map((category) => {
+      const options = (category.options || []).map((option) => {
+        const description = plainDescription(option.description);
+        return `<li><strong>${escapeHtml(option.name)}</strong>${description ? `<span>${escapeHtml(description)}</span>` : ""}</li>`;
+      }).join("");
+      return `<section class="share-detail-group"><header><span>${escapeHtml(category.name)}</span><small>${category.options.length} 项</small></header><ul>${options}</ul></section>`;
     }).join("");
-    return `<section class="share-detail-group"><header><span>${escapeHtml(category.name)}</span><small>${category.options.length} 项</small></header><ul>${options}</ul></section>`;
+    const basics = [
+      ["型号", snapshot.product?.name || "未填写"],
+      ["名称", snapshot.product?.title_name || "未填写"],
+      ["颜色", snapshot.color?.label || snapshot.color?.code || "未选择"],
+      ["电机", singleValue("motor")],
+      ["电源", singleValue("voltage")],
+      ["通道", categoryList.some((item) => item.id === "channel") ? singleValue("channel") : "未配置"]
+    ].map(([label, value]) => `<div><span>${label}</span><strong>${escapeHtml(value)}</strong></div>`).join("");
+    return `<article class="share-device-block"><h4>设备 ${index + 1} · ${escapeHtml(snapshot.product?.name || "未填写")}</h4><section class="share-detail-group share-device-basics"><header><span>设备信息</span><small>型号与基本配置</small></header><div class="share-basic-list">${basics}</div></section><div class="share-detail-groups">${categories || '<div class="empty">该设备未选择其他选配项目</div>'}</div></article>`;
+  }).join("");
+  const catalogSections = [["tool", "维修工具"], ["accessory", "设备附件"]].map(([type, label]) => {
+    const entries = shareItems.filter((item) => item.item_type === type);
+    if (!entries.length) return "";
+    const rows = entries.map((entry) => {
+      const snapshot = entry.snapshot || {};
+      return `<li><strong>${escapeHtml([snapshot.code, snapshot.name || entry.display_name].filter(Boolean).join(" · ") || "—")}</strong><span>数量：${Number(entry.quantity || snapshot.quantity || 1)}</span></li>`;
+    }).join("");
+    return `<article class="share-device-block share-catalog-block"><h4>${label}</h4><section class="share-detail-group"><header><span>${label}</span><small>${entries.length} 项</small></header><ul>${rows}</ul></section></article>`;
   }).join("");
   const sender = share.sender_name || "未填写姓名";
   const contact = share.sender_email || share.sender_phone || "未填写联系方式";
-  return `<header class="share-result-header"><div><span class="eyebrow">CONFIGURATION ${escapeHtml(share.code)}</span><h3>${escapeHtml(share.name)}</h3></div><span class="badge good">有效至 ${formatDate(share.expires_at)}</span></header><div class="share-device-summary"><div><span>发送用户</span><strong>${escapeHtml(sender)}</strong><small>${escapeHtml(contact)}</small></div><div><span>设备型号</span><strong>${escapeHtml(snapshot.product.name)}</strong></div><div><span>产品名称 / 外观</span><strong>${escapeHtml(snapshot.product.title_name)} · ${escapeHtml(snapshot.color.label || snapshot.color.code)}</strong></div></div><div class="share-detail-groups">${categories || '<div class="empty">该配置未选择其他选配项目</div>'}</div>`;
+  const summaryParts = [];
+  if (deviceItems.length) summaryParts.push(`${deviceItems.length} 台设备`);
+  const catalogCount = shareItems.length - deviceItems.length;
+  if (catalogCount) summaryParts.push(`${catalogCount} 项工具或附件`);
+  return `<header class="share-result-header"><div><span class="eyebrow">CONFIGURATION ${escapeHtml(share.code)}</span><h3>${escapeHtml(summaryParts.join(" · ") || "分享配置")}</h3></div><span class="badge good">有效至 ${formatDate(share.expires_at)}</span></header><div class="share-device-summary"><div><span>发送用户</span><strong>${escapeHtml(sender)}</strong><small>${escapeHtml(contact)}</small></div></div>${devices}${catalogSections}`;
+}
+
+function ensureShareDrawer() {
+  if (shareDrawerElement && shareDrawerBackdrop) return;
+  shareDrawerBackdrop = document.createElement("div");
+  shareDrawerBackdrop.className = "share-drawer-backdrop";
+  shareDrawerElement = document.createElement("aside");
+  shareDrawerElement.className = "share-drawer";
+  shareDrawerElement.setAttribute("role", "dialog");
+  shareDrawerElement.setAttribute("aria-modal", "true");
+  shareDrawerElement.setAttribute("aria-label", "分享配置详情");
+  shareDrawerElement.setAttribute("aria-hidden", "true");
+  shareDrawerElement.innerHTML = `<header class="share-drawer-header"><div><span class="eyebrow">SHARE PREVIEW</span><h2>分享详情</h2></div><button class="icon-button" type="button" data-share-drawer-close aria-label="关闭">×</button></header><div class="share-drawer-body" data-share-drawer-body></div><footer class="share-drawer-footer"><button class="button button-secondary" type="button" data-share-export disabled>导出 PDF</button><button class="button button-primary" type="button" data-share-quote disabled>报价</button></footer>`;
+  document.body.append(shareDrawerBackdrop, shareDrawerElement);
+  shareDrawerBackdrop.addEventListener("click", closeShareDrawer);
+  shareDrawerElement.querySelector("[data-share-drawer-close]").addEventListener("click", closeShareDrawer);
+  shareDrawerElement.querySelector("[data-share-export]").addEventListener("click", (event) => exportSharePdf(event.currentTarget.dataset.code));
+  shareDrawerElement.querySelector("[data-share-quote]").addEventListener("click", (event) => quoteShare(event.currentTarget.dataset.code));
+  document.addEventListener("keydown", (event) => {
+    if (!shareDrawerElement?.classList.contains("open") || document.querySelector("dialog[open]")) return;
+    if (event.key === "Escape") { event.preventDefault(); closeShareDrawer(); return; }
+    if (event.key !== "Tab") return;
+    const focusable = $$('button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])', shareDrawerElement).filter((item) => !item.hidden);
+    if (!focusable.length) return;
+    const first = focusable[0]; const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+  });
+}
+
+function setShareDrawerContent(code, content) {
+  ensureShareDrawer();
+  const body = $("[data-share-drawer-body]", shareDrawerElement);
+  const exportButton = $("[data-share-export]", shareDrawerElement);
+  const quoteButton = $("[data-share-quote]", shareDrawerElement);
+  body.innerHTML = content;
+  [exportButton, quoteButton].forEach((button) => { button.dataset.code = code || ""; button.disabled = !code; });
+}
+
+function openShareDrawer() {
+  ensureShareDrawer();
+  previousShareFocus = document.activeElement;
+  shareDrawerBackdrop.classList.add("open");
+  shareDrawerElement.classList.add("open");
+  shareDrawerElement.setAttribute("aria-hidden", "false");
+  const app = $("#admin-app");
+  if (app) app.inert = true;
+  document.body.classList.add("share-drawer-open");
+  requestAnimationFrame(() => $("[data-share-drawer-close]", shareDrawerElement).focus());
+}
+
+function closeShareDrawer() {
+  if (!shareDrawerElement) return;
+  shareDrawerBackdrop.classList.remove("open");
+  shareDrawerElement.classList.remove("open");
+  shareDrawerElement.setAttribute("aria-hidden", "true");
+  const app = $("#admin-app");
+  if (app) app.inert = false;
+  document.body.classList.remove("share-drawer-open");
+  if (previousShareFocus?.focus) previousShareFocus.focus();
+  previousShareFocus = null;
 }
 
 async function lookupShare(code) {
-  const result = $("#share-result");
   if (!/^\d{6}$/.test(code)) { showToast("请输入6位数字分享码"); return; }
-  result.hidden = false;
-  result.innerHTML = '<div class="share-result-loading">正在读取配置…</div>';
+  setShareDrawerContent(code, '<div class="share-result-loading">正在读取配置…</div>');
+  openShareDrawer();
   try {
-    const share = await api(`/api/v1/shares/${code}`);
-    result.innerHTML = renderShareDetail(share);
-    result.scrollIntoView({ behavior: "smooth", block: "nearest" });
-    await loadData();
+    const share = await api(`/api/v1/staff/shares/${code}/preview?lang=${state.catalogLanguage === "en" ? "en" : "zh"}`);
+    setShareDrawerContent(code, renderShareDetail(share));
   } catch (failure) {
-    result.innerHTML = `<div class="share-result-error"><strong>无法读取该配置</strong><span>${escapeHtml(failure.message)}</span></div>`;
+    setShareDrawerContent("", `<div class="share-result-error"><strong>无法读取该配置</strong><span>${escapeHtml(failure.message)}</span></div>`);
   }
 }
 
 async function searchShare(event) {
   event.preventDefault();
-  await lookupShare($("#share-code").value.trim());
+  const input = $("#share-code");
+  if (input) await lookupShare(input.value.trim());
 }
 
 function clearShareResult() {
+  closeShareDrawer();
   const result = $("#share-result");
-  result.hidden = true;
-  result.innerHTML = "";
-  $("#share-code").value = "";
+  if (result) { result.hidden = true; result.innerHTML = ""; }
+  const input = $("#share-code");
+  if (input) input.value = "";
 }
 
 async function exportSharePdf(code) {
@@ -817,10 +1187,41 @@ async function exportSharePdf(code) {
 
 async function quoteShare(code) {
   try {
-    const share = await api(`/api/v1/shares/${code}`);
-    const items = [{ kind: "product", source_id: share.snapshot.product.id, name: share.snapshot.product.name, code: share.snapshot.product.id, price: Number(share.snapshot.product.base_price || 0), price_cny: Number(share.snapshot.product.base_price || 0), price_usd: Number(share.snapshot.product.price_usd || 0), quantity: 1 }];
-    (share.snapshot.categories || []).forEach((category) => (category.options || []).forEach((option) => items.push({ kind: "option", source_id: option.id, name: option.name, code: option.code, price: Number(option.price || 0), quantity: 1 })));
-    openQuoteEditor({ configId: share.config_id, title: `分享配置 ${code}`, items, currency: "CNY", exportAfterSave: true });
+    const share = await api(`/api/v1/staff/shares/${code}/preview?lang=${state.catalogLanguage === "en" ? "en" : "zh"}`);
+    const shareItems = share.items?.length ? share.items : [{ snapshot: share.snapshot }];
+    const items = [];
+    let deviceIndex = 0;
+    shareItems.forEach((entry) => {
+      const snapshot = entry.snapshot || {};
+      const itemType = entry.item_type || "device_config";
+      if (itemType !== "device_config") {
+        const reference = entry.reference_price || {};
+        const priceCny = toFiniteNumber(reference.CNY ?? snapshot.price_cny);
+        const priceUsd = toFiniteNumber(reference.USD ?? snapshot.price_usd);
+        items.push({ kind: itemType, source_id: snapshot.option_id || entry.source_id, name: snapshot.name || entry.display_name || "未命名项目", device_label: itemType === "tool" ? "维修工具" : "设备附件", code: snapshot.code || "", price: priceCny, price_cny: priceCny, price_usd: priceUsd, quantity: Number(entry.quantity || snapshot.quantity || 1) });
+        return;
+      }
+      deviceIndex += 1;
+      const pricing = entry.pricing_by_currency || {};
+      const cnyPricing = pricing.CNY || {};
+      const usdPricing = pricing.USD || {};
+      const product = snapshot.product || {};
+      const deviceLabel = `设备 ${deviceIndex} · ${product.name || product.id || "—"}`;
+      const baseCny = toFiniteNumber(cnyPricing.base_price ?? product.base_price);
+      const baseUsd = toFiniteNumber(usdPricing.base_price ?? product.price_usd);
+      items.push({ kind: "product", source_id: product.id, name: product.title_name || product.name || "设备", device_label: deviceLabel, code: product.name || product.id, price: baseCny, price_cny: baseCny, price_usd: baseUsd, quantity: 1 });
+
+      const priceLines = (value) => new Map(((value || {}).lines || []).map((line) => [line.source_id, toFiniteNumber(line.amount)]));
+      const cnyLines = priceLines(cnyPricing);
+      const usdLines = priceLines(usdPricing);
+      (snapshot.categories || []).forEach((category) => (category.options || []).forEach((option) => {
+        if (["motor", "voltage", "channel"].includes(category.id) && category.id !== "voltage") return;
+        const priceCny = cnyLines.has(option.id) ? cnyLines.get(option.id) : toFiniteNumber(option.price_cny ?? option.price);
+        const priceUsd = usdLines.has(option.id) ? usdLines.get(option.id) : toFiniteNumber(option.price_usd);
+        items.push({ kind: category.id === "voltage" ? "surcharge" : "option", source_id: option.id, name: option.name, device_label: deviceLabel, code: option.code || "", price: priceCny, price_cny: priceCny, price_usd: priceUsd, quantity: 1 });
+      }));
+    });
+    openQuoteEditor({ configId: share.config_id, title: `分享配置 ${code}`, items, currency: "CNY", sourceShareId: share.id, customerName: share.customer_name || share.sender_name || "", customerEmail: share.customer_email || share.sender_email || "", language: state.catalogLanguage === "en" ? "en" : "zh" });
   } catch (failure) { showToast(failure.message); }
 }
 
@@ -833,11 +1234,13 @@ function openSidebar() { $("#sidebar").classList.add("open"); $("#sidebar-backdr
 function closeSidebar() { $("#sidebar").classList.remove("open"); $("#sidebar-backdrop").hidden = true; }
 function setCategoryCollapsed(group, collapsed) {
   if (!group) return;
+  const content = $(".catalog-group-content", group);
   const table = $(".config-catalog-table", group);
   const button = $("[data-collapse-category]", group);
   group.classList.toggle("collapsed", collapsed);
   // Remove the large table from layout completely. Relying on a class alone
   // can leave a stale grid/scroll extent after collapsing long categories.
+  if (content) content.hidden = collapsed;
   if (table) table.hidden = collapsed;
   if (button?.classList.contains("catalog-collapse")) {
     button.textContent = collapsed ? "展开分类" : "折叠分类";
@@ -846,8 +1249,8 @@ function setCategoryCollapsed(group, collapsed) {
 }
 
 function restoreCollapsedCategories() {
-  $$(".config-catalog-group").forEach((group, index) => {
-    const id = state.configCatalog[index]?.id;
+  $$(".config-catalog-group").forEach((group) => {
+    const id = group.dataset.catalogCategory || $("[data-collapse-category]", group)?.dataset.collapseCategory;
     setCategoryCollapsed(group, Boolean(id && state.collapsedCategories.has(id)));
   });
 }
@@ -863,15 +1266,29 @@ function bindEvents() {
     const button = event.target.closest("[data-user-role]");
     if (!button) return;
     state.userRoleFilter = button.dataset.userRole;
-    $$("[data-user-role]", $("#user-role-filter")).forEach((item) => item.classList.toggle("active", item === button));
-    renderUsers();
+    state.userPage = 1;
+    $$("[data-user-role]", $("#user-role-filter")).forEach((item) => { const active = item === button; item.classList.toggle("active", active); item.setAttribute("aria-pressed", String(active)); });
+    loadUsers().catch((failure) => showToast(failure.message, "error"));
   });
+  let userSearchTimer;
+  $("#user-search")?.addEventListener("input", (event) => { clearTimeout(userSearchTimer); userSearchTimer = setTimeout(() => { state.userQuery = event.target.value.trim(); state.userPage = 1; loadUsers().catch((failure) => showToast(failure.message, "error")); }, 300); });
+  $("#user-filter-form")?.addEventListener("submit", (event) => { event.preventDefault(); clearTimeout(userSearchTimer); state.userQuery = $("#user-search").value.trim(); state.userPage = 1; loadUsers().catch((failure) => showToast(failure.message, "error")); });
+  $("#user-status-filter")?.addEventListener("change", (event) => { state.userStatusFilter = event.target.value; state.userPage = 1; loadUsers().catch((failure) => showToast(failure.message, "error")); });
+  $("#user-archived-filter")?.addEventListener("change", (event) => { state.userArchivedFilter = event.target.checked; state.userPage = 1; loadUsers().catch((failure) => showToast(failure.message, "error")); });
+  $("#user-page-prev")?.addEventListener("click", () => { if (state.userPage > 1) { state.userPage -= 1; loadUsers().catch((failure) => showToast(failure.message, "error")); } });
+  $("#user-page-next")?.addEventListener("click", () => { if (state.userPage * state.userPageSize < state.userTotal) { state.userPage += 1; loadUsers().catch((failure) => showToast(failure.message, "error")); } });
   $("#user-form").addEventListener("submit", createUser);
+  $("#user-role-form").addEventListener("submit", submitRole);
+  $("#user-password-form").addEventListener("submit", submitPassword);
+  $("#user-archive-form").addEventListener("submit", submitArchive);
+  $$(".account-dialog").forEach((dialog) => {
+    dialog.addEventListener("close", () => { if (dialog._returnFocus?.isConnected) dialog._returnFocus.focus(); });
+    dialog.addEventListener("cancel", (event) => { const form = $("form", dialog); const dirty = form?.dataset.initialSnapshot && form.dataset.initialSnapshot !== JSON.stringify(Object.fromEntries(new FormData(form))); if (!dirty) return; event.preventDefault(); confirmAction("放弃未保存修改", "当前修改尚未保存，确定关闭吗？", "放弃修改").then((confirmed) => { if (confirmed) dialog.close(); }); });
+  });
   $("#user-form [name='phone_country']")?.addEventListener("change", updateAdminPhoneCallingCode);
   $("#product-form").addEventListener("submit", saveProduct);
   $("#config-option-form").addEventListener("submit", saveConfigOption);
   $("#delete-config-option").addEventListener("click", deleteCurrentConfigOption);
-  $("#add-config-category").addEventListener("click", addConfigCategory);
   $$(".editor-tab").forEach((button) => button.addEventListener("click", () => switchEditorTab(button.dataset.editorTab)));
   $(".editor-tabs")?.addEventListener("keydown", (event) => {
     if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
@@ -888,8 +1305,33 @@ function bindEvents() {
     const activeLanguage = $(".lang-toggle.active", $("#product-dialog"))?.dataset.lang || "zh";
     $$("[data-color-name-lang]", $("#color-editor-list").lastElementChild).forEach((label) => { label.hidden = label.dataset.colorNameLang !== activeLanguage; });
   });
-  $("#code-search").addEventListener("submit", searchShare);
-  $("#clear-share-result").addEventListener("click", clearShareResult);
+  $("#code-search")?.addEventListener("submit", searchShare);
+  $("#clear-share-result")?.addEventListener("click", clearShareResult);
+  $("#share-filter-form")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    state.shareQuery = $("#share-query").value.trim(); state.shareStatus = $("#share-status-filter").value;
+    state.shareProduct = ""; state.shareCreatedFrom = ""; state.shareCreatedTo = "";
+    state.sharePage = 1; loadShares().catch((failure) => showToast(failure.message, "error"));
+  });
+  $("#share-filter-reset")?.addEventListener("click", () => {
+    $("#share-filter-form").reset(); state.shareQuery = ""; state.shareStatus = "all"; state.shareProduct = ""; state.shareCreatedFrom = ""; state.shareCreatedTo = ""; state.sharePage = 1;
+    loadShares().catch((failure) => showToast(failure.message, "error"));
+  });
+  $("#share-query")?.addEventListener("input", () => {
+    clearTimeout(shareSearchTimer);
+    shareSearchTimer = setTimeout(() => {
+      state.shareQuery = $("#share-query").value.trim();
+      state.sharePage = 1;
+      loadShares().catch((failure) => showToast(failure.message, "error"));
+    }, 350);
+  });
+  $("#share-status-filter")?.addEventListener("change", () => {
+    state.shareStatus = $("#share-status-filter").value;
+    state.sharePage = 1;
+    loadShares().catch((failure) => showToast(failure.message, "error"));
+  });
+  $("#share-page-prev")?.addEventListener("click", () => { if (state.sharePage > 1) { state.sharePage -= 1; loadShares().catch((failure) => showToast(failure.message, "error")); } });
+  $("#share-page-next")?.addEventListener("click", () => { if (state.sharePage * state.sharePageSize < state.shareTotal) { state.sharePage += 1; loadShares().catch((failure) => showToast(failure.message, "error")); } });
   $("#refresh-audit")?.addEventListener("click", loadData);
   addLanguageToggles(); addProductButton(); addCatalogLanguageSwitches();
   $("#menu-button").addEventListener("click", openSidebar);
@@ -897,15 +1339,24 @@ function bindEvents() {
   document.addEventListener("click", (event) => {
     if (!event.target.closest(".catalog-more")) document.querySelectorAll(".catalog-more[open]").forEach((menu) => { menu.removeAttribute("open"); });
     const imageButton = event.target.closest("[data-pick-image]"); if (imageButton) { imageButton.closest(".image-path-control, .color-image-control")?.querySelector("[data-image-file]")?.click(); return; }
-    const cancelButton = event.target.closest('button[value="cancel"]'); if (cancelButton) { const dialog = cancelButton.closest("dialog"); if (dialog) { event.preventDefault(); dialog.close(); if (dialog.dataset.dynamic === "true") dialog.remove(); return; } }
+    const cancelButton = event.target.closest('button[value="cancel"]'); if (cancelButton) { const dialog = cancelButton.closest("dialog"); if (dialog) { if (dialog.classList.contains("confirm-dialog")) return; event.preventDefault(); const form = $("form", dialog); const dirty = dialog.classList.contains("account-dialog") && form?.dataset.initialSnapshot && form.dataset.initialSnapshot !== JSON.stringify(Object.fromEntries(new FormData(form))); if (dirty) { confirmAction("放弃未保存修改", "当前修改尚未保存，确定关闭吗？", "放弃修改").then((confirmed) => { if (confirmed) dialog.close(); }); } else dialog.close(); if (dialog.dataset.dynamic === "true") dialog.remove(); return; } }
     const userButton = event.target.closest("[data-user-status]"); if (userButton) setUserStatus(userButton);
-    const editUserButton = event.target.closest("[data-edit-user]"); if (editUserButton) editUser(JSON.parse(editUserButton.dataset.editUser));
+    const editUserButton = event.target.closest("[data-edit-user]"); if (editUserButton) { const user = findUser(editUserButton.dataset.editUser); if (user) openUserEditor(user, editUserButton); }
+    const roleButton = event.target.closest("[data-edit-user-role]"); if (roleButton) { const user = findUser(roleButton.dataset.editUserRole); if (user) openRoleEditor(user, roleButton); }
+    const passwordButton = event.target.closest("[data-reset-user-password]"); if (passwordButton) { const user = findUser(passwordButton.dataset.resetUserPassword); if (user) openPasswordEditor(user, passwordButton); }
+    const archiveButton = event.target.closest("[data-archive-user]"); if (archiveButton) { const user = findUser(archiveButton.dataset.archiveUser); if (user) openArchiveEditor(user, archiveButton); }
+    const restoreButton = event.target.closest("[data-restore-user]"); if (restoreButton) restoreUser(restoreButton);
     const shareButton = event.target.closest("[data-close-share]"); if (shareButton) closeShare(shareButton);
+    const reopenShareButton = event.target.closest("[data-open-share]"); if (reopenShareButton) reopenShare(reopenShareButton);
     const quoteButton = event.target.closest("[data-delete-quote]"); if (quoteButton) deleteQuote(quoteButton);
     const exportQuoteButton = event.target.closest("[data-export-quote]"); if (exportQuoteButton) { const quote = state.quotes.find((item) => item.id === exportQuoteButton.dataset.exportQuote); if (quote) exportQuote(quote); }
     const editQuoteButton = event.target.closest("[data-edit-quote]"); if (editQuoteButton) { const quote = state.quotes.find((item) => item.id === editQuoteButton.dataset.editQuote); if (quote) editQuote(quote); }
     const lookupButton = event.target.closest("[data-lookup-share]");
-    if (lookupButton) { $("#share-code").value = lookupButton.dataset.lookupShare; lookupShare(lookupButton.dataset.lookupShare); }
+    if (lookupButton) {
+      const input = $("#share-code");
+      if (input) input.value = lookupButton.dataset.lookupShare;
+      lookupShare(lookupButton.dataset.lookupShare);
+    }
     const exportButton = event.target.closest("[data-export-share]"); if (exportButton) exportSharePdf(exportButton.dataset.exportShare);
     const quoteActionButton = event.target.closest("[data-quote-share]"); if (quoteActionButton) quoteShare(quoteActionButton.dataset.quoteShare);
     const productButton = event.target.closest("[data-edit-product]"); if (productButton) openProductEditor(productButton.dataset.editProduct);
@@ -939,7 +1390,7 @@ function bindEvents() {
   });
   document.addEventListener("keydown", (event) => {
     const target = event.target.closest?.("[data-collapse-category]");
-    if (target && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); target.click(); }
+    if (target && target.tagName !== "BUTTON" && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); target.click(); }
   });
   document.addEventListener("change", (event) => {
     const mappingCheckbox = event.target.closest('#mapping-editor input[type="checkbox"]');
@@ -1009,7 +1460,7 @@ async function saveConfigOption(event) {
 }
 
 document.addEventListener("DOMContentLoaded", async () => {
-  bindEvents(); await checkApi(); await restoreSession();
+  restoreUserFilterState(); bindEvents(); await checkApi(); await restoreSession();
 });
 document.addEventListener("click", (event) => {
   if (event.target.closest("[data-catalog-lang]")) setTimeout(renderProducts, 0);

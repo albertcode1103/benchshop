@@ -23,10 +23,14 @@ async function initApp() {
   }
   initializeState();
   bindRenderer(state);
+  initPricePreview();
   await initAuth();
+  if (typeof initCatalogMarketplace === "function") initCatalogMarketplace();
   initCart();
-  initPDF();
   initReset();
+  if (typeof window.botenResetReloadScroll === "function") {
+    requestAnimationFrame(window.botenResetReloadScroll);
+  }
 }
 
 if (document.readyState === "loading") {

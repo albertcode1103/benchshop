@@ -7,10 +7,11 @@
   <meta name="theme-color" content="#182028" />
   <title>BOTEN 管理后台</title>
   <link rel="icon" type="image/png" href="../tb/site/LOGO.png" />
-  <link rel="stylesheet" href="admin.css?v=20260903-1" />
+  <link rel="stylesheet" href="admin.css?v=20260904-21" />
   <script src="../js/runtime-config.js?v=20260831-2"></script>
   <script>window.addEventListener('error',function(e){var s=document.getElementById('api-status');if(s)s.textContent='后台脚本加载失败：'+(e.message||'请按 Ctrl+F5 刷新');});</script>
-  <script src="admin.js?v=20260902-2" defer></script>
+  <script src="admin.js?v=20260904-11" defer></script>
+  <script src="catalog-v2.js?v=20260904-14" defer></script>
 </head>
 <body>
   <a class="skip-link" href="#admin-content">跳到主要内容</a>
@@ -52,6 +53,8 @@
         <button class="nav-item active" data-view="dashboard" data-admin-only type="button"><span class="nav-icon">▦</span>概览</button>
         <button class="nav-item" data-view="products" type="button"><span class="nav-icon">◇</span>设备目录</button>
         <button class="nav-item" data-view="config-catalog" type="button"><span class="nav-icon">≡</span>配置目录</button>
+        <button class="nav-item" data-view="tool-catalog" type="button"><span class="nav-icon">⌁</span>工具目录</button>
+        <button class="nav-item" data-view="accessory-catalog" type="button"><span class="nav-icon">⊞</span>附件目录</button>
         <button class="nav-item" data-view="shares" type="button"><span class="nav-icon">↗</span>分享记录</button>
         <button class="nav-item" data-view="quotes" type="button"><span class="nav-icon">¥</span>报价管理</button>
       </nav>
@@ -104,29 +107,41 @@
         <section class="view" data-view-panel="products">
           <section class="panel">
             <header class="panel-header"><div><span class="eyebrow">DEVICE CATALOG</span><h2>设备目录</h2><p>调整设备资料、颜色以及该设备允许使用的配置项目。</p></div><div class="panel-header-actions catalog-header-actions" id="product-catalog-actions"></div></header>
-            <div class="table-wrap"><table class="product-catalog-table"><colgroup><col class="product-col-model" /><col class="product-col-title" /><col class="product-col-price" /><col class="product-col-status" /><col class="product-col-actions" /></colgroup><thead><tr><th>型号</th><th>产品名称</th><th>基础价格</th><th>状态</th><th class="align-right">操作</th></tr></thead><tbody id="products-table"></tbody></table></div>
+            <div class="table-wrap"><table class="product-catalog-table"><colgroup><col class="product-col-model" /><col class="product-col-title" /><col class="product-col-status" /><col class="product-col-actions" /></colgroup><thead><tr><th>型号</th><th>产品名称</th><th>状态</th><th class="align-right">操作</th></tr></thead><tbody id="products-table"></tbody></table></div>
           </section>
         </section>
 
         <section class="view" data-view-panel="config-catalog">
           <section class="panel">
-            <header class="panel-header"><div><span class="eyebrow">CONFIGURATION CATALOG</span><h2>配置目录</h2><p>集中维护 CRI、HEUI、CRP 等配置类别和 BTK/BTE 配置条目。价格仅供业务员参考，不会显示在用户端。</p></div><button class="button button-secondary" id="add-config-category" type="button">添加类别</button></header>
+            <header class="panel-header"><div><span class="eyebrow" id="catalog-view-eyebrow">CONFIGURATION CATALOG</span><h2 id="catalog-view-title">配置目录</h2><p id="catalog-view-description">维护设备可勾选的扩展配置；参考价格用于后续报价默认单价。</p></div><button class="button button-secondary" id="add-config-category" type="button" hidden>添加类别</button></header>
             <div id="config-catalog-list" class="config-catalog-list"></div>
           </section>
         </section>
 
         <section class="view" data-view-panel="users">
           <section class="panel">
-            <header class="panel-header"><div><span class="eyebrow">ACCESS CONTROL</span><h2>账号管理</h2><p>创建管理员、业务员或用户账号，并控制账号状态。</p></div><div class="panel-header-actions user-header-actions"><div class="role-filter" id="user-role-filter" role="group" aria-label="账号角色筛选"><button type="button" class="active" data-user-role="all">全部</button><button type="button" data-user-role="admin">管理员</button><button type="button" data-user-role="sales">业务员</button><button type="button" data-user-role="customer">用户</button></div><button class="button button-secondary" id="add-user-button" type="button">新建账号</button></div></header>
+            <header class="panel-header account-panel-header"><div><span class="eyebrow">ACCESS CONTROL</span><h2>账号管理</h2><p>分别维护账号资料、权限、密码和生命周期；敏感修改会撤销该账号的登录状态。</p></div><button class="button button-secondary" id="add-user-button" type="button">新建账号</button></header>
+            <form class="account-toolbar" id="user-filter-form" role="search">
+              <label class="account-search"><span class="sr-only">搜索账号</span><input id="user-search" name="q" type="search" autocomplete="off" placeholder="搜索姓名、邮箱或手机号" /></label>
+              <div class="role-filter" id="user-role-filter" role="group" aria-label="账号角色筛选"><button type="button" class="active" aria-pressed="true" data-user-role="all">全部</button><button type="button" aria-pressed="false" data-user-role="admin">管理员</button><button type="button" aria-pressed="false" data-user-role="sales">业务员</button><button type="button" aria-pressed="false" data-user-role="customer">用户</button></div>
+              <label class="account-filter-field"><span>状态</span><select id="user-status-filter" name="status"><option value="all">全部状态</option><option value="enabled">正常</option><option value="disabled">已停用</option></select></label>
+              <label class="archive-filter"><input id="user-archived-filter" type="checkbox" /><span>查看已归档</span></label>
+            </form>
             <div class="table-wrap"><table><thead><tr><th>用户</th><th>联系方式</th><th>角色</th><th>状态</th><th class="align-right">操作</th></tr></thead><tbody id="users-table"></tbody></table></div>
+            <footer class="account-pagination"><span id="user-page-summary">共 0 个账号</span><div><button class="button button-quiet" id="user-page-prev" type="button">上一页</button><button class="button button-quiet" id="user-page-next" type="button">下一页</button></div></footer>
           </section>
         </section>
 
         <section class="view" data-view-panel="shares">
           <section class="panel">
-          <header class="panel-header"><div><span class="eyebrow">SHARED CONFIGS</span><h2>分享记录</h2><p>查询客户配置、查看使用情况或提前关闭分享码。</p></div><form class="code-search" id="code-search"><label class="sr-only" for="share-code">分享码</label><input id="share-code" name="share_code" inputmode="numeric" maxlength="6" aria-label="输入 6 位分享码" placeholder="输入6位分享码" /><button class="button button-secondary">查询</button><button type="button" class="button button-quiet" id="clear-share-result">清除</button></form></header>
-            <div class="share-result" id="share-result" hidden></div>
+          <header class="panel-header"><div><span class="eyebrow">SHARED CONFIGS</span><h2>分享记录</h2><p>搜索客户分享内容、查看使用情况或维护分享状态。</p></div></header>
+            <form class="share-filter-toolbar" id="share-filter-form" role="search">
+              <label class="share-query-field"><span>搜索全部信息</span><input id="share-query" type="search" autocomplete="off" placeholder="分享码、客户、联系方式、设备、配置、工具或附件" /></label>
+              <label><span>状态</span><select id="share-status-filter"><option value="all">全部</option><option value="active">有效</option><option value="expired">已过期</option><option value="closed">已关闭</option></select></label>
+              <div class="share-filter-actions"><button class="button button-secondary" type="submit">筛选</button><button class="button button-quiet" id="share-filter-reset" type="button">重置</button></div>
+            </form>
             <div class="table-wrap"><table><thead><tr><th>分享码</th><th>配置</th><th>发送用户</th><th>访问</th><th>有效期</th><th>状态</th><th class="align-right">操作</th></tr></thead><tbody id="shares-table"></tbody></table></div>
+            <footer class="account-pagination"><span id="share-page-summary">共 0 条</span><div><button class="button button-quiet" id="share-page-prev" type="button">上一页</button><button class="button button-quiet" id="share-page-next" type="button">下一页</button></div></footer>
           </section>
         </section>
         <section class="view" data-view-panel="quotes">
@@ -141,61 +156,88 @@
   </div>
 
   <dialog id="product-dialog" class="product-dialog">
-    <form id="product-form" method="dialog" class="dialog-card">
-      <header><div><span class="eyebrow">PRODUCT EDITOR</span><h2 id="product-dialog-title">编辑产品</h2></div><button class="icon-button" value="cancel" formmethod="dialog" aria-label="关闭">✕</button></header>
+    <form id="product-form" method="dialog" class="dialog-card" novalidate>
+      <header><div><span class="eyebrow">PRODUCT EDITOR</span><div class="product-dialog-heading"><h2 id="product-dialog-title">编辑设备</h2><span class="badge" id="product-editor-status">—</span></div></div><div class="dialog-actions"><div class="catalog-language dialog-language" role="group" aria-label="编辑内容语言"><button type="button" class="lang-toggle active" data-lang="zh" aria-pressed="true">中文</button><button type="button" class="lang-toggle" data-lang="en" aria-pressed="false">EN</button></div><button class="icon-button" value="cancel" formmethod="dialog" aria-label="关闭">✕</button></div></header>
       <input type="hidden" name="product_id" />
+      <input type="hidden" name="version" />
       <div class="editor-tabs" role="tablist" aria-label="产品编辑内容">
         <button class="editor-tab active" id="editor-tab-basic" role="tab" aria-selected="true" aria-controls="editor-panel-basic" tabindex="0" type="button" data-editor-tab="basic">基础资料</button>
         <button class="editor-tab" id="editor-tab-colors" role="tab" aria-selected="false" aria-controls="editor-panel-colors" tabindex="-1" type="button" data-editor-tab="colors">外观颜色</button>
-        <button class="editor-tab" id="editor-tab-options" role="tab" aria-selected="false" aria-controls="editor-panel-options" tabindex="-1" type="button" data-editor-tab="options">配置模块</button>
+        <button class="editor-tab" id="editor-tab-base-options" role="tab" aria-selected="false" aria-controls="editor-panel-base-options" tabindex="-1" type="button" data-editor-tab="base-options">基本配置</button>
+        <button class="editor-tab" id="editor-tab-pricing" role="tab" aria-selected="false" aria-controls="editor-panel-pricing" tabindex="-1" type="button" data-editor-tab="pricing">基础价格</button>
+        <button class="editor-tab" id="editor-tab-options" role="tab" aria-selected="false" aria-controls="editor-panel-options" tabindex="-1" type="button" data-editor-tab="options">可选配置</button>
       </div>
       <section class="editor-panel active" id="editor-panel-basic" role="tabpanel" aria-labelledby="editor-tab-basic" data-editor-panel="basic">
+        <div class="form-error editor-module-error" data-product-module-error="basic" role="alert" tabindex="-1" hidden></div>
         <div class="form-grid">
-          <label><span>设备型号</span><input name="name" required /></label>
-          <label><span>设备型号</span><input name="name_en" /></label>
-          <label><span>产品名称</span><input name="title_name" required /></label>
-          <label><span>产品名称</span><input name="title_name_en" /></label>
-          <label><span>基础价格（元）</span><input name="base_price" type="number" min="0" step="1" /></label>
-          <label><span>基础价格（美元）</span><input name="price_usd" type="number" min="0" step="1" /></label>
-          <label><span>显示顺序</span><input name="sort_order" type="number" step="1" /></label>
-          <label class="full"><span>设备概况</span><textarea name="description" rows="4"></textarea></label>
-          <label class="full"><span>设备概况</span><textarea name="description_en" rows="3"></textarea></label>
-          <label class="toggle-field full"><input name="enabled" type="checkbox" /><span>在用户端启用该产品</span></label>
-          <div class="full specification-editor"><h3>参数表</h3><div id="product-specifications-editor"></div><button type="button" class="button button-secondary" id="add-specification-button">添加参数</button></div>
+          <label class="full"><span>设备型号</span><input name="model" required maxlength="200" placeholder="例如：BOTEN CR1016" /><small class="field-error" data-product-field-error="model" hidden></small></label>
+          <label class="full language-value-field"><span>产品名称</span><input name="product_name_zh" data-content-lang="zh" required maxlength="300" placeholder="例如：共轨试验台综合一体机" /><input name="product_name_en" data-content-lang="en" required maxlength="300" placeholder="e.g. Integrated Common Rail Test Bench" hidden /><small class="field-error" data-product-field-error="product_name" hidden></small></label>
+          <label class="full language-value-field"><span>设备概况</span><textarea name="overview_zh" data-content-lang="zh" rows="4" maxlength="10000" placeholder="填写中文设备描述"></textarea><textarea name="overview_en" data-content-lang="en" rows="4" maxlength="10000" placeholder="Enter the English overview" hidden></textarea><small class="field-error" data-product-field-error="overview" hidden></small></label>
+          <input type="hidden" name="translation_status" value="machine_draft" />
+          <div class="full specification-editor"><div class="editor-section-heading"><div><h3>参数表</h3><p>项目名称和数据分别维护中文与英文内容。</p></div><button type="button" class="button button-secondary" id="add-specification-button">添加参数</button></div><div id="product-specifications-editor"></div></div>
         </div>
       </section>
       <section class="editor-panel" id="editor-panel-colors" role="tabpanel" aria-labelledby="editor-tab-colors" data-editor-panel="colors" hidden>
-        <div class="editor-section-heading"><div><h3>外观颜色</h3><p>每台设备至少保留一种颜色，只能设置一个默认颜色。</p></div><button class="button button-secondary" id="add-color-button" type="button">添加颜色</button></div>
+        <div class="form-error editor-module-error" data-product-module-error="colors" role="alert" tabindex="-1" hidden></div>
+        <div class="editor-section-heading"><div><h3>外观颜色</h3><p>颜色名称影响前端文字，颜色图片影响设备主图；只能设置一个默认颜色。</p></div><button class="button button-secondary" id="add-color-button" type="button">添加颜色</button></div>
         <div class="color-editor-list" id="color-editor-list"></div>
       </section>
+      <section class="editor-panel" id="editor-panel-base-options" role="tabpanel" aria-labelledby="editor-tab-base-options" data-editor-panel="base-options" hidden>
+        <div class="form-error editor-module-error" data-product-module-error="base-options" role="alert" tabindex="-1" hidden></div>
+        <div class="editor-section-heading"><div><h3>基本配置</h3><p>电机、电源和通道均为单选；电机或通道决定基础价格，电源可以增加费用。</p></div></div>
+        <div class="base-options-editor" id="base-options-editor"></div>
+      </section>
+      <section class="editor-panel" id="editor-panel-pricing" role="tabpanel" aria-labelledby="editor-tab-pricing" data-editor-panel="pricing" hidden>
+        <div class="form-error editor-module-error" data-product-module-error="pricing" role="alert" tabindex="-1" hidden></div>
+        <div class="editor-section-heading"><div><h3>基础价格方案</h3><p>根据启用的电机和通道自动生成组合；人民币和美元价格分别填写。</p></div></div>
+        <div class="price-variant-editor" id="price-variant-editor"></div>
+      </section>
       <section class="editor-panel" id="editor-panel-options" role="tabpanel" aria-labelledby="editor-tab-options" data-editor-panel="options" hidden>
-        <div class="editor-section-heading"><div><h3>配置模块</h3><p>勾选该机型允许用户选择的规格和工装。</p></div></div>
+        <div class="form-error editor-module-error" data-product-module-error="options" role="alert" tabindex="-1" hidden></div>
+        <div class="editor-section-heading"><div><h3>可选配置</h3><p>只关联“可选配置”目录；维修工具和设备附件不会出现在这里。</p></div></div>
         <div class="mapping-toolbar" aria-label="配置筛选工具">
-          <label class="mapping-search"><span class="sr-only">搜索配置</span><input id="mapping-search" type="search" placeholder="搜索编号、名称或说明" autocomplete="off" /></label>
-          <div class="mapping-filters" role="group" aria-label="配置筛选"><button type="button" class="active" data-mapping-filter="all">全部</button><button type="button" data-mapping-filter="selected">仅已启用</button><button type="button" data-mapping-filter="noted">仅有标注</button></div>
+          <label class="mapping-search"><span class="sr-only">搜索配置</span><input id="mapping-search" type="search" placeholder="搜索编号或中英文名称" autocomplete="off" /></label>
+          <div class="mapping-filters" role="group" aria-label="配置筛选"><button type="button" class="active" data-mapping-filter="all">全部</button><button type="button" data-mapping-filter="selected">仅已选择</button><button type="button" data-mapping-filter="unselected">仅未选择</button></div>
           <button class="button button-secondary" id="mapping-expand-all" type="button">展开全部</button>
         </div>
         <div class="mapping-editor" id="mapping-editor"></div>
       </section>
       <div class="form-error" id="product-error" role="alert" hidden></div>
-      <footer><button class="button button-quiet" value="cancel" formmethod="dialog">取消</button><button class="button button-primary" id="save-product-button" value="default">保存产品</button></footer>
+      <footer class="product-dialog-footer">
+        <label class="toggle-field product-enabled-toggle"><input name="enabled" type="checkbox" /><span>在用户端启用该产品</span></label>
+        <div class="product-dialog-footer-actions"><button class="button button-quiet" value="cancel" formmethod="dialog">取消</button><button class="button button-primary" id="save-product-button" value="default">保存设备</button></div>
+      </footer>
     </form>
   </dialog>
 
-  <dialog id="user-dialog">
-    <form id="user-form" method="dialog" class="dialog-card" novalidate>
+  <dialog id="user-dialog" class="account-dialog">
+    <form id="user-form" method="dialog" class="dialog-card account-dialog-card" novalidate>
       <header><div><span class="eyebrow" id="user-dialog-eyebrow">NEW ACCOUNT</span><h2 id="user-dialog-title">创建账号</h2></div><button class="icon-button" value="cancel" formmethod="dialog" aria-label="关闭">✕</button></header>
       <input type="hidden" name="user_id" />
-      <div class="form-grid">
-        <label><span>显示名称</span><input name="display_name" required placeholder="例如：销售部 王经理" /></label>
-        <label><span>角色</span><select name="role"><option value="sales">业务员</option><option value="customer">客户</option><option value="admin">管理员</option></select></label>
-        <label><span>邮箱</span><input name="email" type="email" placeholder="name@example.com" /></label>
-        <label class="full"><span>手机号</span><span class="admin-phone-input"><select name="phone_country" aria-label="国家"></select><span id="admin-phone-calling-code" aria-live="polite">+86</span><input name="phone" type="tel" inputmode="numeric" pattern="[0-9]{6,15}" placeholder="纯数字手机号" /></span></label>
-        <label class="full"><span id="user-password-label">初始密码</span><input name="password" type="password" minlength="8" required autocomplete="new-password" placeholder="至少8个字符" /></label>
+      <input type="hidden" name="version" />
+      <div class="account-dialog-body"><div class="form-grid">
+        <label><span>显示名称</span><span><input name="display_name" required autocomplete="name" placeholder="例如：销售部 王经理" /><small class="field-error" data-field-error="display_name" hidden></small></span></label>
+        <label data-create-only><span>角色</span><span><select name="role"><option value="sales">业务员</option><option value="customer">用户</option><option value="admin">管理员</option></select><small class="field-error" data-field-error="role" hidden></small></span></label>
+        <label><span>邮箱</span><span><input name="email" type="email" autocomplete="off" spellcheck="false" placeholder="name@example.com" /><small class="field-error" data-field-error="email" hidden></small></span></label>
+        <label class="full"><span>手机号</span><span><span class="admin-phone-input"><select name="phone_country" aria-label="国家"></select><span id="admin-phone-calling-code" aria-live="polite">+86</span><input name="phone" type="tel" inputmode="numeric" autocomplete="off" spellcheck="false" pattern="[0-9]{6,15}" placeholder="纯数字手机号" /></span><small class="field-error" data-field-error="phone" hidden></small></span></label>
+        <label class="full" data-create-only><span>初始密码</span><span><input name="password" type="password" minlength="8" autocomplete="new-password" placeholder="至少 8 个字符" /><small class="field-error" data-field-error="password" hidden></small></span></label>
       </div>
       <div class="form-error" id="user-error" role="alert" hidden></div>
+      </div>
       <footer><button class="button button-quiet" value="cancel" formmethod="dialog">取消</button><button class="button button-primary" id="create-user-submit" value="default">创建账号</button></footer>
     </form>
+  </dialog>
+
+  <dialog id="user-role-dialog" class="account-dialog account-dialog-small">
+    <form id="user-role-form" method="dialog" class="dialog-card account-dialog-card" novalidate><header><div><span class="eyebrow">ACCESS ROLE</span><h2>修改账号角色</h2></div><button class="icon-button" value="cancel" formmethod="dialog" aria-label="关闭">✕</button></header><input type="hidden" name="user_id" /><input type="hidden" name="version" /><div class="account-dialog-body"><p class="account-target" data-account-target></p><div class="form-grid"><label><span>角色</span><span><select name="role"><option value="customer">用户</option><option value="sales">业务员</option><option value="admin">管理员</option></select><small class="field-error" data-field-error="role" hidden></small></span></label></div><p class="account-warning">角色变更后，该账号需要重新登录；系统始终保留至少一个可用管理员。</p><div class="form-error" role="alert" hidden></div></div><footer><button class="button button-quiet" value="cancel" formmethod="dialog">取消</button><button class="button button-primary" value="default">保存角色</button></footer></form>
+  </dialog>
+
+  <dialog id="user-password-dialog" class="account-dialog account-dialog-small">
+    <form id="user-password-form" method="dialog" class="dialog-card account-dialog-card" novalidate><header><div><span class="eyebrow">RESET PASSWORD</span><h2>重置账号密码</h2></div><button class="icon-button" value="cancel" formmethod="dialog" aria-label="关闭">✕</button></header><input type="hidden" name="user_id" /><input type="hidden" name="version" /><div class="account-dialog-body"><p class="account-target" data-account-target></p><div class="form-grid"><label><span>新密码</span><span><input name="password" type="password" minlength="8" autocomplete="new-password" placeholder="至少 8 个字符" /><small class="field-error" data-field-error="password" hidden></small></span></label><label><span>确认新密码</span><span><input name="password_confirmation" type="password" minlength="8" autocomplete="new-password" /><small class="field-error" data-field-error="password_confirmation" hidden></small></span></label></div><p class="account-warning">保存后将立即撤销该账号在所有设备上的登录状态。</p><div class="form-error" role="alert" hidden></div></div><footer><button class="button button-quiet" value="cancel" formmethod="dialog">取消</button><button class="button button-primary" value="default">重置密码</button></footer></form>
+  </dialog>
+
+  <dialog id="user-archive-dialog" class="account-dialog account-dialog-small">
+    <form id="user-archive-form" method="dialog" class="dialog-card account-dialog-card" novalidate><header><div><span class="eyebrow">ARCHIVE ACCOUNT</span><h2>归档账号</h2></div><button class="icon-button" value="cancel" formmethod="dialog" aria-label="关闭">✕</button></header><input type="hidden" name="user_id" /><input type="hidden" name="version" /><div class="account-dialog-body"><p class="account-target" data-account-target></p><div class="form-grid"><label><span>归档原因</span><textarea name="reason" maxlength="500" rows="3" placeholder="可选，便于后续审计和恢复"></textarea></label></div><p class="account-warning account-warning-danger">归档会停用账号并撤销全部登录状态，但保留历史配置、分享和审计记录。</p><div class="form-error" role="alert" hidden></div></div><footer><button class="button button-quiet" value="cancel" formmethod="dialog">取消</button><button class="button button-danger" value="default">确认归档</button></footer></form>
   </dialog>
 
   <dialog id="config-option-dialog">

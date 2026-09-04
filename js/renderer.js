@@ -18,6 +18,9 @@
     voltageSection: document.getElementById("voltage-section"),
     voltageTitle: document.getElementById("voltage-title"),
     voltageOptions: document.getElementById("voltage-options"),
+    channelSection: document.getElementById("channel-section"),
+    channelTitle: document.getElementById("channel-title"),
+    channelOptions: document.getElementById("channel-options"),
     categoryTabs: document.getElementById("category-tabs"),
     specChips: document.getElementById("spec-chips"),
     optionsPanel: document.getElementById("options-panel"),
@@ -35,12 +38,14 @@
     zh: {
       color: "外观颜色",
       motor: "电机配置",
-      voltage: "供电配置"
+      voltage: "电源配置",
+      channel: "通道配置"
     },
     en: {
       color: "Appearance",
       motor: "Motor",
-      voltage: "Power Supply"
+      voltage: "Power Supply",
+      channel: "Channels"
     }
   };
 
@@ -50,6 +55,51 @@
   }
 
   let rendererStateRef = null;
+  let currentSelectionView = "none";
+  const selectionViewStorageKey = "boten-page-selection-view";
+
+  function restoredSelectionView() {
+    try {
+      const savedView = sessionStorage.getItem(selectionViewStorageKey);
+      if (["device", "catalog:tools", "catalog:accessories"].includes(savedView)) return savedView;
+    } catch (_) {}
+    return "device";
+  }
+
+  function selectionCopy() {
+    const english = localStorage.getItem("boten-language") === "en";
+    return english
+      ? { placeholder: "Choose a device or catalog", devices: "Devices", tools: "Service Tools", accessories: "Accessories" }
+      : { placeholder: "请选择设备或目录", devices: "设备型号", tools: "维修工具", accessories: "设备附件" };
+  }
+
+  function applySelectionView(view) {
+    currentSelectionView = ["device", "catalog:tools", "catalog:accessories"].includes(view) ? view : "device";
+    try {
+      sessionStorage.setItem(selectionViewStorageKey, currentSelectionView);
+    } catch (_) {}
+    document.body.dataset.selectionView = currentSelectionView;
+    const showDevice = currentSelectionView === "device";
+    document.querySelectorAll("[data-device-content]").forEach((element) => { element.hidden = !showDevice; });
+    const marketplace = document.getElementById("catalog-marketplace");
+    const showCatalog = currentSelectionView.startsWith("catalog:");
+    if (marketplace) marketplace.hidden = !showCatalog;
+    const catalogSummary = document.getElementById("catalog-summary-panel");
+    if (catalogSummary) catalogSummary.hidden = !showCatalog;
+    const catalogSummaryToggle = document.getElementById("catalog-summary-toggle");
+    if (catalogSummaryToggle) catalogSummaryToggle.hidden = !showCatalog;
+    if (!showCatalog) window.botenCloseCatalogSummary?.(false);
+  }
+
+  function showDeviceSelection(modelId) {
+    const model = configData.models.find((candidate) => candidate.id === modelId);
+    if (!model) return false;
+    applySelectionView("device");
+    renderDeviceSelect(model);
+    return true;
+  }
+
+  window.botenShowDeviceSelection = showDeviceSelection;
 
   function bindRenderer(state) {
     rendererStateRef = state;
@@ -58,7 +108,12 @@
     bindDrawerEvents();
     bindStickyHeader();
     bindCategoryTabsScroll();
+    const initialView = restoredSelectionView();
+    applySelectionView(initialView);
     render(state.getSnapshot());
+    if (initialView.startsWith("catalog:")) {
+      window.selectMarketplaceCatalog?.(initialView.slice(8));
+    }
   }
 
   function bindCategoryTabsScroll() {
@@ -77,8 +132,19 @@
   function bindDeviceSelect() {
     if (!rendererElements.deviceSelect) return;
     rendererElements.deviceSelect.addEventListener("change", (e) => {
-      rendererStateRef.setModel(e.target.value);
-      scrollToModelHeader();
+      const value = e.target.value;
+      if (value.startsWith("device:")) {
+        applySelectionView("device");
+        rendererStateRef.setModel(value.slice(7));
+        scrollToModelHeader();
+      } else if (value.startsWith("catalog:")) {
+        applySelectionView(value);
+        window.selectMarketplaceCatalog?.(value.slice(8));
+        document.getElementById("catalog-marketplace")?.scrollIntoView({ block: "start", behavior: prefersReducedMotion() ? "auto" : "smooth" });
+      } else {
+        applySelectionView("device");
+        renderDeviceSelect(configData.models.find((model) => model.id === rendererStateRef.currentModelId));
+      }
     });
   }
 
@@ -113,6 +179,7 @@
     renderColorSection(model, snapshot.currentColor);
     renderSpecSection(model, "motor", rendererElements.motorSection, rendererElements.motorOptions, rendererElements.motorTitle);
     renderSpecSection(model, "voltage", rendererElements.voltageSection, rendererElements.voltageOptions, rendererElements.voltageTitle);
+    renderSpecSection(model, "channel", rendererElements.channelSection, rendererElements.channelOptions, rendererElements.channelTitle);
     renderCategoryTabs(model, snapshot.currentCategoryId);
     renderSpecChips(model, snapshot);
     renderOptions(model, snapshot.currentCategoryId, snapshot.selections);
@@ -121,13 +188,16 @@
 
   function renderDeviceSelect(currentModel) {
     if (!rendererElements.deviceSelect) return;
-
-    rendererElements.deviceSelect.innerHTML = configData.models
-      .map(
-        (m) =>
-          `<option value="${m.id}" ${m.id === currentModel.id ? "selected" : ""}>${m.type}</option>`
-      )
-      .join("");
+    const copy = selectionCopy();
+    const selectedValue = currentSelectionView === "device" ? `device:${currentModel.id}` : currentSelectionView;
+    rendererElements.deviceSelect.innerHTML = `
+      <option value="none" ${selectedValue === "none" ? "selected" : ""}>${copy.placeholder}</option>
+      <optgroup label="${copy.devices}">${configData.models.map((m) =>
+        `<option value="device:${m.id}" ${selectedValue === `device:${m.id}` ? "selected" : ""}>${m.type}</option>`).join("")}</optgroup>
+      <optgroup label="${copy.tools} / ${copy.accessories}">
+        <option value="catalog:tools" ${selectedValue === "catalog:tools" ? "selected" : ""}>${copy.tools}</option>
+        <option value="catalog:accessories" ${selectedValue === "catalog:accessories" ? "selected" : ""}>${copy.accessories}</option>
+      </optgroup>`;
   }
 
   function renderHeader(model) {
@@ -164,21 +234,28 @@
     const track = viewport.querySelector(".gallery-track");
     const dots = viewport.querySelector(".gallery-dots");
 
+    const imageLabel = window.botenI18n?.t("image") || "图片";
+    const slideLabel = window.botenI18n?.t("slide") || "第 {number} 张";
     track.innerHTML = urls
       .map(
-        (url, idx) => `
+        (url, idx) => {
+          const dimensions = idx === 0 ? model.colorDimensions?.[color] : null;
+          const width = dimensions?.width || 1600;
+          const height = dimensions?.height || 900;
+          return `
           <div class="gallery-slide" data-index="${idx}">
-            <img src="${url}" alt="${model.name} 图片 ${idx + 1}" width="1600" height="900" loading="${idx === 0 ? "eager" : "lazy"}" ${idx === 0 ? 'fetchpriority="high"' : ""}
+            <img src="${url}" alt="${escapeOptionHtml(model.name)} ${escapeOptionHtml(imageLabel)} ${idx + 1}" width="${width}" height="${height}" loading="${idx === 0 ? "eager" : "lazy"}" ${idx === 0 ? 'fetchpriority="high"' : ""}
                  onerror="this.src='assets/images/placeholder-option.svg'" />
           </div>
-        `
+        `;
+        }
       )
       .join("");
 
     dots.innerHTML = urls
       .map(
         (_, idx) =>
-          `<button type="button" class="gallery-dot ${idx === 0 ? "active" : ""}" data-index="${idx}" aria-label="第 ${idx + 1} 张"></button>`
+          `<button type="button" class="gallery-dot ${idx === 0 ? "active" : ""}" data-index="${idx}" aria-label="${escapeOptionHtml(slideLabel.replace("{number}", String(idx + 1)))}"></button>`
       )
       .join("");
 
@@ -309,6 +386,7 @@
       .map((color) => {
         const isActive = activeColor === color;
         const colorClass = colorClassMap[color] || "";
+        const displayColor = model.colorStyles?.[color] || "#374151";
         return `
           <div class="option-card option-card-color ${colorClass} ${isActive ? "active" : ""}"
                data-color="${color}" role="radio" aria-checked="${isActive}" tabindex="0">
@@ -317,7 +395,7 @@
                 <polyline points="5 12 10 17 19 8"/>
               </svg>
             </div>
-            <div class="option-name">${getColorLabel(color, model)}</div>
+            <div class="option-name" style="color:${escapeOptionHtml(displayColor)}">${escapeOptionHtml(getColorLabel(color, model))}</div>
           </div>
         `;
       })
@@ -360,7 +438,7 @@
     }
 
     const selected = rendererStateRef.selections[categoryId];
-    const isTextOnly = categoryId === "voltage" || categoryId === "motor";
+    const isTextOnly = ["voltage", "motor", "channel"].includes(categoryId);
 
     const gridClass = "options-grid compact-options text-options";
 
@@ -382,9 +460,8 @@
               </svg>
             </div>
             ${media}
-            <div class="option-name">${label}</div>
-            ${opt.description ? `<div class="option-desc">${opt.description}</div>` : ""}
-            ${opt.specialNote ? `<div class="option-special-note">${escapeOptionHtml(opt.specialNote)}</div>` : ""}
+            <div class="option-name">${escapeOptionHtml(label)}</div>
+            ${opt.description ? `<div class="option-desc">${escapeOptionHtml(opt.description)}</div>` : ""}
           </div>
         `;
       })
@@ -407,7 +484,7 @@
 
   function renderCategoryTabs(model, currentCategoryId) {
     rendererElements.categoryTabs.innerHTML = model.categories
-      .filter((c) => c.id !== "motor" && c.id !== "voltage")
+      .filter((c) => !["motor", "voltage", "channel"].includes(c.id))
       .map(
         (cat) => `
           <button type="button" id="category-tab-${cat.id}" class="tab-btn ${cat.id === currentCategoryId ? "active" : ""}"
@@ -428,7 +505,8 @@
       const next = event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 : (current + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
       tabs[next].focus(); rendererStateRef.setCategory(tabs[next].dataset.category);
     };
-    rendererElements.optionsPanel.setAttribute("aria-labelledby", `category-tab-${currentCategoryId}`);
+    if (currentCategoryId) rendererElements.optionsPanel.setAttribute("aria-labelledby", `category-tab-${currentCategoryId}`);
+    else rendererElements.optionsPanel.removeAttribute("aria-labelledby");
 
     rendererElements.categoryTabs.querySelector(".tab-btn.active")?.scrollIntoView({ block: "nearest", inline: "nearest" });
   }
@@ -438,21 +516,25 @@
 
     const motorCat = model.categories.find((c) => c.id === "motor");
     const voltageCat = model.categories.find((c) => c.id === "voltage");
+    const channelCat = model.categories.find((c) => c.id === "channel");
     const motorOpt = motorCat?.options.find((o) => o.id === snapshot.selections.motor);
     const voltageOpt = voltageCat?.options.find((o) => o.id === snapshot.selections.voltage);
+    const channelOpt = channelCat?.options.find((o) => o.id === snapshot.selections.channel);
     const color = snapshot.currentColor || getDefaultColor(model);
 
     const chips = [
-      { id: "model-chip", label: model.type, target: "device-select" },
+      { id: "model-chip", label: model.type, target: "page-title" },
       { id: "color-chip", label: getColorLabel(color, model), target: "color-section" },
       { id: "motor-chip", label: motorOpt?.name || "--", target: "motor-section" },
-      { id: "voltage-chip", label: voltageOpt?.name || "--", target: "voltage-section" }
-    ];
+      { id: "voltage-chip", label: voltageOpt?.name || "--", target: "voltage-section" },
+      ...(channelCat ? [{ id: "channel-chip", label: channelOpt?.name || "--", target: "channel-section" }] : [])
+    ].filter((chip) => chip.label !== "--" || chip.id === "model-chip");
 
+    const jumpToLabel = window.botenI18n?.t("jumpTo") || "跳转到";
     rendererElements.specChips.innerHTML = chips
       .map(
         (chip) => `
-          <button type="button" class="spec-chip" data-target="${chip.target}" aria-label="跳转到${chip.label}">
+          <button type="button" class="spec-chip" data-target="${chip.target}" aria-label="${escapeOptionHtml(jumpToLabel)} ${escapeOptionHtml(chip.label)}">
             <span class="spec-chip-label">${chip.label}</span>
           </button>
         `
@@ -466,14 +548,14 @@
         if (!target) return;
         const headerHeight = parseInt(getComputedStyle(document.documentElement).getPropertyValue("--header-height"), 10) || 64;
         const top = target.getBoundingClientRect().top + window.scrollY - headerHeight - 8;
-        window.scrollTo({ top, behavior: "smooth" });
+        window.scrollTo({ top, behavior: prefersReducedMotion() ? "auto" : "smooth" });
       });
     });
   }
 
   function renderOptions(model, currentCategoryId, selections) {
     const category = model.categories.find((c) => c.id === currentCategoryId);
-    if (!category || category.id === "motor" || category.id === "voltage") {
+    if (!category || ["motor", "voltage", "channel"].includes(category.id)) {
       rendererElements.optionsPanel.innerHTML = "";
       return;
     }
@@ -498,8 +580,8 @@
           ? selected?.includes(opt.id)
           : selected === opt.id;
         const media = opt.color
-          ? `<div class="option-color" style="background-color: ${opt.color};" aria-label="${opt.name} 颜色"></div>`
-          : `<img src="${opt.image || "assets/images/placeholder-option.svg"}" alt="" width="640" height="320" loading="lazy" onerror="this.src='assets/images/placeholder-option.svg'" />`;
+          ? `<div class="option-color" style="background-color: ${opt.color};" aria-label="${escapeOptionHtml(opt.name)} ${escapeOptionHtml(window.botenI18n?.t("colorSwatch") || "颜色")}"></div>`
+          : `<img src="${opt.image || "assets/images/placeholder-option.svg"}" alt="" width="${opt.imageWidth || 640}" height="${opt.imageHeight || 320}" loading="lazy" onerror="this.src='assets/images/placeholder-option.svg'" />`;
 
         return `
           <div class="option-card option-card-config ${isActive ? "active" : ""}" data-option="${opt.id}" role="${isMulti ? "checkbox" : "radio"}"
@@ -510,9 +592,10 @@
               </svg>
             </div>
             <div class="option-media option-media-2by1">${media}</div>
-            <div class="option-name">${opt.name}</div>
-            ${opt.description ? `<div class="option-desc">${opt.description}</div>` : ""}
+            <div class="option-name">${escapeOptionHtml(opt.name)}</div>
+            ${opt.description ? `<div class="option-desc">${escapeOptionHtml(opt.description)}</div>` : ""}
             ${opt.specialNote ? `<div class="option-special-note">${escapeOptionHtml(opt.specialNote)}</div>` : ""}
+            ${opt.note ? `<div class="option-note">${escapeOptionHtml(opt.note)}</div>` : ""}
           </div>
         `;
       })

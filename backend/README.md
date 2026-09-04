@@ -151,17 +151,29 @@ Authorization: Bearer <token>
 
 用户配置：
 
-- `GET /api/v1/configs`
+- `GET /api/v1/configs?lang=zh|en`
 - `POST /api/v1/configs`
+- `PUT /api/v1/configs/{config_id}`（版本校验后覆盖保存）
+- `POST /api/v1/config-shares`（1–20 项合并分享）
+- `POST /api/v1/config-exports/pdf`（1–20 项合并 PDF）
+- `POST /api/v1/configs/batch-archive`（批量软删除）
 - `POST /api/v1/configs/pdf`（当前配置直接下载）
 - `GET /api/v1/configs/{config_id}`
 - `GET /api/v1/configs/{config_id}/pdf`
 - `DELETE /api/v1/configs/{config_id}`
 - `POST /api/v1/configs/{config_id}/share`
 
+统一购物车（设备、维修工具与设备附件）：
+
+- `POST /api/v1/cart/share`
+- `POST /api/v1/cart/export/pdf`
+- `POST /api/v1/cart/batch-archive`
+- 单次最多包含 20 项设备配置、100 个购物车项目；工具和附件数量作为条目数量字段处理，不展开为重复项目。
+
 业务员与管理员：
 
-- `GET /api/v1/staff/shares`
+- `GET /api/v1/staff/shares`（分页、关键词、状态、设备和日期筛选）
+- `GET /api/v1/staff/shares/{6位分享码}/preview`（不增加客户查看次数）
 - `GET /api/v1/shares/{6位分享码}`
 - `GET /api/v1/shares/{6位分享码}/pdf`
 - `GET /api/v1/staff/reference-prices`
@@ -191,6 +203,7 @@ Authorization: Bearer <token>
 - `PATCH /api/v1/admin/users/{user_id}`
 - `PATCH /api/v1/admin/users/{user_id}/status`
 - `GET /api/v1/admin/shares`
+- `PATCH /api/v1/admin/shares/{share_id}/status`
 - `DELETE /api/v1/admin/shares/{share_id}`
 - `GET /api/v1/admin/audit-logs`
 
@@ -227,11 +240,11 @@ backend/
 .\backend\.venv\Scripts\python.exe -m unittest discover -s tests -v
 ```
 
-当前 26 项测试覆盖目录初始化、迁移、登录会话、保存分享、历史颜色名称刷新、角色边界、目录 CRUD、机型专属双语说明、PDF、操作审计、图片接口、安全删除和数据库备份恢复。生产服务器若不运行测试，可只安装 `requirements.txt`。
+当前 65 项测试覆盖目录初始化、迁移、登录会话、账号生命周期、客户价格字段过滤、保存配置覆盖、多设备及混合商品分享、仅工具/附件流程、冻结快照、原子批量软删除、分享模糊搜索、目录排序、历史颜色名称刷新、角色边界、V2 目录 CRUD、设备基本配置和价格方案、新旧报价兼容、客户无价 PDF 与后台价格 PDF、操作审计、图片接口、安全删除、双语无障碍名称和数据库备份恢复。生产服务器若不运行测试，可只安装 `requirements.txt`。
 
 ## PDF 下载
 
-配置清单、分享配置和报价单统一由 ReportLab 在 API 进程内生成附件，不依赖浏览器打印或 Microsoft Edge。服务会优先查找 Windows 微软雅黑/黑体、Linux Noto CJK/WenQuanYi 字体；服务器使用其他字体时可设置 `BOTEN_PDF_FONT_PATH`。配置较多时表格会自动分页并重复表头。
+配置清单、合并分享配置和报价单统一由 ReportLab 在 API 进程内生成附件，不依赖浏览器打印或 Microsoft Edge。合并配置 PDF 每台设备独立编号，并在每页显示客户资料、导出时间、品牌页脚和总页数。服务优先使用项目内嵌 HarmonyOS Sans SC，并可通过 `BOTEN_PDF_FONT_PATH` 覆盖；配置较多时表格会自动分页并重复表头。
 
 ## 生产部署注意事项
 

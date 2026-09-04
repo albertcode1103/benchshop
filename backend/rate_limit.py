@@ -8,7 +8,9 @@ from threading import Lock
 from time import monotonic
 from typing import Deque, Dict, Tuple
 
-from fastapi import HTTPException, status
+from fastapi import status
+
+from .account_errors import AccountError
 
 
 _events: Dict[str, Deque[float]] = defaultdict(deque)
@@ -24,9 +26,9 @@ def enforce(key: str, limit: int, window_seconds: int) -> None:
             events.popleft()
         if len(events) >= limit:
             retry_after = max(1, int(events[0] + window_seconds - now))
-            raise HTTPException(
+            raise AccountError(
+                "ACCOUNT_RATE_LIMITED",
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail="请求过于频繁，请稍后再试",
                 headers={"Retry-After": str(retry_after)},
             )
         events.append(now)

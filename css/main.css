@@ -83,6 +83,10 @@
   box-sizing: border-box;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 html {
   scroll-behavior: smooth;
 }
@@ -187,7 +191,7 @@ a {
 .language-switcher button:hover { color:var(--color-text); background:var(--color-bg); }
 .language-switcher button.active { color:#fff; background:var(--color-text); }
 
-@media (max-width: 639px) {
+@media (max-width: 899px) {
   .language-switcher {
     width: 42px;
     height: 42px;

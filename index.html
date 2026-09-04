@@ -6,33 +6,42 @@
   <meta name="description" content="BOTEN Diesel Test Bench - 设备配置选择器" />
   <meta name="theme-color" content="#ffffff" />
   <title>BOTEN DIESEL TEST BENCH</title>
+  <script src="js/scroll-reset.js?v=20260903-1"></script>
   <link rel="icon" type="image/png" href="tb/site/LOGO.png?v=20260831" />
   <link rel="shortcut icon" type="image/png" href="tb/site/LOGO.png?v=20260831" />
   <link rel="apple-touch-icon" href="tb/site/LOGO.png?v=20260831" />
-  <link rel="stylesheet" href="css/main.css?v=20260903-1" />
-  <link rel="stylesheet" href="css/layout.css?v=20260901-9" />
-  <link rel="stylesheet" href="css/components.css?v=20260902-12" />
+  <link rel="stylesheet" href="css/main.css?v=20260904-1" />
+  <link rel="stylesheet" href="css/layout.css?v=20260905-2" />
+  <link rel="stylesheet" href="css/components.css?v=20260905-11" />
   <link rel="stylesheet" href="css/print.css?v=20260831-1" />
   <script src="js/runtime-config.js?v=20260831-2"></script>
-  <script src="js/data.js" defer></script>
-  <script src="js/catalog-api.js?v=20260831-2" defer></script>
-  <script src="js/state.js?v=20260831-1" defer></script>
-  <script src="js/price.js?v=20260831-4" defer></script>
-  <script src="js/renderer.js?v=20260902-1" defer></script>
+  <script src="js/data.js?v=20260904-1" defer></script>
+  <script src="js/catalog-api.js?v=20260904-3" defer></script>
+  <script src="js/state.js?v=20260905-1" defer></script>
+  <script src="js/price.js?v=20260904-2" defer></script>
+  <script src="js/renderer.js?v=20260905-3" defer></script>
+  <script src="js/navigation-drawer.js?v=20260905-1" defer></script>
   <script src="js/auth.js?v=20260902-3" defer></script>
-  <script src="js/cart.js?v=20260902-2" defer></script>
-  <script src="js/pdf.js?v=20260831-1" defer></script>
-  <script src="js/main.js?v=20260831-1" defer></script>
-  <script src="js/language.js?v=20260902-2" defer></script>
+  <script src="js/cart.js?v=20260905-7" defer></script>
+  <script src="js/catalog-marketplace.js?v=20260905-4" defer></script>
+  <script src="js/pdf.js?v=20260903-1" defer></script>
+  <script src="js/main.js?v=20260904-1" defer></script>
+  <script src="js/language.js?v=20260905-7" defer></script>
 </head>
 <body>
   <a class="skip-link" href="#main-content">跳到主要内容</a>
   <header class="site-header">
     <div class="container header-inner">
-      <a class="brand" href="#" aria-label="首页">
-        <img class="brand-logo" src="tb/site/BOTEN.png" alt="BOTEN" width="1617" height="545" />
-        <span class="brand-name">BOTEN DIESEL TEST BENCH</span>
-      </a>
+      <div class="header-leading">
+        <button id="catalog-drawer-toggle" class="btn btn-ghost btn-sm catalog-drawer-toggle no-print" type="button" aria-haspopup="dialog" aria-controls="catalog-navigation-drawer" aria-expanded="false">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.25 4.25"/></svg>
+          <span class="sr-only" id="catalog-drawer-toggle-label">打开产品导航</span>
+        </button>
+        <a class="brand" href="#" aria-label="首页">
+          <img class="brand-logo" src="tb/site/BOTEN.png" alt="BOTEN" width="1617" height="545" />
+          <span class="brand-name">BOTEN DIESEL TEST BENCH</span>
+        </a>
+      </div>
       <div class="header-actions no-print">
       <div class="language-switcher" id="language-switcher" role="group" aria-label="语言切换">
         <button type="button" class="active" data-language="zh" data-short-label="中">中文</button>
@@ -58,21 +67,38 @@ stroke-width="2" aria-hidden="true">
     </div>
   </header>
 
-  <main class="main container" id="main-content" tabindex="-1">
-    <section class="config-stage" aria-label="配置区域">
-      <div class="device-selector-bar no-print">
-        <label for="device-select">选择设备型号</label>
-        <select id="device-select" class="device-select">
-          <!-- Options rendered by JS -->
-        </select>
-      </div>
+  <div id="catalog-navigation-backdrop" class="catalog-navigation-backdrop no-print" aria-hidden="true"></div>
+  <aside id="catalog-navigation-drawer" class="catalog-navigation-drawer no-print" role="dialog" aria-modal="true" aria-labelledby="catalog-navigation-title" aria-hidden="true">
+    <header class="catalog-drawer-header">
+      <h2 id="catalog-navigation-title">产品导航</h2>
+      <button id="catalog-drawer-close" class="btn btn-text btn-sm" type="button" aria-label="关闭产品导航">✕</button>
+    </header>
+    <nav class="catalog-drawer-menu" aria-label="产品类别">
+      <button type="button" class="catalog-drawer-item" id="catalog-device-entry" aria-controls="catalog-model-drawer" aria-expanded="false"><span>检测设备</span><span aria-hidden="true">›</span></button>
+      <button type="button" class="catalog-drawer-item" data-catalog-drawer-select="catalog:tools"><span>维修工具</span></button>
+      <button type="button" class="catalog-drawer-item" data-catalog-drawer-select="catalog:accessories"><span>设备附件</span></button>
+    </nav>
+  </aside>
+  <aside id="catalog-model-drawer" class="catalog-model-drawer no-print" aria-labelledby="catalog-model-title" aria-hidden="true">
+    <header class="catalog-drawer-header">
+      <button id="catalog-model-back" class="btn btn-text btn-sm catalog-model-back" type="button" aria-label="返回产品类别">‹</button>
+      <h2 id="catalog-model-title">检测设备</h2>
+      <button id="catalog-model-close" class="btn btn-text btn-sm" type="button" aria-label="关闭产品导航">✕</button>
+    </header>
+    <div id="catalog-model-list" class="catalog-model-list"></div>
+  </aside>
 
-      <div class="stage-header">
+  <main class="main container" id="main-content" tabindex="-1">
+    <select id="device-select" hidden aria-hidden="true" tabindex="-1"><!-- Internal selection state rendered by JS --></select>
+
+    <section class="config-stage" aria-label="配置区域">
+
+      <div class="stage-header" data-device-content>
         <h1 class="page-title" id="page-title">--</h1>
         <p class="page-subtitle" id="page-subtitle">--</p>
       </div>
 
-      <div class="preview-area" id="preview-area">
+      <div class="preview-area" id="preview-area" data-device-content>
         <div class="gallery-viewport" tabindex="0" aria-roledescription="carousel" aria-label="设备图片展示">
           <div class="gallery-track"><!-- Gallery slides rendered by JS --></div>
           <button type="button" class="gallery-nav gallery-prev" aria-label="上一张"><span>‹</span></button>
@@ -81,7 +107,7 @@ stroke-width="2" aria-hidden="true">
         </div>
       </div>
 
-      <details class="device-overview" open>
+      <details class="device-overview" data-device-content open>
         <summary><h2 id="overview-title">设备概况</h2><span class="overview-toggle-label" id="overview-toggle-label">折叠</span></summary>
         <div class="overview-grid">
           <div class="overview-description"><h3 id="overview-description-title">设备描述</h3><p class="page-desc" id="page-desc">--</p></div>
@@ -89,7 +115,7 @@ stroke-width="2" aria-hidden="true">
         </div>
       </details>
 
-      <section class="spec-section color-section" id="color-section" aria-label="外观颜色">
+      <section class="spec-section color-section" id="color-section" data-device-content aria-label="外观颜色">
         <div class="spec-section-header">
           <h3 id="color-title">外观颜色</h3>
         </div>
@@ -98,7 +124,7 @@ stroke-width="2" aria-hidden="true">
         </div>
       </section>
 
-      <section class="spec-section" id="motor-section" aria-label="电机选择">
+      <section class="spec-section" id="motor-section" data-device-content aria-label="电机选择">
         <div class="spec-section-header">
           <h3 id="motor-title">电机配置</h3>
         </div>
@@ -107,7 +133,7 @@ stroke-width="2" aria-hidden="true">
         </div>
       </section>
 
-      <section class="spec-section" id="voltage-section" aria-label="供电选择">
+      <section class="spec-section" id="voltage-section" data-device-content aria-label="供电选择">
         <div class="spec-section-header">
           <h3 id="voltage-title">供电配置</h3>
         </div>
@@ -116,7 +142,16 @@ stroke-width="2" aria-hidden="true">
         </div>
       </section>
 
-      <section class="config-section" id="config-section" aria-label="设备配置">
+      <section class="spec-section" id="channel-section" data-device-content aria-label="通道选择" hidden>
+        <div class="spec-section-header">
+          <h3 id="channel-title">通道配置</h3>
+        </div>
+        <div class="options-grid" id="channel-options">
+          <!-- Channel options rendered by JS -->
+        </div>
+      </section>
+
+      <section class="config-section" id="config-section" data-device-content aria-label="设备配置">
         <div class="spec-section-header">
           <h3 id="optional-features-title">设备可选配置</h3>
         </div>
@@ -133,9 +168,37 @@ stroke-width="2" aria-hidden="true">
           <!-- Options rendered by JS -->
         </div>
       </section>
+
+      <section class="catalog-marketplace no-print" id="catalog-marketplace" aria-labelledby="catalog-marketplace-title" hidden>
+        <header class="catalog-marketplace-header">
+          <div>
+            <h2 id="catalog-marketplace-title">维修工具与设备附件</h2>
+            <p id="catalog-marketplace-description">可独立选择数量并加入购物车，无需绑定设备。</p>
+          </div>
+          <div class="catalog-type-tabs" id="catalog-type-tabs" role="tablist" aria-label="商品目录" hidden>
+            <button type="button" class="active" role="tab" aria-selected="true" tabindex="0" data-catalog-type="tools" id="catalog-tab-tools" aria-controls="catalog-marketplace-panel">维修工具</button>
+            <button type="button" role="tab" aria-selected="false" tabindex="-1" data-catalog-type="accessories" id="catalog-tab-accessories" aria-controls="catalog-marketplace-panel">设备附件</button>
+          </div>
+        </header>
+        <div class="catalog-marketplace-controls">
+          <label class="catalog-search-field" for="catalog-marketplace-search">
+            <span id="catalog-marketplace-search-label">搜索</span>
+            <span class="catalog-search-control">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>
+              <input id="catalog-marketplace-search" type="search" autocomplete="off" placeholder="搜索编号或名称" />
+            </span>
+          </label>
+          <div class="catalog-category-filters" id="catalog-category-filters" aria-label="目录分类"></div>
+        </div>
+        <div class="catalog-marketplace-status" id="catalog-marketplace-status" role="status" aria-live="polite"></div>
+        <div class="catalog-marketplace-panel" id="catalog-marketplace-panel" role="tabpanel" aria-labelledby="catalog-tab-tools">
+          <div class="catalog-product-grid" id="catalog-product-grid"></div>
+          <div class="catalog-marketplace-empty" id="catalog-marketplace-empty" hidden>暂无内容</div>
+        </div>
+      </section>
     </section>
 
-    <aside class="summary-panel" id="summary-panel" aria-label="配置清单">
+    <aside class="summary-panel" id="summary-panel" data-device-content aria-label="配置清单" hidden>
       <div class="summary-sticky">
         <header class="summary-header">
           <h2 id="summary-title">当前选配</h2>
@@ -162,15 +225,36 @@ stroke-width="2" aria-hidden="true">
           尚未选择任何配置项
         </div>
 
+        <section class="pricing-preview pricing-enquiry" id="pricing-preview" aria-labelledby="pricing-preview-title">
+          <h3 id="pricing-preview-title">获取报价</h3>
+          <p id="pricing-enquiry-message">请联系销售人员获取报价</p>
+        </section>
+
         <div class="summary-actions no-print">
+          <div id="config-edit-status" class="config-edit-status" role="status" hidden>
+            <span id="config-edit-label">正在修改配置</span>
+            <button id="cancel-config-edit" class="btn btn-secondary btn-sm config-edit-cancel" type="button">取消修改</button>
+          </div>
+          <div id="config-save-status" class="cart-operation-status" role="status" aria-live="polite" hidden></div>
           <button id="save-cart" class="btn btn-primary btn-block" type="button">
             保存当前配置到购物车
           </button>
-          <div class="summary-secondary-actions">
-            <button id="share-current" class="btn btn-secondary" type="button">分享当前配置</button>
-            <button id="export-print" class="btn btn-secondary" type="button">导出 PDF</button>
-          </div>
         </div>
+      </div>
+    </aside>
+
+    <aside class="catalog-summary-panel" id="catalog-summary-panel" aria-label="目录选择清单" hidden>
+      <div class="summary-sticky catalog-summary-sticky">
+        <header class="summary-header">
+          <h2 id="catalog-summary-title">工具选择</h2>
+          <button id="catalog-summary-close" class="btn btn-ghost btn-sm summary-close" type="button" aria-label="关闭已选项目">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
+          </button>
+        </header>
+        <section class="catalog-summary-section" aria-labelledby="catalog-cart-summary-title">
+          <header><h3 id="catalog-cart-summary-title">购物车中的工具</h3><span id="catalog-cart-summary-count">0 项</span></header>
+          <div class="catalog-summary-list" id="catalog-cart-summary-list"></div>
+        </section>
       </div>
     </aside>
   </main>
@@ -181,13 +265,22 @@ stroke-width="2" aria-hidden="true">
     </div>
   </footer>
 
-  <button id="summary-toggle" class="summary-toggle no-print" type="button" aria-expanded="false"
+  <button id="summary-toggle" class="summary-toggle no-print" data-device-content type="button" aria-expanded="false"
 aria-controls="summary-panel" aria-label="查看配置清单">
     <span>查看配置清单</span>
     <svg class="summary-toggle-icon" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
       <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z" />
       <circle cx="12" cy="12" r="3" />
     </svg>
+  </button>
+
+  <button id="catalog-summary-toggle" class="summary-toggle catalog-summary-toggle no-print" type="button" aria-expanded="false"
+aria-controls="catalog-summary-panel" aria-label="查看购物车中的工具" hidden>
+    <span id="catalog-summary-toggle-label">购物车中的工具</span>
+    <svg class="summary-toggle-icon" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+      <path d="M4 7h16l-1.5 13h-13z" /><path d="M8 7a4 4 0 0 1 8 0" />
+    </svg>
+    <strong id="catalog-summary-toggle-count" class="catalog-summary-toggle-count" aria-hidden="true">0</strong>
   </button>
 
   <div id="drawer-backdrop" class="drawer-backdrop no-print"></div>
@@ -220,9 +313,11 @@ aria-controls="summary-panel" aria-label="查看配置清单">
         <h3 id="account-name">用户</h3>
         <p id="account-contact">--</p>
         <span class="account-role" id="account-role">客户</span>
-        <button id="account-admin-entry" class="btn btn-primary btn-block account-admin-entry" type="button" hidden aria-hidden="true">进入后台</button>
-        <button id="account-manage" class="btn btn-secondary btn-block" type="button">账号管理</button>
-        <button id="account-logout" class="btn btn-secondary btn-block" type="button">退出登录</button>
+        <div class="account-actions">
+          <button id="account-admin-entry" class="btn btn-primary btn-block account-admin-entry" type="button" hidden aria-hidden="true">进入后台</button>
+          <button id="account-manage" class="btn btn-secondary btn-block" type="button">账号管理</button>
+          <button id="account-logout" class="btn btn-ghost btn-block account-logout" type="button">退出登录</button>
+        </div>
       </div>
       <div id="account-manage-view" class="account-view account-manage-view" hidden>
         <section class="account-manage-section" aria-labelledby="profile-contact-heading">
@@ -271,10 +366,19 @@ aria-controls="summary-panel" aria-label="查看配置清单">
         <h2 id="cart-title">我的购物车</h2>
         <button id="cart-close" class="btn btn-text btn-sm" type="button" aria-label="关闭购物车">✕</button>
       </header>
+      <div id="cart-selection-toolbar" class="cart-selection-toolbar" hidden>
+        <label><input id="cart-select-all" type="checkbox" /><span id="cart-select-all-label">全选</span></label>
+        <span id="cart-selection-count" aria-live="polite">已选择 0 / 0 项</span>
+      </div>
       <div id="cart-items" class="cart-items"></div>
       <div id="cart-empty" class="cart-empty" hidden>购物车为空</div>
       <footer class="cart-panel-footer">
-        <button id="cart-clear" class="btn btn-text btn-sm" type="button">清空购物车</button>
+        <div id="cart-operation-status" class="cart-operation-status" role="status" aria-live="polite" hidden></div>
+        <div class="cart-batch-actions">
+          <button id="cart-share-selected" class="btn btn-primary" type="button" disabled>分享所选</button>
+          <button id="cart-pdf-selected" class="btn btn-secondary" type="button" disabled>导出 PDF</button>
+          <button id="cart-remove-selected" class="btn btn-text danger" type="button" disabled>删除所选</button>
+        </div>
       </footer>
     </div>
   </div>
