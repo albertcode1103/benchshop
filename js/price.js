@@ -58,13 +58,38 @@ function buildSummaryGroups(model, snapshot) {
   return groups;
 }
 
-function pricePreviewText(key, zh, en) {
-  return window.botenI18n?.t(key) || (localStorage.getItem("boten-language") === "en" ? en : zh);
-}
+function initSalesContact() {
+  const openButton = document.getElementById("sales-contact-open");
+  const dialog = document.getElementById("sales-contact-dialog");
+  const closeButton = document.getElementById("sales-contact-close");
+  const doneButton = document.getElementById("sales-contact-done");
+  if (!openButton || !dialog || !closeButton || !doneButton) return;
 
-function initPricePreview() {
-  const title = document.getElementById("pricing-preview-title");
-  const message = document.getElementById("pricing-enquiry-message");
-  if (title) title.textContent = pricePreviewText("requestQuote", "获取报价", "Request a Quote");
-  if (message) message.textContent = pricePreviewText("contactSalesQuote", "请联系销售人员获取报价", "Please contact our sales team for a quotation");
+  const contact = window.BOTEN_SALES_CONTACT || {};
+  const email = document.getElementById("sales-contact-email");
+  const whatsapp = document.getElementById("sales-contact-whatsapp");
+  if (email) {
+    email.textContent = contact.email || "--";
+    email.href = `mailto:${contact.email || ""}`;
+  }
+  if (whatsapp) {
+    whatsapp.href = contact.whatsappHref || "#";
+  }
+
+  const closeDialog = () => {
+    if (dialog.open) dialog.close();
+  };
+  openButton.addEventListener("click", () => {
+    if (typeof window.openCurrentInquiryDialog === "function") {
+      window.openCurrentInquiryDialog();
+      return;
+    }
+    dialog.showModal();
+  });
+  closeButton.addEventListener("click", closeDialog);
+  doneButton.addEventListener("click", closeDialog);
+  dialog.addEventListener("close", () => openButton.focus());
+  dialog.addEventListener("click", (event) => {
+    if (event.target === dialog) closeDialog();
+  });
 }

@@ -3,7 +3,10 @@ const catalogMarketplaceState = {
   items: [],
   category: "all",
   query: "",
-  loading: false
+  loading: false,
+  pendingQuantities: new Map(),
+  quantityTimers: new Map(),
+  quantitySaving: new Set()
 };
 
 const marketplaceText = (key, zh, en) => window.botenI18n?.t(key)
@@ -70,7 +73,83 @@ function aggregateMarketplaceCart() {
     current.quantity += Number(item.quantity || 1);
     aggregated.set(key, current);
   });
+  catalogMarketplaceState.pendingQuantities.forEach((quantity, optionId) => {
+    const catalogItem = catalogMarketplaceState.items.find((item) => item.id === optionId);
+    const current = aggregated.get(optionId);
+    if (!catalogItem && !current) return;
+    if (quantity <= 0) {
+      aggregated.delete(optionId);
+      return;
+    }
+    aggregated.set(optionId, {
+      optionId,
+      code: current?.code || catalogItem?.code,
+      name: current?.name || catalogItem?.name,
+      quantity
+    });
+  });
   return aggregated;
+}
+
+function scheduleMarketplaceQuantitySave(optionId, quantity, delay = 150) {
+  const target = Math.max(0, Math.min(999, Number(quantity || 0)));
+  catalogMarketplaceState.pendingQuantities.set(optionId, target);
+  const previousTimer = catalogMarketplaceState.quantityTimers.get(optionId);
+  if (previousTimer) clearTimeout(previousTimer);
+  const timer = setTimeout(() => persistMarketplaceQuantity(optionId), delay);
+  catalogMarketplaceState.quantityTimers.set(optionId, timer);
+  renderCatalogMarketplace();
+}
+
+async function persistMarketplaceQuantity(optionId) {
+  catalogMarketplaceState.quantityTimers.delete(optionId);
+  if (catalogMarketplaceState.quantitySaving.has(optionId)) return;
+  const submittedQuantity = catalogMarketplaceState.pendingQuantities.get(optionId);
+  if (submittedQuantity === undefined) return;
+  catalogMarketplaceState.quantitySaving.add(optionId);
+  try {
+    setMarketplaceStatus();
+    await authRequest(`/cart/catalog-options/${encodeURIComponent(optionId)}`, {
+      method: "PUT",
+      body: JSON.stringify({ quantity: submittedQuantity, lang: marketplaceLanguage() })
+    });
+    if (catalogMarketplaceState.pendingQuantities.get(optionId) === submittedQuantity) {
+      catalogMarketplaceState.pendingQuantities.delete(optionId);
+      if (typeof window.refreshCatalogCartOnly === "function") await window.refreshCatalogCartOnly();
+      else if (typeof refreshServerCart === "function") await refreshServerCart();
+    }
+  } catch (error) {
+    if (catalogMarketplaceState.pendingQuantities.get(optionId) === submittedQuantity) {
+      catalogMarketplaceState.pendingQuantities.delete(optionId);
+    }
+    setMarketplaceStatus(`${marketplaceText("requestFailed", "操作失败", "Request failed")}：${error.message}`, "error");
+    if (typeof window.refreshCatalogCartOnly === "function") await window.refreshCatalogCartOnly().catch(() => {});
+  } finally {
+    catalogMarketplaceState.quantitySaving.delete(optionId);
+    const latestQuantity = catalogMarketplaceState.pendingQuantities.get(optionId);
+    if (latestQuantity !== undefined && latestQuantity !== submittedQuantity) {
+      scheduleMarketplaceQuantitySave(optionId, latestQuantity, 0);
+    } else {
+      renderCatalogMarketplace();
+    }
+  }
+}
+
+async function changeMarketplaceCartQuantity(optionId, quantity, delta) {
+  if (!optionId || ![-1, 1].includes(delta)) return;
+  if (delta > 0 && quantity >= 999) return;
+  const item = catalogMarketplaceState.items.find((candidate) => candidate.id === optionId);
+  if (delta < 0 && quantity === 1) {
+    const message = marketplaceText(
+      "confirmRemoveCatalogItem",
+      "确定从购物车中移除“{name}”吗？",
+      "Remove “{name}” from the cart?"
+    ).replace("{name}", item?.name || "--");
+    const title = marketplaceText("removeCartItemTitle", "移除购物车项目", "Remove Cart Item");
+    const confirmed = await window.confirmCartRemoval?.(message, title);
+    if (!confirmed) return;
+  }
+  scheduleMarketplaceQuantitySave(optionId, quantity + delta);
 }
 
 function marketplaceSummaryRow(item) {
@@ -79,7 +158,6 @@ function marketplaceSummaryRow(item) {
 
 function renderMarketplaceSummary() {
   const toolMode = catalogMarketplaceState.type === "tools";
-  const title = document.getElementById("catalog-summary-title");
   const cartTitle = document.getElementById("catalog-cart-summary-title");
   const cartList = document.getElementById("catalog-cart-summary-list");
   const cartCount = document.getElementById("catalog-cart-summary-count");
@@ -89,9 +167,6 @@ function renderMarketplaceSummary() {
   const closeButton = document.getElementById("catalog-summary-close");
   if (!cartList) return;
 
-  if (title) title.textContent = toolMode
-    ? marketplaceText("toolSelection", "工具选择", "Tool Selection")
-    : marketplaceText("accessorySelection", "附件选择", "Accessory Selection");
   if (cartTitle) cartTitle.textContent = toolMode
     ? marketplaceText("toolsInCart", "购物车中的工具", "Tools in Cart")
     : marketplaceText("accessoriesInCart", "购物车中的附件", "Accessories in Cart");
@@ -194,20 +269,27 @@ function renderCatalogMarketplace() {
         <label class="catalog-quantity-field"><span>${marketplaceText("quantity", "数量", "Quantity")}</span>
           <span class="catalog-quantity-control">
             <button type="button" data-quantity-step="-1" aria-label="${marketplaceLanguage() === "en" ? "Decrease quantity" : "减少数量"}">−</button>
-            <input type="number" min="1" max="999" step="1" value="1" inputmode="numeric" aria-label="${marketplaceText("quantity", "数量", "Quantity")}" />
+            <input type="number" min="1" max="999" step="1" value="${inCartQuantity || 1}" inputmode="numeric" aria-label="${marketplaceText("quantity", "数量", "Quantity")}" ${selected ? "readonly" : ""} />
             <button type="button" data-quantity-step="1" aria-label="${marketplaceLanguage() === "en" ? "Increase quantity" : "增加数量"}">+</button>
           </span>
         </label>
-        <button type="button" class="btn btn-primary catalog-add-button" data-add-catalog="${escapeMarketplaceHtml(item.id)}">${marketplaceText("addToCart", "加入购物车", "Add to Cart")}</button>
+        <button type="button" class="btn btn-primary catalog-add-button" data-add-catalog="${escapeMarketplaceHtml(item.id)}" ${selected ? "disabled" : ""}>${selected ? marketplaceText("addedToCart", "已加入购物车", "Added to Cart") : marketplaceText("addToCart", "加入购物车", "Add to Cart")}</button>
       </footer>
     </article>`;
   }).join("");
 
   grid.querySelectorAll("[data-quantity-step]").forEach((button) => {
-    button.addEventListener("click", () => {
+    button.addEventListener("click", async () => {
       const input = button.parentElement?.querySelector("input");
       if (!input) return;
-      const next = Math.max(1, Math.min(999, Number(input.value || 1) + Number(button.dataset.quantityStep)));
+      const optionId = button.closest("[data-catalog-item]")?.dataset.catalogItem;
+      const selected = optionId && aggregateMarketplaceCart().has(optionId);
+      const step = Number(button.dataset.quantityStep);
+      if (selected) {
+        await changeMarketplaceCartQuantity(optionId, Number(input.value || 1), step);
+        return;
+      }
+      const next = Math.max(1, Math.min(999, Number(input.value || 1) + step));
       input.value = String(next);
     });
   });
@@ -226,24 +308,9 @@ async function addMarketplaceItem(optionId, button) {
   const card = button.closest("[data-catalog-item]");
   const input = card?.querySelector('input[type="number"]');
   const quantity = Math.max(1, Math.min(999, Number(input?.value || 1)));
-  requireLogin(async () => {
-    const original = button.textContent;
-    button.disabled = true;
-    button.textContent = marketplaceText("addingToCart", "正在加入…", "Adding…");
+  requireLogin(() => {
     setMarketplaceStatus();
-    try {
-      await authRequest("/cart/catalog-items", {
-        method: "POST",
-        body: JSON.stringify({ option_id: optionId, quantity, lang: marketplaceLanguage() })
-      });
-      setMarketplaceStatus();
-      if (typeof refreshServerCart === "function") await refreshServerCart();
-    } catch (error) {
-      setMarketplaceStatus(`${marketplaceText("requestFailed", "操作失败", "Request failed")}：${error.message}`, "error");
-    } finally {
-      button.disabled = false;
-      button.textContent = original;
-    }
+    scheduleMarketplaceQuantitySave(optionId, quantity, 0);
   });
 }
 

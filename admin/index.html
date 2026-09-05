@@ -7,10 +7,10 @@
   <meta name="theme-color" content="#182028" />
   <title>BOTEN 管理后台</title>
   <link rel="icon" type="image/png" href="../tb/site/LOGO.png" />
-  <link rel="stylesheet" href="admin.css?v=20260904-21" />
+  <link rel="stylesheet" href="admin.css?v=20260905-22" />
   <script src="../js/runtime-config.js?v=20260831-2"></script>
   <script>window.addEventListener('error',function(e){var s=document.getElementById('api-status');if(s)s.textContent='后台脚本加载失败：'+(e.message||'请按 Ctrl+F5 刷新');});</script>
-  <script src="admin.js?v=20260904-11" defer></script>
+  <script src="admin.js?v=20260905-12" defer></script>
   <script src="catalog-v2.js?v=20260904-14" defer></script>
 </head>
 <body>
@@ -50,12 +50,13 @@
         <span>管理后台</span>
       </a>
       <nav class="sidebar-nav" aria-label="后台导航">
-        <button class="nav-item active" data-view="dashboard" data-admin-only type="button"><span class="nav-icon">▦</span>概览</button>
+        <button class="nav-item active" data-view="dashboard" data-admin-only type="button"><span class="nav-icon">▦</span><span>概览</span><span class="nav-api-status" id="sidebar-api-status" role="status" aria-live="polite"><i></i><span>正在检查 API…</span></span></button>
         <button class="nav-item" data-view="products" type="button"><span class="nav-icon">◇</span>设备目录</button>
         <button class="nav-item" data-view="config-catalog" type="button"><span class="nav-icon">≡</span>配置目录</button>
-        <button class="nav-item" data-view="tool-catalog" type="button"><span class="nav-icon">⌁</span>工具目录</button>
-        <button class="nav-item" data-view="accessory-catalog" type="button"><span class="nav-icon">⊞</span>附件目录</button>
+        <button class="nav-item" data-view="tool-catalog" type="button"><span class="nav-icon nav-icon-svg" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M14.7 6.2a5.2 5.2 0 0 0-6.6 6.6L3.6 17.3a2.1 2.1 0 0 0 3 3l4.5-4.5a5.2 5.2 0 0 0 6.6-6.6l-3.1 3.1-3.2-.8-.8-3.2 4.1-2.1Z"/></svg></span>工具目录</button>
+        <button class="nav-item" data-view="accessory-catalog" type="button"><span class="nav-icon nav-icon-svg" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M8 3v6M12 3v6M7 9h6v4a4 4 0 0 1-4 4v4M17 13h4v4h-4z"/><path d="M13 13h4"/></svg></span>附件目录</button>
         <button class="nav-item" data-view="shares" type="button"><span class="nav-icon">↗</span>分享记录</button>
+        <button class="nav-item" data-view="inquiries" type="button"><span class="nav-icon">?</span>询价列表</button>
         <button class="nav-item" data-view="quotes" type="button"><span class="nav-icon">¥</span>报价管理</button>
       </nav>
       <nav class="sidebar-account-nav" aria-label="账号管理">
@@ -67,22 +68,15 @@
           <div class="avatar" id="admin-avatar">A</div>
           <div><strong id="admin-name">Administrator</strong><span id="admin-email">--</span></div>
         </div>
-        <button class="button button-quiet button-wide" id="logout-button" type="button">退出登录</button>
+        <div class="sidebar-footer-actions">
+          <a class="button button-wide sidebar-home-button" href="../">前往主页</a>
+          <button class="button button-quiet button-wide" id="logout-button" type="button">退出登录</button>
+        </div>
       </div>
     </aside>
 
+    <button class="icon-button mobile-only mobile-menu-trigger" id="menu-button" type="button" aria-label="打开导航">☰</button>
     <main class="admin-main" id="admin-content" tabindex="-1">
-      <header class="topbar">
-        <button class="icon-button mobile-only" id="menu-button" type="button" aria-label="打开导航">☰</button>
-        <div>
-          <div class="eyebrow">BOTEN OPERATIONS</div>
-          <h1 id="view-title">管理概览</h1>
-        </div>
-        <div class="topbar-actions">
-          <span class="service-pill"><i></i>API 正常</span>
-        </div>
-      </header>
-
       <div class="content">
         <section class="view active" data-view-panel="dashboard">
           <div class="metric-grid">
@@ -145,7 +139,19 @@
           </section>
         </section>
         <section class="view" data-view-panel="quotes">
-          <section class="panel"><header class="panel-header"><div><span class="eyebrow">QUOTES</span><h2>报价管理</h2><p>查看和管理已保存的报价单。</p></div></header><div class="table-wrap"><table><thead><tr><th>报价单</th><th>业务员</th><th>总价</th><th>更新时间</th><th class="align-right">操作</th></tr></thead><tbody id="quotes-table"></tbody></table></div></section>
+          <section class="panel"><header class="panel-header"><div><span class="eyebrow">QUOTES</span><h2>报价管理</h2><p>管理报价草稿、已发送版本和归档记录。</p></div></header><div class="table-wrap"><table><thead><tr><th>报价单</th><th>状态</th><th>业务员</th><th>总价</th><th>更新时间</th><th class="align-right">操作</th></tr></thead><tbody id="quotes-table"></tbody></table></div></section>
+        </section>
+        <section class="view" data-view-panel="inquiries">
+          <section class="panel">
+            <header class="panel-header"><div><span class="eyebrow">CUSTOMER INQUIRIES</span><h2>询价列表</h2><p>客户主动联系销售的请求。分享记录不会自动生成询价。</p></div></header>
+            <form class="share-filter-toolbar" id="inquiry-filter-form" role="search">
+              <label class="share-query-field"><span>搜索全部信息</span><input id="inquiry-query" type="search" autocomplete="off" placeholder="询价编号、客户姓名、邮箱或手机号" /></label>
+              <label><span>状态</span><select id="inquiry-status-filter"><option value="all">全部</option><option value="new">新询价</option><option value="assigned">已分配</option><option value="contacted">已联系</option><option value="quoted">已转报价</option><option value="closed">已完成</option></select></label>
+              <div class="share-filter-actions"><button class="button button-secondary" type="submit">筛选</button><button class="button button-quiet" id="inquiry-filter-reset" type="button">重置</button></div>
+            </form>
+            <div class="table-wrap"><table><thead><tr><th>询价编号</th><th>客户</th><th>内容</th><th>状态</th><th>业务员</th><th>创建时间</th><th class="align-right">操作</th></tr></thead><tbody id="inquiries-table"></tbody></table></div>
+            <footer class="account-pagination"><span id="inquiry-page-summary">共 0 条</span><div><button class="button button-quiet" id="inquiry-page-prev" type="button">上一页</button><button class="button button-quiet" id="inquiry-page-next" type="button">下一页</button></div></footer>
+          </section>
         </section>
         <section class="view" data-view-panel="audit">
           <section class="panel"><header class="panel-header"><div><span class="eyebrow">AUDIT LOG</span><h2>操作审计</h2><p>记录管理员和业务员的写入操作；为保护隐私，不保存密码或表单正文。</p></div><button class="button button-secondary" id="refresh-audit" type="button">刷新记录</button></header><div class="table-wrap"><table><thead><tr><th>时间</th><th>操作者</th><th>操作</th><th>资源</th><th>结果</th></tr></thead><tbody id="audit-table"></tbody></table></div></section>

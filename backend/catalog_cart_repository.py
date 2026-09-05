@@ -158,6 +158,84 @@ def save_catalog_item(user_id: str, option_id: str, quantity: int, language: str
     return get_saved_catalog_item(item_id, user_id, language)  # type: ignore
 
 
+def set_saved_catalog_option_quantity(
+    user_id: str,
+    option_id: str,
+    quantity: int,
+    language: str = "zh",
+) -> Optional[Dict[str, Any]]:
+    """Set one catalog option's aggregate cart quantity in a single transaction.
+
+    Older clients could create several rows for the same option. The first write
+    through this endpoint consolidates those rows while preserving the original
+    item snapshot used for sharing and quotations.
+    """
+    quantity = int(quantity)
+    if not 0 <= quantity <= 999:
+        raise CatalogValidationError("CATALOG_QUANTITY_INVALID", "quantity")
+    snapshot = _catalog_snapshot(option_id)
+    primary_id: Optional[str] = None
+    with get_connection() as db:
+        rows = db.execute(
+            """
+            SELECT id FROM saved_catalog_items
+            WHERE user_id = ? AND option_id = ? AND archived_at IS NULL
+            ORDER BY created_at ASC, id ASC
+            """,
+            (user_id, option_id),
+        ).fetchall()
+        if quantity == 0:
+            db.execute(
+                """
+                UPDATE saved_catalog_items
+                SET archived_at = CURRENT_TIMESTAMP, version = version + 1,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE user_id = ? AND option_id = ? AND archived_at IS NULL
+                """,
+                (user_id, option_id),
+            )
+            return None
+        if rows:
+            primary_id = rows[0]["id"]
+            db.execute(
+                """
+                UPDATE saved_catalog_items
+                SET quantity = ?, version = version + 1,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ? AND user_id = ? AND archived_at IS NULL
+                """,
+                (quantity, primary_id, user_id),
+            )
+            for duplicate in rows[1:]:
+                db.execute(
+                    """
+                    UPDATE saved_catalog_items
+                    SET archived_at = CURRENT_TIMESTAMP, version = version + 1,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ? AND user_id = ? AND archived_at IS NULL
+                    """,
+                    (duplicate["id"], user_id),
+                )
+        else:
+            primary_id = uuid.uuid4().hex
+            db.execute(
+                """
+                INSERT INTO saved_catalog_items
+                    (id, user_id, option_id, catalog_type, quantity, snapshot_json)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    primary_id,
+                    user_id,
+                    option_id,
+                    snapshot["catalog_type"],
+                    quantity,
+                    json.dumps(snapshot, ensure_ascii=False),
+                ),
+            )
+    return get_saved_catalog_item(primary_id, user_id, language)
+
+
 def update_saved_catalog_item(
     item_id: str,
     user_id: str,

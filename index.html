@@ -12,21 +12,22 @@
   <link rel="apple-touch-icon" href="tb/site/LOGO.png?v=20260831" />
   <link rel="stylesheet" href="css/main.css?v=20260904-1" />
   <link rel="stylesheet" href="css/layout.css?v=20260905-2" />
-  <link rel="stylesheet" href="css/components.css?v=20260905-11" />
+  <link rel="stylesheet" href="css/components.css?v=20260905-17" />
   <link rel="stylesheet" href="css/print.css?v=20260831-1" />
-  <script src="js/runtime-config.js?v=20260831-2"></script>
+  <script src="js/runtime-config.js?v=20260905-4"></script>
   <script src="js/data.js?v=20260904-1" defer></script>
   <script src="js/catalog-api.js?v=20260904-3" defer></script>
   <script src="js/state.js?v=20260905-1" defer></script>
-  <script src="js/price.js?v=20260904-2" defer></script>
+  <script src="js/price.js?v=20260905-4" defer></script>
   <script src="js/renderer.js?v=20260905-3" defer></script>
   <script src="js/navigation-drawer.js?v=20260905-1" defer></script>
-  <script src="js/auth.js?v=20260902-3" defer></script>
-  <script src="js/cart.js?v=20260905-7" defer></script>
-  <script src="js/catalog-marketplace.js?v=20260905-4" defer></script>
+  <script src="js/auth.js?v=20260905-5" defer></script>
+  <script src="js/share-viewer.js?v=20260905-2" defer></script>
+  <script src="js/cart.js?v=20260905-9" defer></script>
+  <script src="js/catalog-marketplace.js?v=20260905-7" defer></script>
   <script src="js/pdf.js?v=20260903-1" defer></script>
-  <script src="js/main.js?v=20260904-1" defer></script>
-  <script src="js/language.js?v=20260905-7" defer></script>
+  <script src="js/main.js?v=20260905-2" defer></script>
+  <script src="js/language.js?v=20260905-11" defer></script>
 </head>
 <body>
   <a class="skip-link" href="#main-content">跳到主要内容</a>
@@ -47,10 +48,22 @@
         <button type="button" class="active" data-language="zh" data-short-label="中">中文</button>
         <button type="button" data-language="en" data-short-label="EN">EN</button>
       </div>
-      <button id="account-toggle" class="btn btn-ghost btn-sm account-toggle" type="button" aria-haspopup="dialog" aria-controls="auth-dialog">
-        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>
-        <span id="account-label">登录</span>
-      </button>
+      <div class="account-menu-anchor">
+        <button id="account-toggle" class="btn btn-ghost btn-sm account-toggle" type="button" aria-haspopup="menu" aria-controls="account-menu" aria-expanded="false">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>
+          <span id="account-label">登录</span>
+        </button>
+        <div id="account-menu" class="account-menu" role="menu" hidden>
+          <header class="account-menu-header">
+            <strong id="account-menu-name">用户</strong>
+            <span id="account-menu-contact">--</span>
+          </header>
+          <button id="account-profile-entry" role="menuitem" type="button">个人中心</button>
+          <button id="account-admin-entry" role="menuitem" type="button" hidden aria-hidden="true">管理后台</button>
+          <button id="account-share-entry" role="menuitem" type="button">查看分享</button>
+          <button id="account-logout" class="account-menu-logout" role="menuitem" type="button">退出登录</button>
+        </div>
+      </div>
       <button id="cart-toggle" class="btn btn-ghost btn-sm" type="button"
 aria-haspopup="dialog" aria-controls="cart-panel">
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"
@@ -225,11 +238,6 @@ stroke-width="2" aria-hidden="true">
           尚未选择任何配置项
         </div>
 
-        <section class="pricing-preview pricing-enquiry" id="pricing-preview" aria-labelledby="pricing-preview-title">
-          <h3 id="pricing-preview-title">获取报价</h3>
-          <p id="pricing-enquiry-message">请联系销售人员获取报价</p>
-        </section>
-
         <div class="summary-actions no-print">
           <div id="config-edit-status" class="config-edit-status" role="status" hidden>
             <span id="config-edit-label">正在修改配置</span>
@@ -239,22 +247,23 @@ stroke-width="2" aria-hidden="true">
           <button id="save-cart" class="btn btn-primary btn-block" type="button">
             保存当前配置到购物车
           </button>
+          <button id="sales-contact-open" class="sales-contact-trigger" type="button">联系销售获取报价</button>
         </div>
       </div>
     </aside>
 
-    <aside class="catalog-summary-panel" id="catalog-summary-panel" aria-label="目录选择清单" hidden>
+    <aside class="catalog-summary-panel" id="catalog-summary-panel" aria-labelledby="catalog-cart-summary-title" hidden>
       <div class="summary-sticky catalog-summary-sticky">
         <header class="summary-header">
-          <h2 id="catalog-summary-title">工具选择</h2>
+          <div class="catalog-summary-heading">
+            <h2 id="catalog-cart-summary-title">购物车中的工具</h2>
+            <span id="catalog-cart-summary-count">0 项</span>
+          </div>
           <button id="catalog-summary-close" class="btn btn-ghost btn-sm summary-close" type="button" aria-label="关闭已选项目">
             <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
           </button>
         </header>
-        <section class="catalog-summary-section" aria-labelledby="catalog-cart-summary-title">
-          <header><h3 id="catalog-cart-summary-title">购物车中的工具</h3><span id="catalog-cart-summary-count">0 项</span></header>
-          <div class="catalog-summary-list" id="catalog-cart-summary-list"></div>
-        </section>
+        <div class="catalog-summary-list" id="catalog-cart-summary-list"></div>
       </div>
     </aside>
   </main>
@@ -296,11 +305,11 @@ aria-controls="catalog-summary-panel" aria-label="查看购物车中的工具" h
         <form id="auth-form" novalidate>
           <label class="auth-field register-only" id="auth-name-field" hidden><span data-auth-text="name">姓名</span><input id="auth-name" name="display_name" autocomplete="name" placeholder="请输入姓名" /></label>
           <div class="auth-method-tabs" role="tablist" aria-label="登录方式">
-            <button class="auth-method-tab active" id="auth-tab-email" role="tab" aria-selected="true" aria-controls="auth-email-field" tabindex="0" type="button" data-auth-identifier="email">邮箱</button>
-            <button class="auth-method-tab" id="auth-tab-phone" role="tab" aria-selected="false" aria-controls="auth-phone-field" tabindex="-1" type="button" data-auth-identifier="phone">手机号</button>
+            <button class="auth-method-tab" id="auth-tab-email" role="tab" aria-selected="false" aria-controls="auth-email-field" tabindex="-1" type="button" data-auth-identifier="email">邮箱</button>
+            <button class="auth-method-tab active" id="auth-tab-phone" role="tab" aria-selected="true" aria-controls="auth-phone-field" tabindex="0" type="button" data-auth-identifier="phone">手机号</button>
           </div>
-          <label class="auth-field" id="auth-email-field" role="tabpanel" aria-labelledby="auth-tab-email"><span data-auth-text="email">邮箱</span><input id="auth-email" name="email" type="email" autocomplete="email" spellcheck="false" required placeholder="name@example.com" /></label>
-          <div class="auth-field phone-contact-field" id="auth-phone-field" role="tabpanel" aria-labelledby="auth-tab-phone" hidden><div class="country-select-row"><span data-auth-text="country">国家</span><select id="auth-country" name="phone_country" class="device-select country-select" aria-label="国家" required></select></div><label class="phone-number-row"><span data-auth-text="phone">手机号</span><span class="phone-input-group"><span id="auth-calling-code" class="calling-code" aria-live="polite">+86</span><input id="auth-phone" name="phone" type="tel" inputmode="numeric" autocomplete="tel-national" spellcheck="false" pattern="[0-9]{6,15}" aria-label="实际手机号" placeholder="1590000000" /></span></label></div>
+          <label class="auth-field" id="auth-email-field" role="tabpanel" aria-labelledby="auth-tab-email" hidden><span data-auth-text="email">邮箱</span><input id="auth-email" name="email" type="email" autocomplete="email" spellcheck="false" placeholder="name@example.com" /></label>
+          <div class="auth-field phone-contact-field" id="auth-phone-field" role="tabpanel" aria-labelledby="auth-tab-phone"><div class="country-select-row"><span data-auth-text="country">国家</span><select id="auth-country" name="phone_country" class="device-select country-select" aria-label="国家" required></select></div><label class="phone-number-row"><span data-auth-text="phone">手机号</span><span class="phone-input-group"><span id="auth-calling-code" class="calling-code" aria-live="polite">+86</span><input id="auth-phone" name="phone" type="tel" inputmode="numeric" autocomplete="tel-national" spellcheck="false" pattern="[0-9]{6,15}" aria-label="实际手机号" placeholder="1590000000" required /></span></label></div>
           <label class="auth-field"><span id="auth-password-label">密码</span><input id="auth-password" name="password" type="password" minlength="8" required autocomplete="current-password" placeholder="至少8个字符" /></label>
           <div id="auth-error" class="auth-error" role="alert" hidden></div>
           <button id="auth-submit" class="btn btn-primary btn-block" type="submit">登录</button>
@@ -308,40 +317,27 @@ aria-controls="catalog-summary-panel" aria-label="查看购物车中的工具" h
         <p class="auth-switch" id="auth-mode-switch">还没有账号？<button class="auth-link" type="button" data-auth-mode="register">注册</button></p>
       </div>
 
-      <div id="account-view" class="account-view" hidden>
-        <div class="account-avatar" id="account-avatar">U</div>
-        <h3 id="account-name">用户</h3>
-        <p id="account-contact">--</p>
-        <span class="account-role" id="account-role">客户</span>
-        <div class="account-actions">
-          <button id="account-admin-entry" class="btn btn-primary btn-block account-admin-entry" type="button" hidden aria-hidden="true">进入后台</button>
-          <button id="account-manage" class="btn btn-secondary btn-block" type="button">账号管理</button>
-          <button id="account-logout" class="btn btn-ghost btn-block account-logout" type="button">退出登录</button>
+    </div>
+  </dialog>
+
+  <dialog id="customer-share-dialog" class="share-dialog customer-share-dialog no-print" aria-labelledby="customer-share-title">
+    <div class="share-dialog-card customer-share-card">
+      <header class="share-dialog-header">
+        <div><span class="auth-kicker">SHARED CONFIGURATION</span><h2 id="customer-share-title">查看分享</h2></div>
+        <button id="customer-share-close" class="btn btn-text btn-sm" type="button" aria-label="关闭">✕</button>
+      </header>
+      <form id="customer-share-form" class="customer-share-form" novalidate>
+        <label for="customer-share-code">分享码</label>
+        <div class="customer-share-search-row">
+          <input id="customer-share-code" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" placeholder="请输入 6 位分享码" />
+          <button id="customer-share-search" class="btn btn-secondary" type="submit">查看</button>
         </div>
-      </div>
-      <div id="account-manage-view" class="account-view account-manage-view" hidden>
-        <section class="account-manage-section" aria-labelledby="profile-contact-heading">
-          <h3 id="profile-contact-heading" data-account-section="contact">联系方式</h3>
-          <form id="account-contact-form" class="auth-form" novalidate>
-            <label class="auth-field"><span data-account-copy="email">邮箱</span><input id="profile-email" name="email" type="email" autocomplete="email" spellcheck="false" /></label>
-            <div class="auth-field phone-contact-field"><div class="country-select-row"><span data-auth-text="country">国家</span><select id="profile-country" name="phone_country" class="device-select country-select" aria-label="国家"></select></div><label class="phone-number-row"><span data-account-copy="phone">手机号</span><span class="phone-input-group"><span id="profile-calling-code" class="calling-code" aria-live="polite"></span><input id="profile-phone" name="phone" type="tel" inputmode="numeric" autocomplete="tel-national" pattern="[0-9]{6,15}" spellcheck="false" /></span></label></div>
-            <label class="auth-field"><span data-account-copy="currentPassword">当前密码</span><input id="profile-contact-password" name="current_password" type="password" autocomplete="current-password" required /></label>
-            <div id="profile-contact-error" class="auth-error" role="alert" hidden></div>
-            <div class="auth-form-actions"><button id="profile-contact-submit" class="btn btn-primary btn-block" type="submit">保存并重新登录</button></div>
-          </form>
-        </section>
-        <section class="account-manage-section" aria-labelledby="profile-password-heading">
-          <h3 id="profile-password-heading" data-account-section="password">修改密码</h3>
-          <form id="account-password-form" class="auth-form" novalidate>
-            <label class="auth-field"><span data-account-copy="currentPassword">当前密码</span><input id="profile-current-password" name="current_password" type="password" autocomplete="current-password" required /></label>
-            <label class="auth-field"><span data-account-copy="newPassword">新密码</span><input id="profile-new-password" name="new_password" type="password" minlength="8" autocomplete="new-password" required /></label>
-            <label class="auth-field"><span data-account-copy="confirmPassword">确认新密码</span><input id="profile-confirm-password" name="confirm_password" type="password" minlength="8" autocomplete="new-password" required /></label>
-            <div id="profile-password-error" class="auth-error" role="alert" hidden></div>
-            <div class="auth-form-actions"><button id="profile-password-submit" class="btn btn-secondary btn-block" type="submit">修改密码并重新登录</button></div>
-          </form>
-        </section>
-        <div class="auth-form-actions"><button id="account-manage-back" class="btn btn-ghost btn-block" type="button">返回</button></div>
-      </div>
+      </form>
+      <div id="customer-share-status" class="customer-share-status" role="status" aria-live="polite"></div>
+      <div id="customer-share-content" class="customer-share-content" hidden></div>
+      <footer class="customer-share-actions">
+        <button id="customer-share-import" class="btn btn-primary" type="button" hidden>全部加入购物车</button>
+      </footer>
     </div>
   </dialog>
 
@@ -359,26 +355,37 @@ aria-controls="catalog-summary-panel" aria-label="查看购物车中的工具" h
     </div>
   </dialog>
 
+  <dialog id="sales-contact-dialog" class="share-dialog sales-contact-dialog no-print" aria-labelledby="sales-contact-title">
+    <div class="share-dialog-card sales-contact-card">
+      <header class="share-dialog-header">
+        <div><span class="auth-kicker">SALES CONTACT</span><h2 id="sales-contact-title">联系销售</h2></div>
+        <button id="sales-contact-close" class="btn btn-text btn-sm" type="button" aria-label="关闭联系方式窗口">✕</button>
+      </header>
+      <p class="share-description" id="sales-contact-description">通过以下方式联系我们，获取产品报价与选型支持。</p>
+      <dl class="sales-contact-list">
+        <div><dt id="sales-contact-email-label">业务邮箱</dt><dd><a id="sales-contact-email" href="mailto:info@boten-diesel.com">info@boten-diesel.com</a></dd></div>
+        <div><dt id="sales-contact-whatsapp-label">WhatsApp</dt><dd><a id="sales-contact-whatsapp" class="btn btn-secondary btn-sm sales-whatsapp-button" href="https://wa.me/8617625542926" target="_blank" rel="noopener noreferrer">打开 WhatsApp</a></dd></div>
+      </dl>
+      <button id="sales-contact-done" class="btn btn-primary btn-block" type="button">关闭</button>
+    </div>
+  </dialog>
+
   <div id="cart-backdrop" class="cart-backdrop no-print" aria-hidden="true"></div>
-  <div id="cart-panel" class="cart-panel no-print" role="dialog" aria-modal="true" aria-labelledby="cart-title" aria-hidden="true">
+    <div id="cart-panel" class="cart-panel no-print" role="dialog" aria-modal="true" aria-labelledby="cart-title" aria-hidden="true">
     <div class="cart-panel-inner">
       <header class="cart-panel-header">
         <h2 id="cart-title">我的购物车</h2>
-        <button id="cart-close" class="btn btn-text btn-sm" type="button" aria-label="关闭购物车">✕</button>
+        <div class="cart-header-actions">
+          <button id="cart-pdf" class="btn btn-secondary btn-sm cart-header-action" type="button" disabled aria-label="导出购物车 PDF"><span class="cart-action-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M6.5 2.75h7l4 4v14.5H6.5z"/><path d="M13.5 2.75v4h4"/><path d="M8.25 14.25h7.5M8.25 17.25h5.25"/></svg></span><span class="cart-action-label">导出 PDF</span></button>
+          <button id="cart-share" class="btn btn-secondary btn-sm cart-header-action" type="button" disabled aria-label="分享购物车"><span class="cart-action-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><circle cx="18" cy="5" r="2.25"/><circle cx="6" cy="12" r="2.25"/><circle cx="18" cy="19" r="2.25"/><path d="m7.95 10.95 7.95-4.7M7.95 13.05l7.95 4.7"/></svg></span><span class="cart-action-label">分享</span></button>
+          <button id="cart-close" class="btn btn-secondary btn-sm cart-header-action" type="button" aria-label="关闭购物车"><span class="cart-action-icon" aria-hidden="true">×</span></button>
+        </div>
       </header>
-      <div id="cart-selection-toolbar" class="cart-selection-toolbar" hidden>
-        <label><input id="cart-select-all" type="checkbox" /><span id="cart-select-all-label">全选</span></label>
-        <span id="cart-selection-count" aria-live="polite">已选择 0 / 0 项</span>
-      </div>
       <div id="cart-items" class="cart-items"></div>
       <div id="cart-empty" class="cart-empty" hidden>购物车为空</div>
       <footer class="cart-panel-footer">
         <div id="cart-operation-status" class="cart-operation-status" role="status" aria-live="polite" hidden></div>
-        <div class="cart-batch-actions">
-          <button id="cart-share-selected" class="btn btn-primary" type="button" disabled>分享所选</button>
-          <button id="cart-pdf-selected" class="btn btn-secondary" type="button" disabled>导出 PDF</button>
-          <button id="cart-remove-selected" class="btn btn-text danger" type="button" disabled>删除所选</button>
-        </div>
+        <button id="cart-inquiry" class="btn btn-primary btn-block" type="button">联系销售获取报价</button>
       </footer>
     </div>
   </div>

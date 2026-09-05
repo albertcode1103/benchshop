@@ -23,8 +23,9 @@ async function initApp() {
   }
   initializeState();
   bindRenderer(state);
-  initPricePreview();
+  initSalesContact();
   await initAuth();
+  if (typeof initCustomerShareViewer === "function") initCustomerShareViewer();
   if (typeof initCatalogMarketplace === "function") initCatalogMarketplace();
   initCart();
   initReset();

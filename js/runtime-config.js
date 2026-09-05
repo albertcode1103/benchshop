@@ -15,3 +15,8 @@ window.botenAssetUrl = function (path) {
   if (value.startsWith("/api/")) return `${window.BOTEN_API_BASE || ""}${value}`;
   return value;
 };
+
+window.BOTEN_SALES_CONTACT = Object.freeze({
+  email: "info@boten-diesel.com",
+  whatsappHref: "https://wa.me/8617625542926"
+});

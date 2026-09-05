@@ -79,7 +79,7 @@ class BackendWorkflowTests(unittest.TestCase):
         self.assertEqual(21, len(_normalize_refs(catalog_refs)))
 
         with self.assertRaises(CatalogValidationError) as device_limit:
-            _normalize_refs([{"item_type": "device_config", "id": "device-{}".format(index)} for index in range(21)])
+            _normalize_refs([{"item_type": "device_config", "id": "device-{}".format(index)} for index in range(101)])
         self.assertEqual("BATCH_SELECTION_LIMIT", device_limit.exception.code)
 
         with self.assertRaises(CatalogValidationError) as cart_limit:
@@ -488,6 +488,30 @@ class BackendWorkflowTests(unittest.TestCase):
             self.assertEqual(422, invalid.status_code, invalid.text)
             incomplete = client.post("/api/v1/auth/register", json={"email": "missing-name@example.com", "phone_country": "CN", "phone": "1590000001", "password": "password123"})
             self.assertEqual(422, incomplete.status_code, incomplete.text)
+            chinese_phone_only = client.post(
+                "/api/v1/auth/register",
+                headers={"X-UI-Language": "zh-CN"},
+                json={"display_name": "Chinese Phone User", "phone_country": "CN", "phone": "1590000002", "password": "password123"},
+            )
+            self.assertEqual(201, chinese_phone_only.status_code, chinese_phone_only.text)
+            self.assertIsNone(chinese_phone_only.json()["user"]["email"])
+            english_missing_email = client.post(
+                "/api/v1/auth/register",
+                headers={"X-UI-Language": "en"},
+                json={"display_name": "English User", "phone_country": "CN", "phone": "1590000003", "password": "password123"},
+            )
+            self.assertEqual(422, english_missing_email.status_code, english_missing_email.text)
+            self.assertEqual("ACCOUNT_EMAIL_REQUIRED", english_missing_email.json()["error"]["code"])
+            profile_headers = {"Authorization": "Bearer {}".format(chinese_phone_only.json()["session"]["token"])}
+            profile = client.patch(
+                "/api/v1/auth/profile/details",
+                headers=profile_headers,
+                json={"display_name": "中文客户", "gender": "other", "birth_date": "1990-05-06", "signature": "柴油测试设备", "version": chinese_phone_only.json()["user"]["version"]},
+            )
+            self.assertEqual(200, profile.status_code, profile.text)
+            self.assertEqual("other", profile.json()["gender"])
+            self.assertEqual("1990-05-06", profile.json()["birth_date"])
+            self.assertEqual("柴油测试设备", profile.json()["signature"])
 
     def test_save_and_share_configuration(self) -> None:
         user = create_user("share@example.com", None, "password123", display_name="Share User")
@@ -566,6 +590,9 @@ class BackendWorkflowTests(unittest.TestCase):
             self.assertEqual(200, filtered.status_code, filtered.text)
             self.assertEqual(1, filtered.json()["total"])
             self.assertEqual(2, filtered.json()["items"][0]["item_count"])
+            self.assertEqual(2, filtered.json()["items"][0]["device_count"])
+            self.assertEqual(0, filtered.json()["items"][0]["tool_quantity"])
+            self.assertEqual(0, filtered.json()["items"][0]["accessory_quantity"])
 
             admin = create_user("bundle-admin@example.com", None, "password123", role="admin", display_name="Bundle Admin")
             admin_headers = {"Authorization": "Bearer {}".format(create_session(admin)["token"])}
@@ -983,16 +1010,40 @@ class BackendWorkflowTests(unittest.TestCase):
                 self.assertEqual(409, stale.status_code, stale.text)
                 self.assertEqual("CATALOG_CART_VERSION_CONFLICT", stale.json()["error"]["code"])
 
-                removed = client.delete(
-                    "/api/v1/cart/catalog-items/{}?version={}".format(saved_id, updated["version"]),
+                set_quantity = client.put(
+                    "/api/v1/cart/catalog-options/{}".format(option["id"]),
                     headers=headers,
+                    json={"quantity": 7, "lang": "en"},
+                )
+                self.assertEqual(200, set_quantity.status_code, set_quantity.text)
+                self.assertEqual(7, set_quantity.json()["quantity"])
+
+                duplicate = client.post(
+                    "/api/v1/cart/catalog-items",
+                    headers=headers,
+                    json={"option_id": option["id"], "quantity": 2, "lang": "en"},
+                )
+                self.assertEqual(201, duplicate.status_code, duplicate.text)
+                consolidated = client.put(
+                    "/api/v1/cart/catalog-options/{}".format(option["id"]),
+                    headers=headers,
+                    json={"quantity": 3, "lang": "zh"},
+                )
+                self.assertEqual(200, consolidated.status_code, consolidated.text)
+                active_items = client.get("/api/v1/cart/catalog-items", headers=headers).json()["items"]
+                self.assertEqual(1, len(active_items))
+                self.assertEqual(3, active_items[0]["quantity"])
+
+                removed = client.put(
+                    "/api/v1/cart/catalog-options/{}".format(option["id"]),
+                    headers=headers,
+                    json={"quantity": 0, "lang": "zh"},
                 )
                 self.assertEqual(204, removed.status_code, removed.text)
                 self.assertEqual([], client.get("/api/v1/cart/catalog-items", headers=headers).json()["items"])
         finally:
             with get_connection() as database:
-                if saved_id:
-                    database.execute("DELETE FROM saved_catalog_items WHERE id = ?", (saved_id,))
+                database.execute("DELETE FROM saved_catalog_items WHERE option_id = ?", (option["id"],))
                 database.execute("DELETE FROM options WHERE id = ?", (option["id"],))
                 if inserted_root:
                     database.execute("DELETE FROM categories WHERE id = ?", (root_id,))
@@ -1036,6 +1087,7 @@ class BackendWorkflowTests(unittest.TestCase):
         config = save_config(customer["id"], "Mixed Device", product["id"], snapshot)
         other_config = save_config(other["id"], "Other Device", product["id"], snapshot)
         customer_headers = {"Authorization": "Bearer {}".format(create_session(customer)["token"])}
+        other_headers = {"Authorization": "Bearer {}".format(create_session(other)["token"])}
         staff_headers = {"Authorization": "Bearer {}".format(create_session(staff)["token"])}
         admin_headers = {"Authorization": "Bearer {}".format(create_session(admin)["token"])}
         saved_ids = []
@@ -1130,6 +1182,10 @@ class BackendWorkflowTests(unittest.TestCase):
                 code = shared.json()["code"]
                 search_result = search_all_shares(query="混合测试工具")
                 self.assertIn(share_id, {item["id"] for item in search_result["items"]})
+                shared_summary = next(item for item in search_result["items"] if item["id"] == share_id)
+                self.assertEqual(1, shared_summary["device_count"])
+                self.assertEqual(2, shared_summary["tool_quantity"])
+                self.assertEqual(3, shared_summary["accessory_quantity"])
                 staff_share_list = client.get(
                     "/api/v1/admin/shares?query=混合测试工具&status=active",
                     headers=staff_headers,
@@ -1161,6 +1217,54 @@ class BackendWorkflowTests(unittest.TestCase):
                 self.assertIn("CNY", device_item["pricing_by_currency"])
                 self.assertIn("USD", device_item["pricing_by_currency"])
 
+                customer_preview = client.get(
+                    "/api/v1/customer/shares/{}?lang=en".format(code),
+                    headers=other_headers,
+                )
+                self.assertEqual(200, customer_preview.status_code, customer_preview.text)
+                customer_preview_json = customer_preview.json()
+                self.assertEqual(3, customer_preview_json["available_count"])
+                self.assertNotIn("sender_email", customer_preview_json)
+                self.assertNotIn("pricing", str(customer_preview_json).lower())
+                imported = client.post(
+                    "/api/v1/customer/shares/{}/import".format(code),
+                    headers=other_headers,
+                    json={"idempotency_key": "mixed-share-import-0001", "lang": "en"},
+                )
+                self.assertEqual(200, imported.status_code, imported.text)
+                self.assertEqual(3, imported.json()["imported_count"])
+                replayed = client.post(
+                    "/api/v1/customer/shares/{}/import".format(code),
+                    headers=other_headers,
+                    json={"idempotency_key": "mixed-share-import-0001", "lang": "en"},
+                )
+                self.assertEqual(200, replayed.status_code, replayed.text)
+                self.assertTrue(replayed.json()["replayed"])
+                self.assertEqual(2, len(client.get("/api/v1/configs", headers=other_headers).json()["items"]))
+                self.assertEqual(2, len(client.get("/api/v1/cart/catalog-items", headers=other_headers).json()["items"]))
+
+                with get_connection() as database:
+                    database.execute("UPDATE options SET enabled = 0 WHERE id = ?", (tool["id"],))
+                stale_preview = client.get(
+                    "/api/v1/customer/shares/{}?lang=zh".format(code),
+                    headers=other_headers,
+                )
+                self.assertEqual(200, stale_preview.status_code, stale_preview.text)
+                stale_tool = next(item for item in stale_preview.json()["items"] if item["item_type"] == "tool")
+                self.assertFalse(stale_tool["available"])
+                self.assertTrue(stale_tool["missing"])
+                partial_import = client.post(
+                    "/api/v1/customer/shares/{}/import".format(code),
+                    headers=other_headers,
+                    json={"idempotency_key": "mixed-share-import-partial-0002", "lang": "zh"},
+                )
+                self.assertEqual(200, partial_import.status_code, partial_import.text)
+                self.assertEqual(2, partial_import.json()["imported_count"])
+                self.assertEqual(1, partial_import.json()["skipped_count"])
+                self.assertEqual("tool", partial_import.json()["skipped"][0]["item_type"])
+                with get_connection() as database:
+                    database.execute("UPDATE options SET enabled = 1 WHERE id = ?", (tool["id"],))
+
                 exported = client.get(
                     "/api/v1/shares/{}/pdf?lang=en".format(code), headers=staff_headers,
                 )
@@ -1191,6 +1295,47 @@ class BackendWorkflowTests(unittest.TestCase):
                 self.assertEqual(200, quote_pdf_response.status_code, quote_pdf_response.text)
                 self.assertGreater(len(quote_pdf_response.content), 100)
 
+                own_shares = client.get("/api/v1/customer/me/shares", headers=customer_headers)
+                self.assertEqual(200, own_shares.status_code, own_shares.text)
+                self.assertIn(share_id, {item["id"] for item in own_shares.json()["items"]})
+                own_share = client.get(
+                    "/api/v1/customer/me/shares/{}?lang=en".format(share_id),
+                    headers=customer_headers,
+                )
+                self.assertEqual(200, own_share.status_code, own_share.text)
+                self.assertNotIn("pricing", str(own_share.json()).lower())
+
+                delivered = client.post(
+                    "/api/v1/staff/quotes/{}/deliver".format(quote_id),
+                    headers=staff_headers,
+                    json={"source_share_id": share_id},
+                )
+                self.assertEqual(200, delivered.status_code, delivered.text)
+                self.assertEqual(customer["id"], delivered.json()["recipient_user_id"])
+                customer_quotes = client.get("/api/v1/customer/me/quotes", headers=customer_headers)
+                self.assertEqual(200, customer_quotes.status_code, customer_quotes.text)
+                self.assertEqual(1, customer_quotes.json()["unread_count"])
+                customer_quote = client.get(
+                    "/api/v1/customer/me/quotes/{}".format(quote_id), headers=customer_headers,
+                )
+                self.assertEqual(200, customer_quote.status_code, customer_quote.text)
+                self.assertEqual(1036, customer_quote.json()["total_price"])
+                denied_quote = client.get(
+                    "/api/v1/customer/me/quotes/{}".format(quote_id), headers=other_headers,
+                )
+                self.assertEqual(404, denied_quote.status_code, denied_quote.text)
+                customer_quote_pdf = client.get(
+                    "/api/v1/customer/me/quotes/{}/pdf".format(quote_id), headers=customer_headers,
+                )
+                self.assertEqual(200, customer_quote_pdf.status_code, customer_quote_pdf.text)
+                withdrawn = client.post(
+                    "/api/v1/staff/quotes/{}/withdraw".format(quote_id),
+                    headers=staff_headers,
+                    json={"recipient_user_id": customer["id"]},
+                )
+                self.assertEqual(200, withdrawn.status_code, withdrawn.text)
+                self.assertEqual([], client.get("/api/v1/customer/me/quotes", headers=customer_headers).json()["items"])
+
                 archived = client.post(
                     "/api/v1/cart/batch-archive", headers=customer_headers,
                     json={"items": refs, "lang": "zh"},
@@ -1205,12 +1350,173 @@ class BackendWorkflowTests(unittest.TestCase):
                     database.execute("DELETE FROM commerce_quotes WHERE id = ?", (quote_id,))
                 if catalog_quote_id:
                     database.execute("DELETE FROM commerce_quotes WHERE id = ?", (catalog_quote_id,))
+                database.execute("DELETE FROM quote_deliveries WHERE recipient_user_id IN (?, ?)", (customer["id"], other["id"]))
                 database.execute("DELETE FROM commerce_shares WHERE created_by = ?", (customer["id"],))
-                database.execute("DELETE FROM saved_catalog_items WHERE user_id = ?", (customer["id"],))
-                database.execute("DELETE FROM saved_configs WHERE id IN (?, ?)", (config["id"], other_config["id"]))
+                database.execute("DELETE FROM share_imports WHERE user_id = ?", (other["id"],))
+                database.execute("DELETE FROM saved_catalog_items WHERE user_id IN (?, ?)", (customer["id"], other["id"]))
+                database.execute("DELETE FROM saved_configs WHERE user_id IN (?, ?)", (customer["id"], other["id"]))
                 database.execute("DELETE FROM options WHERE id IN (?, ?)", (tool["id"], accessory["id"]))
                 for root_id in inserted_roots:
                     database.execute("DELETE FROM categories WHERE id = ?", (root_id,))
+
+    def test_customer_inquiries_are_separate_from_shares_and_hide_prices(self) -> None:
+        customer = create_user("inquiry-customer@example.com", None, "password123", display_name="Inquiry Customer")
+        product = get_product("cr1016")
+        snapshot = build_snapshot(product["id"], product["colors"][0]["code"], {}, "zh")
+        config = save_config(customer["id"], "Inquiry Cart Device", product["id"], snapshot)
+        headers = {"Authorization": "Bearer {}".format(create_session(customer)["token"])}
+        try:
+            with TestClient(app) as client:
+                current = client.post(
+                    "/api/v1/customer/inquiries/current-configuration", headers=headers,
+                    json={
+                        "product_id": product["id"], "color": product["colors"][0]["code"],
+                        "selections": {}, "lang": "zh", "message": "请联系我", "idempotency_key": "current-inquiry-0001",
+                    },
+                )
+                self.assertEqual(201, current.status_code, current.text)
+                current_payload = current.json()
+                self.assertEqual("current_device", current_payload["source_type"])
+                self.assertEqual(1, current_payload["item_count"])
+                self.assertNotIn("pricing", str(current_payload).lower())
+
+                replay = client.post(
+                    "/api/v1/customer/inquiries/current-configuration", headers=headers,
+                    json={
+                        "product_id": product["id"], "color": product["colors"][0]["code"],
+                        "selections": {}, "lang": "zh", "message": "请联系我", "idempotency_key": "current-inquiry-0001",
+                    },
+                )
+                self.assertEqual(201, replay.status_code, replay.text)
+                self.assertEqual(current_payload["id"], replay.json()["id"])
+                self.assertTrue(replay.json()["replayed"])
+
+                cart = client.post(
+                    "/api/v1/customer/inquiries/cart", headers=headers,
+                    json={"lang": "en", "message": "Cart inquiry", "idempotency_key": "cart-inquiry-000001"},
+                )
+                self.assertEqual(201, cart.status_code, cart.text)
+                self.assertEqual("cart", cart.json()["source_type"])
+                self.assertEqual(1, cart.json()["item_count"])
+
+                own = client.get("/api/v1/customer/me/inquiries", headers=headers)
+                self.assertEqual(200, own.status_code, own.text)
+                self.assertEqual(2, own.json()["total"])
+                detail = client.get("/api/v1/customer/me/inquiries/{}?lang=en".format(cart.json()["id"]), headers=headers)
+                self.assertEqual(200, detail.status_code, detail.text)
+                self.assertEqual("device_config", detail.json()["items"][0]["item_type"])
+                self.assertNotIn("price", str(detail.json()).lower())
+
+                cancelled = client.post(
+                    "/api/v1/customer/me/inquiries/{}/cancel".format(cart.json()["id"]),
+                    headers=headers, json={"version": cart.json()["version"]},
+                )
+                self.assertEqual(200, cancelled.status_code, cancelled.text)
+                self.assertEqual("cancelled", cancelled.json()["status"])
+        finally:
+            with get_connection() as database:
+                database.execute("DELETE FROM customer_inquiries WHERE created_by = ?", (customer["id"],))
+                database.execute("DELETE FROM saved_configs WHERE id = ?", (config["id"],))
+                database.execute("DELETE FROM users WHERE id = ?", (customer["id"],))
+
+    def test_staff_can_assign_and_convert_an_inquiry_to_a_draft_quote(self) -> None:
+        customer = create_user("inquiry-staff-customer@example.com", None, "password123", display_name="Inquiry Staff Customer")
+        sales = create_user("inquiry-staff-sales@example.com", None, "password123", role="sales", display_name="Inquiry Staff Sales")
+        product = get_product("cr1016")
+        customer_headers = {"Authorization": "Bearer {}".format(create_session(customer)["token"])}
+        sales_headers = {"Authorization": "Bearer {}".format(create_session(sales)["token"])}
+        quote_id = None
+        inquiry_id = None
+        try:
+            with TestClient(app) as client:
+                created = client.post(
+                    "/api/v1/customer/inquiries/current-configuration", headers=customer_headers,
+                    json={"product_id": product["id"], "color": product["colors"][0]["code"], "selections": {}, "lang": "zh", "message": "Need sales follow-up", "idempotency_key": "staff-inquiry-000001"},
+                )
+                self.assertEqual(201, created.status_code, created.text)
+                inquiry_id = created.json()["id"]
+
+                listing = client.get("/api/v1/staff/inquiries?status=new", headers=sales_headers)
+                self.assertEqual(200, listing.status_code, listing.text)
+                listed = next(item for item in listing.json()["items"] if item["id"] == inquiry_id)
+                self.assertEqual("new", listed["status"])
+
+                assigned = client.patch(
+                    "/api/v1/staff/inquiries/{}".format(inquiry_id), headers=sales_headers,
+                    json={"version": listed["version"], "status": "assigned", "assigned_to": sales["id"]},
+                )
+                self.assertEqual(200, assigned.status_code, assigned.text)
+                self.assertEqual(sales["id"], assigned.json()["assigned_to"])
+
+                converted = client.post(
+                    "/api/v1/staff/inquiries/{}/convert-to-quote".format(inquiry_id), headers=sales_headers,
+                    json={"version": assigned.json()["version"], "currency": "CNY"},
+                )
+                self.assertEqual(201, converted.status_code, converted.text)
+                self.assertEqual("quoted", converted.json()["inquiry"]["status"])
+                self.assertTrue(converted.json()["quote"]["items"])
+                quote_id = converted.json()["quote"]["id"]
+        finally:
+            with get_connection() as database:
+                if quote_id:
+                    database.execute("DELETE FROM commerce_quotes WHERE id = ?", (quote_id,))
+                if inquiry_id:
+                    database.execute("DELETE FROM customer_inquiries WHERE id = ?", (inquiry_id,))
+                database.execute("DELETE FROM users WHERE id IN (?, ?)", (customer["id"], sales["id"]))
+
+    def test_staff_can_archive_restore_and_review_quote_history(self) -> None:
+        customer = create_user("quote-history-customer@example.com", None, "password123", display_name="Quote History Customer")
+        sales = create_user("quote-history-sales@example.com", None, "password123", role="sales", display_name="Quote History Sales")
+        customer_headers = {"Authorization": "Bearer {}".format(create_session(customer)["token"])}
+        sales_headers = {"Authorization": "Bearer {}".format(create_session(sales)["token"])}
+        quote_id = None
+        try:
+            with TestClient(app) as client:
+                created = client.post(
+                    "/api/v1/quotes", headers=sales_headers,
+                    json={"title": "Lifecycle quote", "items": [{"kind": "product", "code": "CR1016", "name": "Test bench", "quantity": 1, "price": 100}], "total_price": 0, "currency": "USD"},
+                )
+                self.assertEqual(201, created.status_code, created.text)
+                quote_id = created.json()["id"]
+
+                delivered = client.post(
+                    "/api/v1/staff/quotes/{}/deliver".format(quote_id), headers=sales_headers,
+                    json={"recipient_user_id": customer["id"]},
+                )
+                self.assertEqual(200, delivered.status_code, delivered.text)
+
+                sent = client.get("/api/v1/quotes/{}".format(quote_id), headers=sales_headers)
+                self.assertEqual("sent", sent.json()["lifecycle_status"])
+                archived = client.post(
+                    "/api/v1/staff/quotes/{}/archive".format(quote_id), headers=sales_headers,
+                    json={"version": sent.json()["version"]},
+                )
+                self.assertEqual(200, archived.status_code, archived.text)
+                self.assertEqual("archived", archived.json()["lifecycle_status"])
+
+                blocked = client.post(
+                    "/api/v1/quotes", headers=sales_headers,
+                    json={"quote_id": quote_id, "title": "Blocked", "items": [{"kind": "product", "name": "Test", "quantity": 1, "price": 1}], "total_price": 1},
+                )
+                self.assertEqual(409, blocked.status_code, blocked.text)
+                history = client.get("/api/v1/staff/quotes/{}/history".format(quote_id), headers=sales_headers)
+                self.assertEqual(200, history.status_code, history.text)
+                self.assertEqual(1, len(history.json()["revisions"]))
+                self.assertEqual(1, len(history.json()["deliveries"]))
+
+                restored = client.post(
+                    "/api/v1/staff/quotes/{}/restore".format(quote_id), headers=sales_headers,
+                    json={"version": archived.json()["version"]},
+                )
+                self.assertEqual(200, restored.status_code, restored.text)
+                self.assertEqual("sent", restored.json()["lifecycle_status"])
+                self.assertEqual(200, client.get("/api/v1/customer/me/quotes/{}".format(quote_id), headers=customer_headers).status_code)
+        finally:
+            with get_connection() as database:
+                if quote_id:
+                    database.execute("DELETE FROM quote_deliveries WHERE quote_id = ?", (quote_id,))
+                    database.execute("DELETE FROM commerce_quotes WHERE id = ?", (quote_id,))
+                database.execute("DELETE FROM users WHERE id IN (?, ?)", (customer["id"], sales["id"]))
 
     def test_catalog_manager_permissions_and_atomic_product_save(self) -> None:
         admin = create_user("catalog-admin@example.com", None, "password123", role="admin", display_name="Catalog Admin")
@@ -1473,11 +1779,11 @@ class BackendWorkflowTests(unittest.TestCase):
             finally:
                 connection.close()
             self.assertIsNotNone(version_row, process.stdout + process.stderr)
-            self.assertEqual("20260904_0014", version_row[0])
-            self.assertTrue({"products", "options", "users", "quotes", "audit_logs", "product_motor_prices", "product_specifications", "config_share_items", "product_base_option_groups", "product_base_options", "product_price_variants", "saved_catalog_items", "commerce_shares", "commerce_share_items", "commerce_quotes"}.issubset(tables))
+            self.assertEqual("20260905_0018", version_row[0])
+            self.assertTrue({"products", "options", "users", "quotes", "audit_logs", "product_motor_prices", "product_specifications", "config_share_items", "product_base_option_groups", "product_base_options", "product_price_variants", "saved_catalog_items", "commerce_shares", "commerce_share_items", "commerce_quotes", "share_imports", "quote_deliveries"}.issubset(tables))
             self.assertIn("description_override_en", columns)
             self.assertTrue({"label_en", "display_color", "enabled", "version", "translation_status"}.issubset(color_columns))
-            self.assertTrue({"deleted_at", "deleted_by", "delete_reason", "version"}.issubset(user_columns))
+            self.assertTrue({"deleted_at", "deleted_by", "delete_reason", "version", "gender", "birth_date", "signature"}.issubset(user_columns))
             self.assertTrue({"parent_id", "catalog_type", "enabled", "version", "translation_status"}.issubset(category_columns))
             self.assertTrue({"note_en", "deleted_at", "version", "translation_status"}.issubset(option_columns))
             self.assertTrue({"image_width", "image_height"}.issubset(option_columns))

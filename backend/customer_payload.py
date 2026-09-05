@@ -14,6 +14,8 @@ PRICE_KEYS = {
     "grand_total",
     "is_free",
     "line_total",
+    "motor_base_price_cny",
+    "motor_base_price_usd",
     "price",
     "price_cny",
     "price_cny_minor",

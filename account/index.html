@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#ffffff" />
+  <title>个人中心 | BOTEN</title>
+  <link rel="icon" type="image/png" href="../tb/site/LOGO.png?v=20260831" />
+  <link rel="stylesheet" href="../css/main.css?v=20260904-1" />
+  <link rel="stylesheet" href="../css/components.css?v=20260905-17" />
+  <link rel="stylesheet" href="account.css?v=20260905-3" />
+  <script src="../js/runtime-config.js?v=20260905-4"></script>
+  <script src="account.js?v=20260905-4" defer></script>
+</head>
+<body class="profile-page">
+  <a id="profile-skip-link" class="skip-link" href="#account-main">跳到主要内容</a>
+  <header class="profile-header">
+    <div class="profile-header-inner">
+      <a id="profile-brand-link" class="profile-brand" href="../" aria-label="返回主页">
+        <img src="../tb/site/BOTEN.png" alt="BOTEN" width="1617" height="545" />
+        <span>BOTEN DIESEL TEST BENCH</span>
+      </a>
+      <div class="profile-header-actions">
+        <div class="language-switcher" id="profile-language-switcher" role="group" aria-label="语言切换">
+          <button type="button" data-language="zh">中文</button>
+          <button type="button" data-language="en">EN</button>
+        </div>
+        <a class="btn btn-secondary btn-sm" href="../" id="profile-back-home">返回主页</a>
+      </div>
+    </div>
+  </header>
+
+  <main id="account-main" class="profile-shell" tabindex="-1">
+    <aside id="profile-sidebar" class="profile-sidebar" aria-label="个人中心导航">
+      <div class="profile-identity">
+        <span class="profile-initial" id="profile-initial">U</span>
+        <div><strong id="profile-sidebar-name">用户</strong><span id="profile-sidebar-contact">--</span></div>
+      </div>
+      <nav class="profile-navigation">
+        <button class="active" type="button" data-account-panel="profile" aria-current="page">我的资料</button>
+        <p id="profile-account-group">我的账号</p>
+        <button type="button" data-account-panel="account-contact">联系方式</button>
+        <button type="button" data-account-panel="account-security">密码与安全</button>
+        <p id="profile-business-group">我的业务</p>
+        <button type="button" data-account-panel="my-shares">我的分享记录</button>
+        <button class="profile-quote-nav" type="button" data-account-panel="my-quotes">我的报价单 <span id="profile-quote-unread" class="profile-unread-badge" hidden>0</span></button>
+      </nav>
+      <button id="profile-sign-out" class="profile-sign-out" type="button">退出登录</button>
+    </aside>
+
+    <div class="profile-content">
+      <section id="profile-load-error" class="profile-load-error" role="alert" hidden>
+        <h1 id="profile-load-error-title">暂时无法加载个人中心</h1>
+        <p id="profile-load-error-message">登录状态仍会保留，请检查服务状态后重试。</p>
+        <div class="profile-load-error-actions">
+          <button id="profile-load-retry" class="btn btn-primary" type="button">重新加载</button>
+          <a id="profile-load-back" class="btn btn-secondary" href="../">返回主页</a>
+        </div>
+      </section>
+      <section class="profile-panel" data-account-content="profile" aria-labelledby="profile-details-title">
+        <header class="profile-panel-header"><h1 id="profile-details-title">我的资料</h1><p id="profile-details-description">维护用于识别和联系您的基本资料。</p></header>
+        <form id="profile-details-form" class="profile-form" novalidate>
+          <label><span id="profile-name-label">姓名</span><input id="profile-display-name" name="display_name" maxlength="100" autocomplete="name" required /></label>
+          <label><span id="profile-gender-label">性别</span><select id="profile-gender" name="gender"><option value="">未设置</option><option value="male">男</option><option value="female">女</option><option value="other">其他</option></select></label>
+          <label><span id="profile-birth-label">生日</span><input id="profile-birth-date" name="birth_date" type="date" autocomplete="bday" /></label>
+          <label><span id="profile-signature-label">个性签名</span><textarea id="profile-signature" name="signature" maxlength="160" rows="4"></textarea><small id="profile-signature-count">0 / 160</small></label>
+          <div id="profile-details-status" class="profile-form-status" role="status" aria-live="polite"></div>
+          <footer class="profile-form-actions"><button id="profile-details-submit" class="btn btn-primary" type="submit">保存资料</button></footer>
+        </form>
+      </section>
+
+      <section class="profile-panel" data-account-content="account-contact" aria-labelledby="profile-contact-title" hidden>
+        <header class="profile-panel-header"><h1 id="profile-contact-title">联系方式</h1><p id="profile-contact-description">修改登录邮箱、国家和手机号。保存后需要重新登录。</p></header>
+        <form id="profile-contact-form" class="profile-form" novalidate>
+          <label><span id="profile-email-label">邮箱</span><input id="profile-email" name="email" type="email" autocomplete="email" spellcheck="false" /></label>
+          <label><span id="profile-country-label">国家</span><select id="profile-country" name="phone_country"></select></label>
+          <label><span id="profile-phone-label">手机号</span><span class="profile-phone-control"><span id="profile-calling-code" class="calling-code">+86</span><input id="profile-phone" name="phone" type="tel" inputmode="numeric" autocomplete="tel-national" pattern="[0-9]{6,15}" /></span></label>
+          <label><span id="profile-contact-password-label">当前密码</span><input id="profile-contact-password" name="current_password" type="password" autocomplete="current-password" required /></label>
+          <div id="profile-contact-status" class="profile-form-status" role="status" aria-live="polite"></div>
+          <footer class="profile-form-actions"><button id="profile-contact-submit" class="btn btn-primary" type="submit">保存并重新登录</button></footer>
+        </form>
+      </section>
+
+      <section class="profile-panel" data-account-content="account-security" aria-labelledby="profile-security-title" hidden>
+        <header class="profile-panel-header"><h1 id="profile-security-title">密码与安全</h1><p id="profile-security-description">设置至少 8 个字符的新密码。修改后需要重新登录。</p></header>
+        <form id="profile-password-form" class="profile-form" novalidate>
+          <label><span id="profile-current-password-label">当前密码</span><input id="profile-current-password" name="current_password" type="password" autocomplete="current-password" required /></label>
+          <label><span id="profile-new-password-label">新密码</span><input id="profile-new-password" name="new_password" type="password" minlength="8" maxlength="128" autocomplete="new-password" required /></label>
+          <label><span id="profile-confirm-password-label">确认新密码</span><input id="profile-confirm-password" name="confirm_password" type="password" minlength="8" maxlength="128" autocomplete="new-password" required /></label>
+          <div id="profile-password-status" class="profile-form-status" role="status" aria-live="polite"></div>
+          <footer class="profile-form-actions"><button id="profile-password-submit" class="btn btn-primary" type="submit">修改密码并重新登录</button></footer>
+        </form>
+      </section>
+
+      <section class="profile-panel" data-account-content="my-shares" aria-labelledby="profile-shares-title" hidden>
+        <header class="profile-panel-header"><h1 id="profile-shares-title">我的分享记录</h1><p id="profile-shares-description">查看当前账号生成过的配置分享码及有效状态。</p></header>
+        <div id="profile-shares-status" class="profile-form-status" role="status" aria-live="polite"></div>
+        <div id="profile-shares-list" class="profile-business-list"></div>
+        <footer class="profile-list-pagination"><span id="profile-shares-page">第 1 页</span><div><button id="profile-shares-prev" class="btn btn-secondary btn-sm" type="button">上一页</button><button id="profile-shares-next" class="btn btn-secondary btn-sm" type="button">下一页</button></div></footer>
+      </section>
+
+      <section class="profile-panel" data-account-content="my-quotes" aria-labelledby="profile-quotes-title" hidden>
+        <header class="profile-panel-header"><h1 id="profile-quotes-title">我的报价单</h1><p id="profile-quotes-description">查看业务员发送给您的正式报价和 PDF。</p></header>
+        <div id="profile-quotes-status" class="profile-form-status" role="status" aria-live="polite"></div>
+        <div id="profile-quotes-list" class="profile-business-list"></div>
+      </section>
+    </div>
+  </main>
+
+  <dialog id="profile-business-dialog" class="share-dialog profile-business-dialog" aria-labelledby="profile-business-dialog-title">
+    <div class="share-dialog-card profile-business-dialog-card">
+      <header class="share-dialog-header"><div><span id="profile-business-dialog-kicker" class="auth-kicker">DETAILS</span><h2 id="profile-business-dialog-title">详情</h2></div><button id="profile-business-dialog-close" class="btn btn-text btn-sm" type="button" aria-label="关闭">✕</button></header>
+      <div id="profile-business-dialog-body" class="profile-business-dialog-body"></div>
+      <footer id="profile-business-dialog-actions" class="profile-business-dialog-actions"></footer>
+    </div>
+  </dialog>
+</body>
+</html>

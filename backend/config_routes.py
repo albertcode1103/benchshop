@@ -17,7 +17,11 @@ from .config_repository import (
     update_saved_config,
 )
 from .rate_limit import enforce
-from .quote_repository import save_quote, list_quotes, get_quote, delete_quote, list_reference_prices
+from .quote_repository import (
+    save_quote, list_quotes, get_quote, delete_quote, list_reference_prices,
+    deliver_quote, withdraw_quote_delivery, list_customer_quotes, get_customer_quote,
+    archive_quote, restore_quote, quote_history,
+)
 from .pdf_service import commerce_bundle_pdf, configuration_bundle_pdf, configuration_pdf, quote_pdf as render_quote_pdf
 from .audit_repository import write_audit
 from .account_errors import AccountError
@@ -28,16 +32,35 @@ from .catalog_cart_repository import (
     list_public_catalog_items,
     list_saved_catalog_items,
     save_catalog_item,
+    set_saved_catalog_option_quantity,
     update_saved_catalog_item,
 )
 from .commerce_repository import (
     archive_cart_items,
+    customer_share_preview,
     create_commerce_share,
     get_any_share,
+    import_share_to_cart,
+    get_customer_share,
+    list_customer_shares,
     load_cart_documents,
     search_all_shares,
 )
 from .customer_payload import without_prices
+from .user_repository import list_users
+from .inquiry_repository import (
+    InquiryError,
+    cancel_customer_inquiry,
+    create_cart_inquiry,
+    create_current_device_inquiry,
+    get_customer_inquiry,
+    get_staff_inquiry,
+    inquiry_quote_items,
+    list_customer_inquiries,
+    list_staff_inquiries,
+    mark_inquiry_quoted,
+    update_staff_inquiry,
+)
 
 
 router = APIRouter(prefix="/api/v1", tags=["configurations"])
@@ -102,6 +125,56 @@ class UpdateCatalogCartItemRequest(BaseModel):
     version: int = Field(ge=1)
     quantity: int = Field(ge=1, le=999)
     lang: str = Field(default="zh", max_length=5)
+
+
+class SetCatalogCartQuantityRequest(BaseModel):
+    quantity: int = Field(ge=0, le=999)
+    lang: str = Field(default="zh", max_length=5)
+
+
+class ShareImportRequest(BaseModel):
+    idempotency_key: str = Field(min_length=8, max_length=80)
+    lang: str = Field(default="zh", max_length=5)
+
+
+class QuoteDeliveryRequest(BaseModel):
+    recipient_user_id: Optional[str] = Field(default=None, max_length=100)
+    source_share_id: Optional[str] = Field(default=None, max_length=100)
+
+
+class QuoteLifecycleRequest(BaseModel):
+    version: int = Field(ge=1)
+
+
+class CurrentDeviceInquiryRequest(BaseModel):
+    product_id: str = Field(min_length=1, max_length=100)
+    color: str = Field(min_length=1, max_length=100)
+    selections: Dict[str, Any] = Field(default_factory=dict)
+    lang: str = Field(default="zh", max_length=5)
+    message: str = Field(default="", max_length=1000)
+    idempotency_key: str = Field(min_length=8, max_length=80)
+
+
+class CartInquiryRequest(BaseModel):
+    lang: str = Field(default="zh", max_length=5)
+    message: str = Field(default="", max_length=1000)
+    idempotency_key: str = Field(min_length=8, max_length=80)
+
+
+class InquiryCancelRequest(BaseModel):
+    version: int = Field(ge=1)
+
+
+class StaffInquiryUpdateRequest(BaseModel):
+    version: int = Field(ge=1)
+    status: Optional[str] = Field(default=None, max_length=20)
+    assigned_to: Optional[str] = Field(default=None, max_length=100)
+
+
+class InquiryQuoteRequest(BaseModel):
+    version: int = Field(ge=1)
+    currency: str = Field(default="CNY", max_length=3)
+    title: str = Field(default="", max_length=200)
 
 
 def registered_user(user=Depends(current_user)):
@@ -191,6 +264,27 @@ def add_catalog_cart_item(payload: SaveCatalogCartItemRequest, user=Depends(regi
     return without_prices(result)
 
 
+@router.put("/cart/catalog-options/{option_id}")
+def set_catalog_cart_quantity(option_id: str, payload: SetCatalogCartQuantityRequest, user=Depends(registered_user)):
+    try:
+        result = set_saved_catalog_option_quantity(
+            user["id"],
+            option_id,
+            payload.quantity,
+            "en" if payload.lang == "en" else "zh",
+        )
+    except CatalogValidationError as error:
+        raise _catalog_cart_error(error)
+    write_audit(
+        user["id"],
+        "catalog_cart_option_quantity_set",
+        "saved_catalog_items",
+        option_id,
+        {"quantity": payload.quantity},
+    )
+    return without_prices(result) if result is not None else Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.patch("/cart/catalog-items/{item_id}")
 def edit_catalog_cart_item(item_id: str, payload: UpdateCatalogCartItemRequest, user=Depends(registered_user)):
     try:
@@ -255,6 +349,197 @@ def archive_cart(payload: CartBatchRequest, user=Depends(registered_user)):
     except CatalogValidationError as error:
         raise _catalog_cart_error(error)
     return {"archived_count": count}
+
+
+def _raise_inquiry_error(error: InquiryError) -> None:
+    code = str(error)
+    status_code = 409 if code in ("INQUIRY_DUPLICATE_REQUEST", "INQUIRY_STATUS_CONFLICT", "INQUIRY_ALREADY_CANCELLED", "INQUIRY_QUOTE_ALREADY_EXISTS") else 404 if code == "INQUIRY_NOT_FOUND" else 403 if code == "INQUIRY_ACCESS_DENIED" else 422
+    raise AccountError(code if code.startswith("INQUIRY_") else "ACCOUNT_VALIDATION_FAILED", status_code=status_code)
+
+
+@router.post("/customer/inquiries/current-configuration", status_code=status.HTTP_201_CREATED)
+def create_current_inquiry(payload: CurrentDeviceInquiryRequest, request: Request, user=Depends(registered_user)):
+    client = request.client.host if request.client else "unknown"
+    enforce("customer-inquiry:{}:{}".format(client, user["id"]), limit=20, window_seconds=900)
+    try:
+        result = create_current_device_inquiry(
+            user["id"], payload.product_id, payload.color, payload.selections,
+            payload.lang, payload.message, payload.idempotency_key,
+        )
+    except InquiryError as error:
+        _raise_inquiry_error(error)
+    write_audit(user["id"], "customer_inquiry_create", "customer_inquiries", result["id"], {"source_type": "current_device", "item_count": result["item_count"], "replayed": result["replayed"]})
+    return without_prices(result)
+
+
+@router.post("/customer/inquiries/cart", status_code=status.HTTP_201_CREATED)
+def create_cart_inquiry_request(payload: CartInquiryRequest, request: Request, user=Depends(registered_user)):
+    client = request.client.host if request.client else "unknown"
+    enforce("customer-inquiry:{}:{}".format(client, user["id"]), limit=20, window_seconds=900)
+    try:
+        result = create_cart_inquiry(user["id"], payload.lang, payload.message, payload.idempotency_key)
+    except InquiryError as error:
+        _raise_inquiry_error(error)
+    write_audit(user["id"], "customer_inquiry_create", "customer_inquiries", result["id"], {"source_type": "cart", "item_count": result["item_count"], "replayed": result["replayed"]})
+    return without_prices(result)
+
+
+@router.get("/customer/me/inquiries")
+def customer_own_inquiries(page: int = 1, page_size: int = 20, user=Depends(registered_user)):
+    return without_prices(list_customer_inquiries(user["id"], page, page_size))
+
+
+@router.get("/customer/me/inquiries/{inquiry_id}")
+def customer_own_inquiry(inquiry_id: str, lang: str = "zh", user=Depends(registered_user)):
+    result = get_customer_inquiry(inquiry_id, user["id"], "en" if lang == "en" else "zh")
+    if result is None:
+        raise AccountError("INQUIRY_NOT_FOUND", status_code=404)
+    return without_prices(result)
+
+
+@router.post("/customer/me/inquiries/{inquiry_id}/cancel")
+def cancel_own_inquiry(inquiry_id: str, payload: InquiryCancelRequest, user=Depends(registered_user)):
+    try:
+        result = cancel_customer_inquiry(inquiry_id, user["id"], payload.version)
+    except InquiryError as error:
+        _raise_inquiry_error(error)
+    if result is None:
+        raise AccountError("INQUIRY_NOT_FOUND", status_code=404)
+    write_audit(user["id"], "customer_inquiry_cancel", "customer_inquiries", inquiry_id, {"version": payload.version})
+    return without_prices(result)
+
+
+@router.get("/staff/inquiries")
+def staff_inquiries(
+    page: int = 1,
+    page_size: int = 20,
+    query: str = "",
+    status: str = "all",
+    lang: str = "zh",
+    user=Depends(staff_user),
+):
+    try:
+        return list_staff_inquiries(user["id"], user["role"], page, page_size, query, status, lang)
+    except InquiryError as error:
+        _raise_inquiry_error(error)
+
+
+@router.get("/staff/inquiries/{inquiry_id}")
+def staff_inquiry(inquiry_id: str, lang: str = "zh", user=Depends(staff_user)):
+    result = get_staff_inquiry(inquiry_id, user["id"], user["role"], lang)
+    if result is None:
+        raise AccountError("INQUIRY_NOT_FOUND", status_code=404)
+    return result
+
+
+@router.patch("/staff/inquiries/{inquiry_id}")
+def update_inquiry(inquiry_id: str, payload: StaffInquiryUpdateRequest, user=Depends(staff_user)):
+    try:
+        result = update_staff_inquiry(inquiry_id, user["id"], user["role"], payload.version, payload.status, payload.assigned_to)
+    except InquiryError as error:
+        _raise_inquiry_error(error)
+    if result is None:
+        raise AccountError("INQUIRY_NOT_FOUND", status_code=404)
+    write_audit(user["id"], "inquiry_update", "customer_inquiries", inquiry_id, {"status": result.get("status"), "assigned_to": result.get("assigned_to") or ""})
+    return result
+
+
+@router.post("/staff/inquiries/{inquiry_id}/convert-to-quote", status_code=status.HTTP_201_CREATED)
+def convert_inquiry_to_quote(inquiry_id: str, payload: InquiryQuoteRequest, user=Depends(staff_user)):
+    language = "en" if payload.currency == "USD" else "zh"
+    inquiry = get_staff_inquiry(inquiry_id, user["id"], user["role"], language)
+    if inquiry is None:
+        raise AccountError("INQUIRY_NOT_FOUND", status_code=404)
+    if inquiry.get("converted_quote_id"):
+        raise AccountError("INQUIRY_QUOTE_ALREADY_EXISTS", status_code=409)
+    try:
+        items = inquiry_quote_items(inquiry)
+        title = payload.title.strip() or ("Inquiry {}".format(inquiry["inquiry_number"]) if language == "en" else "询价 {}".format(inquiry["inquiry_number"]))
+        quote = save_quote(
+            None, user["id"], title, items, 0, currency=payload.currency,
+            customer_name=inquiry.get("customer_name_snapshot") or inquiry.get("customer_display_name") or "",
+            customer_email=inquiry.get("customer_email_snapshot") or "",
+            language=language, allow_any_owner=user["role"] == "admin",
+        )
+        result = mark_inquiry_quoted(inquiry_id, user["id"], user["role"], quote["id"], payload.version)
+    except InquiryError as error:
+        _raise_inquiry_error(error)
+    except ValueError:
+        raise AccountError("INQUIRY_SNAPSHOT_INVALID", status_code=422)
+    if result is None:
+        raise AccountError("INQUIRY_NOT_FOUND", status_code=404)
+    write_audit(user["id"], "inquiry_convert_quote", "customer_inquiries", inquiry_id, {"quote_id": quote["id"], "inquiry_number": inquiry["inquiry_number"]})
+    return {"inquiry": result, "quote": quote}
+
+
+@router.get("/customer/me/shares")
+def customer_own_shares(page: int = 1, page_size: int = 20, user=Depends(registered_user)):
+    return list_customer_shares(user["id"], page, page_size)
+
+
+@router.get("/customer/me/shares/{share_id}")
+def customer_own_share(share_id: str, lang: str = "zh", user=Depends(registered_user)):
+    result = get_customer_share(share_id, user["id"], "en" if lang == "en" else "zh")
+    if result is None:
+        raise AccountError("SHARE_NOT_FOUND", status_code=404)
+    return without_prices(result)
+
+
+@router.get("/customer/me/quotes")
+def customer_own_quotes(user=Depends(registered_user)):
+    items = list_customer_quotes(user["id"])
+    return {"items": items, "total": len(items), "unread_count": sum(1 for item in items if item.get("unread"))}
+
+
+@router.get("/customer/me/quotes/{quote_id}")
+def customer_own_quote(quote_id: str, user=Depends(registered_user)):
+    result = get_customer_quote(quote_id, user["id"], mark_viewed=True)
+    if result is None:
+        raise AccountError("QUOTE_NOT_FOUND", status_code=404)
+    return result
+
+
+@router.get("/customer/me/quotes/{quote_id}/pdf")
+def customer_own_quote_pdf(quote_id: str, user=Depends(registered_user)):
+    result = get_customer_quote(quote_id, user["id"], mark_viewed=True)
+    if result is None:
+        raise AccountError("QUOTE_NOT_FOUND", status_code=404)
+    return _pdf_response(render_quote_pdf(result), "quote-{}.pdf".format(quote_id[:8]))
+
+
+@router.get("/customer/shares/{code}")
+def customer_share(code: str, request: Request, lang: str = "zh", user=Depends(registered_user)):
+    if len(code) != 6 or not code.isdigit():
+        raise AccountError("SHARE_CODE_INVALID", field="code")
+    client = request.client.host if request.client else "unknown"
+    # Limit lookup attempts per signed-in user and client, rather than per code,
+    # so changing the six-digit code cannot bypass brute-force protection.
+    enforce("customer-share:{}:{}".format(client, user["id"]), limit=20, window_seconds=900)
+    result = customer_share_preview(code, "en" if lang == "en" else "zh")
+    if result is None:
+        raise AccountError("SHARE_NOT_FOUND", field="code", status_code=404)
+    return without_prices(result)
+
+
+@router.post("/customer/shares/{code}/import")
+def import_customer_share(code: str, payload: ShareImportRequest, request: Request, user=Depends(registered_user)):
+    if len(code) != 6 or not code.isdigit():
+        raise AccountError("SHARE_CODE_INVALID", field="code")
+    client = request.client.host if request.client else "unknown"
+    enforce("customer-share-import:{}:{}".format(client, user["id"]), limit=20, window_seconds=900)
+    try:
+        result = import_share_to_cart(code, user["id"], payload.idempotency_key, payload.lang)
+    except CatalogValidationError as error:
+        status_code = 404 if error.code == "SHARE_NOT_FOUND" else 409 if error.code == "SHARE_NO_AVAILABLE_ITEMS" else 422
+        raise AccountError(error.code, field=error.field or None, status_code=status_code, params=error.params)
+    write_audit(
+        user["id"],
+        "customer_share_import",
+        "share",
+        code,
+        {"imported_count": result["imported_count"], "skipped_count": result["skipped_count"], "replayed": result["replayed"]},
+    )
+    return without_prices(result)
 
 
 @router.get("/configs")
@@ -400,6 +685,17 @@ def quotes(user=Depends(staff_user)):
 def reference_prices(user=Depends(staff_user)):
     return list_reference_prices()
 
+
+@router.get("/staff/customers")
+def staff_customers(query: str = "", user=Depends(staff_user)):
+    items = list_users(query=query, role="customer", enabled=True, limit=50)
+    return {
+        "items": [
+            {"id": item["id"], "display_name": item.get("display_name") or "", "email": item.get("email"), "phone": item.get("phone")}
+            for item in items
+        ]
+    }
+
 @router.post("/quotes", status_code=status.HTTP_201_CREATED)
 def add_quote(payload: QuoteRequest, user=Depends(staff_user)):
     try:
@@ -425,9 +721,84 @@ def add_quote(payload: QuoteRequest, user=Depends(staff_user)):
             status_code = 404
         elif detail == "Quote access denied":
             status_code = 403
+        elif detail == "Quote archived":
+            raise AccountError("QUOTE_ARCHIVED", status_code=409)
         else:
             status_code = 422
         raise HTTPException(status_code=status_code, detail=detail)
+
+
+@router.post("/staff/quotes/{quote_id}/deliver")
+def send_quote_to_customer(quote_id: str, payload: QuoteDeliveryRequest, user=Depends(staff_user)):
+    owned_quote = get_quote(quote_id, None if user["role"] == "admin" else user["id"])
+    if owned_quote is None:
+        raise AccountError("QUOTE_NOT_FOUND", status_code=404)
+    try:
+        result = deliver_quote(quote_id, user["id"], payload.recipient_user_id, payload.source_share_id)
+    except ValueError as error:
+        code = {
+            "Quote not found": "QUOTE_NOT_FOUND",
+            "Quote recipient required": "QUOTE_RECIPIENT_REQUIRED",
+            "Quote recipient unavailable": "QUOTE_RECIPIENT_UNAVAILABLE",
+            "Quote archived": "QUOTE_ARCHIVED",
+        }.get(str(error), "ACCOUNT_VALIDATION_FAILED")
+        raise AccountError(code, field="recipient_user_id", status_code=404 if code == "QUOTE_NOT_FOUND" else 422)
+    write_audit(user["id"], "quote_deliver", "quote_deliveries", result["id"], {"quote_id": quote_id, "recipient_user_id": result["recipient_user_id"], "source_share_id": result.get("source_share_id") or ""})
+    return result
+
+
+@router.post("/staff/quotes/{quote_id}/withdraw")
+def withdraw_quote_from_customer(quote_id: str, payload: QuoteDeliveryRequest, user=Depends(staff_user)):
+    owned_quote = get_quote(quote_id, None if user["role"] == "admin" else user["id"])
+    if owned_quote is None:
+        raise AccountError("QUOTE_NOT_FOUND", status_code=404)
+    count = withdraw_quote_delivery(quote_id, payload.recipient_user_id)
+    if not count:
+        raise AccountError("QUOTE_DELIVERY_NOT_FOUND", status_code=404)
+    write_audit(user["id"], "quote_withdraw", "quote_deliveries", quote_id, {"recipient_user_id": payload.recipient_user_id or "", "delivery_count": count})
+    return {"withdrawn_count": count}
+
+
+@router.post("/staff/quotes/{quote_id}/archive")
+def archive_staff_quote(quote_id: str, payload: QuoteLifecycleRequest, user=Depends(staff_user)):
+    try:
+        result = archive_quote(
+            quote_id, user["id"],
+            user_id=None if user["role"] == "admin" else user["id"],
+            expected_version=payload.version,
+        )
+    except ValueError as error:
+        code = {"Quote already archived": "QUOTE_ARCHIVED", "Quote version conflict": "QUOTE_VERSION_CONFLICT"}.get(str(error), "ACCOUNT_VALIDATION_FAILED")
+        raise AccountError(code, status_code=409)
+    if result is None:
+        raise AccountError("QUOTE_NOT_FOUND", status_code=404)
+    write_audit(user["id"], "quote_archive", "commerce_quotes", quote_id, {"lifecycle_status": "archived"})
+    return result
+
+
+@router.post("/staff/quotes/{quote_id}/restore")
+def restore_staff_quote(quote_id: str, payload: QuoteLifecycleRequest, user=Depends(staff_user)):
+    try:
+        result = restore_quote(
+            quote_id, user["id"],
+            user_id=None if user["role"] == "admin" else user["id"],
+            expected_version=payload.version,
+        )
+    except ValueError as error:
+        code = {"Quote not archived": "QUOTE_NOT_ARCHIVED", "Quote version conflict": "QUOTE_VERSION_CONFLICT"}.get(str(error), "ACCOUNT_VALIDATION_FAILED")
+        raise AccountError(code, status_code=409)
+    if result is None:
+        raise AccountError("QUOTE_NOT_FOUND", status_code=404)
+    write_audit(user["id"], "quote_restore", "commerce_quotes", quote_id, {"lifecycle_status": result.get("lifecycle_status")})
+    return result
+
+
+@router.get("/staff/quotes/{quote_id}/history")
+def staff_quote_history(quote_id: str, user=Depends(staff_user)):
+    result = quote_history(quote_id, None if user["role"] == "admin" else user["id"])
+    if result is None:
+        raise AccountError("QUOTE_NOT_FOUND", status_code=404)
+    return result
 
 @router.get("/quotes/{quote_id}")
 def quote(quote_id: str, user=Depends(staff_user)):
@@ -443,8 +814,14 @@ def quote_pdf(quote_id: str, user=Depends(staff_user)):
 
 @router.delete("/quotes/{quote_id}", status_code=status.HTTP_204_NO_CONTENT)
 def remove_quote(quote_id: str, user=Depends(staff_user)):
-    if not delete_quote(quote_id, None if user["role"] == "admin" else user["id"]):
-        raise HTTPException(status_code=404, detail="Quote not found")
+    try:
+        deleted = delete_quote(quote_id, None if user["role"] == "admin" else user["id"])
+    except ValueError as error:
+        if str(error) == "Quote sent deletion forbidden":
+            raise AccountError("QUOTE_DELETE_FORBIDDEN", status_code=409)
+        raise
+    if not deleted:
+        raise AccountError("QUOTE_NOT_FOUND", status_code=404)
     write_audit(user["id"], "quote_delete", "quotes", quote_id)
     return None
 

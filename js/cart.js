@@ -1,5 +1,4 @@
 let serverCart = [];
-let selectedCartIds = new Set();
 let editingConfig = null;
 
 const cartText = (key, zh, en) => {
@@ -111,7 +110,7 @@ function notifyCatalogCartUpdated() {
 
 async function refreshServerCart() {
   if (!isAuthenticated()) {
-    serverCart = []; selectedCartIds.clear(); renderCartCount(); renderCartPanel(); notifyCatalogCartUpdated(); return;
+    serverCart = []; renderCartCount(); renderCartPanel(); notifyCatalogCartUpdated(); return;
   }
   try {
     const [configs, catalogItems] = await Promise.all([
@@ -122,14 +121,25 @@ async function refreshServerCart() {
       ...configs.items.map(savedConfigToCartItem),
       ...catalogItems.items.map(savedCatalogToCartItem)
     ]);
-    const validIds = new Set(serverCart.map((item) => item.id));
-    selectedCartIds = new Set([...selectedCartIds].filter((id) => validIds.has(id)));
   } catch (error) {
     console.error("Failed to load cart", error);
-    serverCart = []; selectedCartIds.clear();
+    serverCart = [];
   }
   renderCartCount(); renderCartPanel(); notifyCatalogCartUpdated();
 }
+
+window.refreshCatalogCartOnly = async function refreshCatalogCartOnly() {
+  if (!isAuthenticated()) return refreshServerCart();
+  const catalogItems = await authRequest(`/cart/catalog-items?lang=${cartLanguage()}`);
+  const deviceItems = serverCart.filter((item) => item.itemType === "device_config");
+  serverCart = orderCartItems([
+    ...deviceItems,
+    ...catalogItems.items.map(savedCatalogToCartItem)
+  ]);
+  renderCartCount();
+  renderCartPanel();
+  notifyCatalogCartUpdated();
+};
 
 function renderCartCount() {
   const badge = document.getElementById("cart-count");
@@ -138,36 +148,42 @@ function renderCartCount() {
   badge.hidden = serverCart.length === 0;
 }
 
-function renderCartSelection() {
-  const toolbar = document.getElementById("cart-selection-toolbar");
-  const selectAll = document.getElementById("cart-select-all");
-  const count = document.getElementById("cart-selection-count");
-  const selectedCount = selectedCartIds.size;
-  if (toolbar) toolbar.hidden = serverCart.length === 0;
-  if (selectAll) {
-    selectAll.checked = serverCart.length > 0 && selectedCount === serverCart.length;
-    selectAll.indeterminate = selectedCount > 0 && selectedCount < serverCart.length;
-  }
-  if (count) count.textContent = cartText("cartSelectedCount", "已选择 {selected} / {total} 项", "{selected} of {total} Selected")
-    .replace("{selected}", selectedCount).replace("{total}", serverCart.length);
-  ["cart-share-selected", "cart-pdf-selected", "cart-remove-selected"].forEach((id) => {
+function renderCartActions() {
+  const hasItems = serverCart.length > 0 && isAuthenticated();
+  const headerActions = [
+    ["cart-pdf", "exportCombinedPdf", "导出 PDF", "Export PDF"],
+    ["cart-share", "shareSelected", "分享", "Share"],
+    ["cart-close", "closeCart", "关闭", "Close"],
+  ];
+  headerActions.forEach(([id, key, zh, en]) => {
     const button = document.getElementById(id);
-    if (button) button.disabled = serverCart.length === 0;
+    if (!button) return;
+    const label = cartText(key, zh, en);
+    button.setAttribute("aria-label", label);
+    const text = button.querySelector(".cart-action-label");
+    if (text) text.textContent = label;
+    if (id !== "cart-close") button.disabled = !hasItems;
   });
+  const inquiry = document.getElementById("cart-inquiry");
+  if (inquiry) {
+    inquiry.disabled = serverCart.length === 0;
+    inquiry.textContent = isAuthenticated()
+      ? cartText("cartContactSales", "联系销售获取报价", "Contact Sales for a Quote")
+      : cartText("loginToContactSales", "登录后联系销售", "Sign in to Contact Sales");
+  }
 }
 
 function renderDeviceCartCard(item, deviceIndex) {
-  const checked = selectedCartIds.has(item.id) ? "checked" : "";
   const coreHtml = item.groups.filter((group) => ["color", "motor", "voltage", "channel"].includes(group.id)).map((group) =>
     `<div class="cart-item-core-row"><span>${escapeCartHtml(group.category)}</span><strong>${escapeCartHtml(Array.isArray(group.value) ? group.value.join("、") : group.value)}</strong></div>`).join("");
   const summaryHtml = item.groups.filter((group) => !["color", "motor", "voltage", "channel"].includes(group.id)).map((group) => {
     const optionCount = group.count || (Array.isArray(group.value) ? group.value.length : 1);
     return `<div class="cart-item-summary-row"><span>${escapeCartHtml(group.category)}</span><strong>${optionCount}</strong></div>`;
   }).join("");
-  return `<article class="cart-item ${checked ? "selected" : ""}">
+  return `<article class="cart-item">
     <header class="cart-item-toolbar">
-      <div class="cart-item-toolbar-label"><label class="cart-item-select"><input type="checkbox" data-select-cart="${escapeCartHtml(item.id)}" ${checked} /><span class="sr-only">${cartText("selectConfiguration", "选择配置", "Select configuration")} ${escapeCartHtml(item.modelName)}</span></label><span class="cart-item-kind-title">${cartText("deviceSequence", "设备 {number}", "Device {number}").replace("{number}", deviceIndex)}</span></div>
-      <div class="cart-item-actions"><button class="btn btn-secondary btn-sm cart-item-edit" type="button" data-id="${escapeCartHtml(item.id)}">${cartText("editAction", "修改", "Edit")}</button><button class="btn btn-secondary btn-sm cart-item-details" type="button" data-id="${escapeCartHtml(item.id)}">${cartText("viewDetails", "查看详情", "View Details")}</button></div>
+      <div class="cart-item-toolbar-label"><span class="cart-item-kind-title">${cartText("deviceSequence", "设备 {number}", "Device {number}").replace("{number}", deviceIndex)}</span></div>
+      <div class="cart-item-actions"><button class="btn btn-secondary btn-sm cart-item-details" type="button" data-id="${escapeCartHtml(item.id)}">${cartText("cartView", "详情", "View")}</button><button class="btn btn-secondary btn-sm cart-item-edit" type="button" data-id="${escapeCartHtml(item.id)}">${cartText("editAction", "修改", "Edit")}</button><button class="btn btn-danger btn-sm cart-item-delete" type="button" data-id="${escapeCartHtml(item.id)}">${cartText("deleteAction", "删除", "Delete")}</button></div>
     </header>
     <div class="cart-item-heading"><div class="cart-item-model">${escapeCartHtml(item.modelName)}</div><div class="cart-item-title">${escapeCartHtml(item.productTitle || item.titleName)}</div></div>
     <div class="cart-item-core">${coreHtml}</div>${summaryHtml ? `<div class="cart-item-summary">${summaryHtml}</div>` : ""}
@@ -181,14 +197,12 @@ function catalogCartItems(type) {
 function renderCatalogCartGroup(type, items) {
   const toolMode = type === "tools";
   const title = toolMode ? cartText("serviceTools", "维修工具", "Service Tools") : cartText("accessories", "设备附件", "Accessories");
-  const selectedCount = items.filter((item) => selectedCartIds.has(item.id)).length;
-  const checked = selectedCount === items.length ? "checked" : "";
   const totalQuantity = items.reduce((total, item) => total + Number(item.quantity || 1), 0);
   const rows = items.map((item) => `<div class="cart-catalog-group-row"><span><strong>${escapeCartHtml(item.name || "--")}</strong><small>${escapeCartHtml(item.code || "--")}</small></span><b>× ${item.quantity}</b></div>`).join("");
-  return `<article class="cart-item cart-catalog-group-card ${selectedCount ? "selected" : ""}" data-catalog-cart-group="${type}">
+  return `<article class="cart-item cart-catalog-group-card" data-catalog-cart-group="${type}">
     <header class="cart-item-toolbar">
-      <div class="cart-item-toolbar-label"><label class="cart-item-select"><input type="checkbox" data-select-cart-group="${type}" ${checked} /><span class="sr-only">${cartText("selectCatalogGroup", "选择全部", "Select all")} ${escapeCartHtml(title)}</span></label><span class="cart-item-kind-title">${escapeCartHtml(title)}</span></div>
-      <div class="cart-item-actions"><button class="btn btn-secondary btn-sm" type="button" data-edit-catalog-group="${type}">${cartText("editAction", "修改", "Edit")}</button></div>
+      <div class="cart-item-toolbar-label"><span class="cart-item-kind-title">${escapeCartHtml(title)}</span></div>
+      <div class="cart-item-actions"><button class="btn btn-secondary btn-sm" type="button" data-edit-catalog-group="${type}">${cartText("editAction", "修改", "Edit")}</button><button class="btn btn-danger btn-sm" type="button" data-delete-catalog-group="${type}">${cartText("deleteAction", "删除", "Delete")}</button></div>
     </header>
     <div class="cart-catalog-group-list">${rows}</div>
     <footer class="cart-catalog-group-total"><span>${cartText("totalQuantity", "总数", "Total")}</span><strong>${totalQuantity} ${cartText("quantityUnit", "件", "items")}</strong></footer>
@@ -202,12 +216,12 @@ function renderCartPanel() {
   if (!isAuthenticated()) {
     itemsEl.innerHTML = ""; emptyEl.hidden = false;
     emptyEl.textContent = cartText("signInToSave", "登录后可保存配置", "Sign in to save");
-    renderCartSelection(); return;
+    renderCartActions(); return;
   }
   if (serverCart.length === 0) {
     itemsEl.innerHTML = ""; emptyEl.hidden = false;
     emptyEl.textContent = cartText("noSaved", "暂无已保存配置", "No saved configurations");
-    renderCartSelection(); return;
+    renderCartActions(); return;
   }
   emptyEl.hidden = true;
   const displayUnits = serverCart.filter((item) => item.itemType === "device_config").map((item) => ({ kind: "device", item }));
@@ -217,24 +231,12 @@ function renderCartPanel() {
   });
   let deviceIndex = 0;
   itemsEl.innerHTML = displayUnits.map((unit) => unit.kind === "device" ? renderDeviceCartCard(unit.item, ++deviceIndex) : renderCatalogCartGroup(unit.type, unit.items)).join("");
-  itemsEl.querySelectorAll("[data-select-cart]").forEach((checkbox) => checkbox.addEventListener("change", () => {
-    if (checkbox.checked) selectedCartIds.add(checkbox.dataset.selectCart);
-    else selectedCartIds.delete(checkbox.dataset.selectCart);
-    renderCartPanel();
-  }));
-  itemsEl.querySelectorAll("[data-select-cart-group]").forEach((checkbox) => {
-    const ids = catalogCartItems(checkbox.dataset.selectCartGroup).map((item) => item.id);
-    const selectedCount = ids.filter((id) => selectedCartIds.has(id)).length;
-    checkbox.indeterminate = selectedCount > 0 && selectedCount < ids.length;
-    checkbox.addEventListener("change", () => {
-      ids.forEach((id) => checkbox.checked ? selectedCartIds.add(id) : selectedCartIds.delete(id));
-      renderCartPanel();
-    });
-  });
   itemsEl.querySelectorAll(".cart-item-edit").forEach((button) => button.addEventListener("click", () => beginConfigEdit(button.dataset.id)));
   itemsEl.querySelectorAll(".cart-item-details").forEach((button) => button.addEventListener("click", () => showCartDetails(button.dataset.id)));
+  itemsEl.querySelectorAll(".cart-item-delete").forEach((button) => button.addEventListener("click", () => removeDeviceCartItem(button.dataset.id, button)));
   itemsEl.querySelectorAll("[data-edit-catalog-group]").forEach((button) => button.addEventListener("click", () => showCatalogGroupDialog(button.dataset.editCatalogGroup)));
-  renderCartSelection();
+  itemsEl.querySelectorAll("[data-delete-catalog-group]").forEach((button) => button.addEventListener("click", () => removeCatalogCartGroup(button.dataset.deleteCatalogGroup, button)));
+  renderCartActions();
 }
 
 function showCatalogGroupDialog(type) {
@@ -248,7 +250,7 @@ function showCatalogGroupDialog(type) {
   dialog.setAttribute("aria-labelledby", "catalog-group-dialog-title");
   const rows = items.map((item) => `<article class="catalog-cart-dialog-row" data-catalog-dialog-item="${escapeCartHtml(item.id)}" data-version="${item.version}" data-original-quantity="${item.quantity}">
     <div class="catalog-cart-dialog-copy"><strong>${escapeCartHtml(item.name || "--")}</strong><small>${escapeCartHtml(item.code || "--")}</small></div>
-    <label class="catalog-cart-dialog-quantity"><span>${cartText("quantity", "数量", "Quantity")}</span><span class="catalog-dialog-stepper"><button type="button" data-catalog-quantity-step="-1" aria-label="${cartText("decreaseQuantity", "减少数量", "Decrease quantity")}">−</button><input type="number" min="1" max="999" step="1" value="${item.quantity}" inputmode="numeric"><button type="button" data-catalog-quantity-step="1" aria-label="${cartText("increaseQuantity", "增加数量", "Increase quantity")}">+</button></span></label>
+    <div class="catalog-cart-dialog-quantity"><span class="catalog-dialog-stepper"><button type="button" data-catalog-quantity-step="-1" aria-label="${cartText("decreaseQuantity", "减少数量", "Decrease quantity")}">−</button><input type="number" min="1" max="999" step="1" value="${item.quantity}" inputmode="numeric" aria-label="${cartText("quantity", "数量", "Quantity")}：${escapeCartHtml(item.name || item.code || "")}"><button type="button" data-catalog-quantity-step="1" aria-label="${cartText("increaseQuantity", "增加数量", "Increase quantity")}">+</button></span></div>
     <button class="btn btn-secondary btn-sm catalog-dialog-delete" type="button" data-mark-catalog-delete aria-pressed="false">${cartText("deleteAction", "删除", "Delete")}</button>
   </article>`).join("");
   dialog.innerHTML = `<form method="dialog" class="share-dialog-card catalog-group-dialog-card">
@@ -441,10 +443,8 @@ function updateEditStatus() {
   if (button) button.textContent = editingConfig ? cartText("saveChanges", "保存修改", "Save Changes") : cartText("saveCart", "保存配置到购物车", "Save Configuration to Cart");
 }
 
-function selectedItems() {
-  return serverCart
-    .filter((item) => selectedCartIds.has(item.id))
-    .map((item) => ({ item_type: item.itemType || "device_config", id: item.id }));
+function allCartItems() {
+  return serverCart.map((item) => ({ item_type: item.itemType || "device_config", id: item.id }));
 }
 
 function formatShareExpiry(value) {
@@ -471,23 +471,23 @@ async function copyShareCode() {
   } catch (_) { window.prompt(cartText("copyCode", "复制分享码", "Copy Code"), code); }
 }
 
-async function shareSelectedConfigs() {
-  const items = selectedItems();
-  if (!items.length) { showCartSelectionRequired(); return; }
-  const button = document.getElementById("cart-share-selected"); const original = button.textContent;
+async function shareCart() {
+  const items = allCartItems();
+  if (!items.length) return;
+  const button = document.getElementById("cart-share"); const original = button.textContent;
   button.disabled = true; button.textContent = cartText("generating", "生成中…", "Generating…");
   try {
     setCartStatus();
     const share = await authRequest("/cart/share", { method: "POST", body: JSON.stringify({ items, lang: cartLanguage() }) });
     showShareResult(share);
   } catch (error) { setCartStatus(`${cartText("shareFailed", "分享失败", "Share failed")}: ${error.message}`, "error"); }
-  finally { button.textContent = original; renderCartSelection(); }
+  finally { button.textContent = original; renderCartActions(); }
 }
 
-async function exportSelectedPdf() {
-  const items = selectedItems();
-  if (!items.length) { showCartSelectionRequired(); return; }
-  const button = document.getElementById("cart-pdf-selected"); const original = button.textContent;
+async function exportCartPdf() {
+  const items = allCartItems();
+  if (!items.length) return;
+  const button = document.getElementById("cart-pdf"); const original = button.textContent;
   button.disabled = true; button.textContent = cartText("generating", "生成中…", "Generating…");
   try {
     setCartStatus();
@@ -500,51 +500,145 @@ async function exportSelectedPdf() {
     link.href = url; link.download = "BOTEN-configurations.pdf"; document.body.appendChild(link); link.click(); link.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   } catch (error) { setCartStatus(`${cartText("pdfFailed", "PDF 导出失败", "PDF export failed")}: ${error.message}`, "error"); }
-  finally { button.textContent = original; renderCartSelection(); }
+  finally { button.textContent = original; renderCartActions(); }
 }
 
-async function removeSelectedConfigs() {
-  const items = selectedItems();
-  if (!items.length) { showCartSelectionRequired(); return; }
-  const message = (items.length === 1
-    ? cartText("confirmRemoveOne", "确定从购物车删除这项配置？", "Remove this configuration from the cart?")
-    : cartText("confirmRemoveSelected", "确定从购物车删除 {count} 项配置？", "Remove {count} selected configurations from the cart?").replace("{count}", items.length));
-  const confirmed = await confirmCartRemoval(message);
+async function archiveCartItems(items, button, message, title) {
+  if (!items.length) return;
+  const confirmed = await confirmCartRemoval(message, title);
   if (!confirmed) return;
-  const button = document.getElementById("cart-remove-selected"); const original = button.textContent;
+  const original = button.textContent;
   button.disabled = true; button.textContent = cartText("removing", "删除中…", "Removing…");
   try {
     setCartStatus();
     await authRequest("/cart/batch-archive", { method: "POST", body: JSON.stringify({ items, lang: cartLanguage() }) });
-    selectedCartIds.clear(); await refreshServerCart();
+    await refreshServerCart();
   } catch (error) { setCartStatus(`${cartText("removeFailed", "删除失败", "Remove failed")}: ${error.message}`, "error"); }
-  finally { button.textContent = original; renderCartSelection(); }
+  finally { button.textContent = original; renderCartActions(); }
 }
 
-function showCartSelectionRequired() {
-  if (document.querySelector(".cart-selection-required-dialog[open]")) return;
+function removeDeviceCartItem(id, button) {
+  const item = serverCart.find((candidate) => candidate.id === id && candidate.itemType === "device_config");
+  if (!item) return;
+  const message = cartText("confirmRemoveOne", "确定从购物车删除这台设备配置？", "Remove this device configuration from the cart?");
+  void archiveCartItems([{ item_type: "device_config", id }], button, message, cartText("removeDevice", "删除设备配置", "Remove Device Configuration"));
+}
+
+function removeCatalogCartGroup(type, button) {
+  const items = catalogCartItems(type);
+  if (!items.length) return;
+  const typeLabel = type === "tools" ? cartText("serviceTools", "维修工具", "Service Tools") : cartText("accessories", "设备附件", "Accessories");
+  const quantity = items.reduce((total, item) => total + Number(item.quantity || 0), 0);
+  const message = cartText("confirmRemoveCatalogGroup", "确定从购物车移除全部 {type}（{count} 个项目，共 {quantity} 件）吗？", "Remove all {type} ({count} items, {quantity} total) from the cart?")
+    .replace("{type}", typeLabel).replace("{count}", items.length).replace("{quantity}", quantity);
+  void archiveCartItems(items.map((item) => ({ item_type: item.itemType, id: item.id })), button, message, cartText("removeCatalogGroup", "删除{type}", "Remove {type}").replace("{type}", typeLabel));
+}
+
+function inquiryIdempotencyKey(sourceType) {
+  const suffix = window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  return `inquiry-${sourceType}-${suffix}`;
+}
+
+function inquirySummary(sourceType) {
+  if (sourceType === "cart") {
+    const devices = serverCart.filter((item) => item.itemType === "device_config");
+    const tools = catalogCartItems("tools");
+    const accessories = catalogCartItems("accessories");
+    const totalToolQuantity = tools.reduce((total, item) => total + Number(item.quantity || 0), 0);
+    const totalAccessoryQuantity = accessories.reduce((total, item) => total + Number(item.quantity || 0), 0);
+    return [
+      devices.length ? `${cartText("devices", "设备", "Devices")} · ${devices.length}` : "",
+      tools.length ? `${cartText("serviceTools", "维修工具", "Service Tools")} · ${totalToolQuantity}` : "",
+      accessories.length ? `${cartText("accessories", "设备附件", "Accessories")} · ${totalAccessoryQuantity}` : "",
+    ].filter(Boolean);
+  }
+  const { model, payload } = currentConfigPayload();
+  const snapshot = state.getSnapshot();
+  const groups = buildSummaryGroups(model, snapshot);
+  return [
+    `${model.name || "--"} · ${model.title_name || ""}`,
+    ...groups.map((group) => `${group.category}: ${Array.isArray(group.value) ? group.value.join("、") : group.value}`),
+  ].filter(Boolean).map((value) => String(value));
+}
+
+function openInquiryDialog(sourceType) {
+  if (sourceType === "cart" && !serverCart.length) {
+    setCartStatus(cartText("inquiryCartEmpty", "购物车为空，暂时无法提交询价。", "Your cart is empty, so an inquiry cannot be submitted."), "error");
+    return;
+  }
+  let summary;
+  let currentPayload = null;
+  try {
+    if (sourceType === "current_device") currentPayload = currentConfigPayload().payload;
+    summary = inquirySummary(sourceType);
+  } catch (error) {
+    setConfigSaveStatus(`${cartText("inquiryConfigInvalid", "当前设备选配不完整，请检查后再询价。", "Complete the current device configuration before requesting a quote.")}`, "error");
+    return;
+  }
   const returnFocus = document.activeElement;
+  const isCart = sourceType === "cart";
   const dialog = document.createElement("dialog");
-  dialog.className = "share-dialog cart-confirm-dialog cart-selection-required-dialog";
-  dialog.setAttribute("aria-labelledby", "cart-selection-required-title");
-  dialog.setAttribute("aria-describedby", "cart-selection-required-message");
-  dialog.innerHTML = `<form method="dialog" class="share-dialog-card cart-confirm-card">
+  dialog.className = "share-dialog cart-confirm-dialog inquiry-dialog";
+  dialog.setAttribute("aria-labelledby", "inquiry-dialog-title");
+  dialog.innerHTML = `<form method="dialog" class="share-dialog-card cart-confirm-card inquiry-dialog-card">
     <header class="share-dialog-header">
-      <div><span class="auth-kicker">${cartText("cart", "购物车", "CART")}</span><h2 id="cart-selection-required-title">${cartText("selectionRequiredTitle", "请先选择内容", "Select Items First")}</h2></div>
-      <button class="btn btn-text btn-sm" type="submit" value="close" aria-label="${cartText("close", "关闭", "Close")}">✕</button>
+      <div><span class="auth-kicker">${isCart ? "CART INQUIRY" : "CONFIGURATION INQUIRY"}</span><h2 id="inquiry-dialog-title">${cartText("inquiryTitle", "联系销售获取报价", "Contact Sales for a Quote")}</h2></div>
+      <button class="btn btn-text btn-sm" type="submit" value="cancel" aria-label="${cartText("close", "关闭", "Close")}">✕</button>
     </header>
-    <p id="cart-selection-required-message" class="cart-confirm-message">${cartText("selectionRequiredMessage", "请先勾选需要操作的设备配置、工具或附件。", "Select the device configurations, tools, or accessories you want to use.")}</p>
-    <div class="cart-confirm-actions"><button class="btn btn-primary" type="submit" value="close">${cartText("understood", "知道了", "OK")}</button></div>
+    <p class="cart-confirm-message">${cartText("inquiryConfirmCopy", "请确认需要提交给销售人员的内容。提交后，销售人员将基于此配置与您联系。", "Review the content for sales. After submission, a sales representative will contact you about this request.")}</p>
+    <ul class="inquiry-summary-list">${summary.map((line) => `<li>${escapeCartHtml(line)}</li>`).join("")}</ul>
+    <label class="inquiry-message-field"><span>${cartText("inquiryMessage", "补充说明（选填）", "Additional notes (optional)")}</span><textarea name="message" maxlength="1000" rows="3" placeholder="${cartText("inquiryMessageHint", "例如：请通过邮箱联系我", "For example: please contact me by email")}"></textarea></label>
+    <p class="cart-operation-status inquiry-dialog-status" role="alert" tabindex="-1" hidden></p>
+    <footer class="cart-confirm-actions"><button class="btn btn-secondary" type="submit" value="cancel">${cartText("cancelAction", "取消", "Cancel")}</button><button class="btn btn-primary" type="submit" value="submit">${cartText("submitInquiry", "提交询价", "Submit Inquiry")}</button></footer>
   </form>`;
   document.body.appendChild(dialog);
-  dialog.addEventListener("close", () => {
-    dialog.remove();
-    if (returnFocus instanceof HTMLElement) returnFocus.focus();
-  }, { once: true });
+  const idempotencyKey = inquiryIdempotencyKey(sourceType);
+  dialog.querySelector("form").addEventListener("submit", async (event) => {
+    if (event.submitter?.value !== "submit") return;
+    event.preventDefault();
+    const submit = event.submitter;
+    const status = dialog.querySelector(".inquiry-dialog-status");
+    submit.disabled = true;
+    const original = submit.textContent;
+    submit.textContent = cartText("submitting", "提交中…", "Submitting…");
+    status.hidden = true;
+    try {
+      const message = dialog.querySelector("[name=message]").value.trim();
+      const endpoint = isCart ? "/customer/inquiries/cart" : "/customer/inquiries/current-configuration";
+      const body = isCart
+        ? { lang: cartLanguage(), message, idempotency_key: idempotencyKey }
+        : { ...currentPayload, message, idempotency_key: idempotencyKey };
+      const inquiry = await authRequest(endpoint, { method: "POST", body: JSON.stringify(body) });
+      status.textContent = `${cartText("inquirySubmitted", "询价已提交，销售人员将与您联系。询价编号：", "Inquiry submitted. Sales will contact you. Inquiry number: ")}${inquiry.inquiry_number}`;
+      status.classList.remove("error");
+      status.hidden = false;
+      submit.hidden = true;
+      dialog.querySelector('[value="cancel"]').textContent = cartText("close", "关闭", "Close");
+      dialog.querySelector('[value="cancel"]').focus();
+    } catch (error) {
+      status.textContent = `${cartText("inquiryFailed", "询价提交失败", "Inquiry submission failed")}: ${error.message}`;
+      status.classList.add("error");
+      status.hidden = false;
+      status.focus();
+      submit.disabled = false;
+      submit.textContent = original;
+    }
+  });
+  dialog.addEventListener("close", () => { dialog.remove(); returnFocus?.focus?.(); }, { once: true });
   dialog.showModal();
 }
 
-function confirmCartRemoval(message) {
+function requestCurrentInquiry() {
+  requireLogin(() => openInquiryDialog("current_device"));
+}
+
+function requestCartInquiry() {
+  requireLogin(() => openInquiryDialog("cart"));
+}
+
+window.openCurrentInquiryDialog = requestCurrentInquiry;
+
+function confirmCartRemoval(message, title = cartText("removeConfirmTitle", "删除所选配置", "Remove Selected Configurations")) {
   return new Promise((resolve) => {
     const returnFocus = document.activeElement;
     const dialog = document.createElement("dialog");
@@ -553,7 +647,7 @@ function confirmCartRemoval(message) {
     dialog.setAttribute("aria-describedby", "cart-confirm-message");
     dialog.innerHTML = `<form method="dialog" class="share-dialog-card cart-confirm-card">
       <header class="share-dialog-header">
-        <div><span class="auth-kicker">${cartText("cart", "购物车", "CART")}</span><h2 id="cart-confirm-title">${cartText("removeConfirmTitle", "删除所选配置", "Remove Selected Configurations")}</h2></div>
+        <div><span class="auth-kicker">${cartText("cart", "购物车", "CART")}</span><h2 id="cart-confirm-title">${escapeCartHtml(title)}</h2></div>
         <button class="btn btn-text btn-sm" type="submit" value="cancel" aria-label="${cartText("close", "关闭", "Close")}">✕</button>
       </header>
       <p id="cart-confirm-message" class="cart-confirm-message">${escapeCartHtml(message)}</p>
@@ -572,6 +666,8 @@ function confirmCartRemoval(message) {
     dialog.showModal();
   });
 }
+
+window.confirmCartRemoval = confirmCartRemoval;
 
 function openCartPanel() {
   const panel = document.getElementById("cart-panel"); const backdrop = document.getElementById("cart-backdrop");
@@ -614,10 +710,9 @@ function initCart() {
   document.getElementById("cart-toggle")?.addEventListener("click", () => isAuthenticated() ? openCartPanel() : requireLogin(openCartPanel));
   document.getElementById("cart-close")?.addEventListener("click", closeCartPanel);
   document.getElementById("cart-backdrop")?.addEventListener("click", closeCartPanel);
-  document.getElementById("cart-select-all")?.addEventListener("change", (event) => { selectedCartIds = event.target.checked ? new Set(serverCart.map((item) => item.id)) : new Set(); renderCartPanel(); });
-  document.getElementById("cart-share-selected")?.addEventListener("click", shareSelectedConfigs);
-  document.getElementById("cart-pdf-selected")?.addEventListener("click", exportSelectedPdf);
-  document.getElementById("cart-remove-selected")?.addEventListener("click", removeSelectedConfigs);
+  document.getElementById("cart-share")?.addEventListener("click", () => requireLogin(shareCart));
+  document.getElementById("cart-pdf")?.addEventListener("click", () => requireLogin(exportCartPdf));
+  document.getElementById("cart-inquiry")?.addEventListener("click", requestCartInquiry);
   window.addEventListener("beforeunload", (event) => { if (editingConfig) { event.preventDefault(); event.returnValue = ""; } });
   document.addEventListener("keydown", (event) => {
     const panel = document.getElementById("cart-panel");

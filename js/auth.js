@@ -2,7 +2,7 @@ const USER_TOKEN_KEY = "boten_user_token";
 const ADMIN_TOKEN_KEY = "boten_admin_token";
 let currentUser = null;
 let authMode = "login";
-let authIdentifierMode = "email";
+let authIdentifierMode = localStorage.getItem("boten-language") === "en" ? "email" : "phone";
 let pendingAuthenticatedAction = null;
 const authSubscribers = [];
 let phoneCountries = [];
@@ -14,9 +14,15 @@ const authText = (key, zh, en) => {
 
 function refreshAuthCopy() {
   const text = (key, zh, en) => authText(key, zh, en);
+  const isEnglish = localStorage.getItem("boten-language") === "en";
+  const isRegister = authMode === "register";
   document.querySelectorAll('[data-auth-text="name"]').forEach((item) => { item.textContent = text("name", "姓名", "Name"); });
-  document.querySelectorAll('[data-auth-text="email"]').forEach((item) => { item.textContent = text("email", "邮箱", "Email"); });
-  document.querySelectorAll('[data-auth-text="phone"]').forEach((item) => { item.textContent = text("phone", "手机号", "Phone"); });
+  document.querySelectorAll('[data-auth-text="email"]').forEach((item) => {
+    item.textContent = isRegister ? (isEnglish ? "Email (required)" : "邮箱（选填）") : text("email", "邮箱", "Email");
+  });
+  document.querySelectorAll('[data-auth-text="phone"]').forEach((item) => {
+    item.textContent = isRegister ? (isEnglish ? "Phone (required)" : "手机号（必填）") : text("phone", "手机号", "Phone");
+  });
   document.querySelectorAll('[data-auth-text="country"]').forEach((item) => { item.textContent = text("country", "国家", "Country"); });
   document.querySelectorAll(".auth-method-tab").forEach((tab) => { tab.textContent = text(tab.dataset.authIdentifier, tab.dataset.authIdentifier === "email" ? "邮箱" : "手机号", tab.dataset.authIdentifier === "email" ? "Email" : "Phone"); });
   document.querySelector(".auth-method-tabs")?.setAttribute("aria-label", text("loginMethod", "登录方式", "Sign-in method"));
@@ -28,16 +34,10 @@ function refreshAuthCopy() {
   document.getElementById("auth-password-label").textContent = text("password", "密码", "Password");
   document.getElementById("auth-password")?.setAttribute("placeholder", text("passwordHint", "至少 8 个字符", "8+ characters"));
   document.getElementById("auth-close")?.setAttribute("aria-label", text("close", "关闭", "Close"));
-  const accountCopy = { email: ["邮箱", "Email"], phone: ["手机号", "Phone number"], currentPassword: ["当前密码", "Current password"], newPassword: ["新密码", "New password"], confirmPassword: ["确认新密码", "Confirm password"] };
-  document.querySelectorAll("[data-account-copy]").forEach((item) => { const copy = accountCopy[item.dataset.accountCopy]; if (copy) item.textContent = text(item.dataset.accountCopy, copy[0], copy[1]); });
-  document.querySelector('[data-account-section="contact"]')?.replaceChildren(document.createTextNode(text("contactInfo", "联系方式", "Contact details")));
-  document.querySelector('[data-account-section="password"]')?.replaceChildren(document.createTextNode(text("changePassword", "修改密码", "Change password")));
-  document.getElementById("account-manage").textContent = text("accountManage", "账号管理", "Account management");
+  document.getElementById("account-profile-entry").textContent = text("profileCenter", "个人中心", "Profile");
+  document.getElementById("account-admin-entry").textContent = text("enterAdmin", "管理后台", "Admin");
+  document.getElementById("account-share-entry").textContent = text("viewShare", "查看分享", "View Share");
   document.getElementById("account-logout").textContent = text("logout", "退出登录", "Sign out");
-  document.getElementById("account-admin-entry").textContent = text("enterAdmin", "进入后台", "Open admin");
-  document.getElementById("profile-contact-submit").textContent = text("saveRelogin", "保存并重新登录", "Save and sign in again");
-  document.getElementById("profile-password-submit").textContent = text("changeRelogin", "修改密码并重新登录", "Change password and sign in again");
-  document.getElementById("account-manage-back").textContent = text("back", "返回", "Back");
 }
 
 class AuthRequestError extends Error {
@@ -48,8 +48,10 @@ class AuthRequestError extends Error {
 
 const AUTH_ERROR_COPY = {
   ACCOUNT_EMAIL_INVALID: ["请输入有效的邮箱地址。", "Enter a valid email address."],
+  ACCOUNT_EMAIL_REQUIRED: ["请填写邮箱。", "Email is required."],
   ACCOUNT_EMAIL_DUPLICATE: ["该邮箱已被其他账号使用。", "This email is already used by another account."],
   ACCOUNT_PHONE_INVALID: ["手机号格式或长度与所选国家不匹配。", "Enter a valid phone number for the selected country."],
+  ACCOUNT_PHONE_REQUIRED: ["请选择国家并填写手机号。", "Country and phone number are required."],
   ACCOUNT_PHONE_DUPLICATE: ["该手机号已被其他账号使用。", "This phone number is already used by another account."],
   ACCOUNT_PHONE_COUNTRY_INVALID: ["请选择有效国家。", "Select a valid country."],
   ACCOUNT_CONTACT_REQUIRED: ["邮箱和手机号至少保留一项。", "Keep at least an email address or phone number."],
@@ -63,6 +65,9 @@ const AUTH_ERROR_COPY = {
   ACCOUNT_SESSION_EXPIRED: ["登录状态已失效，请重新登录。", "Your session has expired. Sign in again."],
   ACCOUNT_PERMISSION_DENIED: ["当前账号没有执行此操作的权限。", "Your account does not have permission for this action."],
   ACCOUNT_RATE_LIMITED: ["尝试次数过多，请稍后再试。", "Too many attempts. Try again later."],
+  SHARE_CODE_INVALID: ["分享码必须是 6 位数字。", "The share code must contain 6 digits."],
+  SHARE_NOT_FOUND: ["分享码不存在或已失效。", "The share code was not found or has expired."],
+  SHARE_NO_AVAILABLE_ITEMS: ["该分享中没有当前可加入购物车的内容。", "This share has no items currently available to add."],
   ACCOUNT_VALIDATION_FAILED: ["请检查填写内容后重试。", "Check the entered information and try again."],
   SERVER_UNAVAILABLE: ["服务器暂时无法处理请求，请稍后重试。", "The server cannot complete the request right now. Try again later."],
   REQUEST_TIMEOUT: ["服务器响应超时，请确认网络后重试。", "The server took too long to respond. Check your connection and try again."],
@@ -123,6 +128,7 @@ function notifyAuth() {
 
 function setAuthMode(mode) {
   authMode = mode;
+  if (mode === "login") authIdentifierMode = localStorage.getItem("boten-language") === "en" ? "email" : "phone";
   refreshAuthCopy();
   document.querySelectorAll(".register-only").forEach((field) => { field.hidden = mode !== "register"; });
   document.getElementById("auth-name").required = mode === "register";
@@ -146,13 +152,17 @@ function setAuthIdentifierMode(mode) {
 function refreshAuthIdentifierFields() {
   const isRegister = authMode === "register";
   const isEmail = authIdentifierMode === "email";
+  const isEnglish = localStorage.getItem("boten-language") === "en";
   document.querySelectorAll(".auth-method-tab").forEach((tab) => { const active = tab.dataset.authIdentifier === authIdentifierMode; tab.classList.toggle("active", active); tab.setAttribute("aria-selected", String(active)); tab.tabIndex = active ? 0 : -1; });
   document.querySelector(".auth-method-tabs").hidden = isRegister;
   document.getElementById("auth-email-field").hidden = !isRegister && !isEmail;
   document.getElementById("auth-phone-field").hidden = !isRegister && isEmail;
-  document.getElementById("auth-email").required = isRegister || isEmail;
+  document.getElementById("auth-email").required = isRegister ? isEnglish : isEmail;
   document.getElementById("auth-phone").required = isRegister || !isEmail;
   document.getElementById("auth-country").required = isRegister || !isEmail;
+  document.getElementById("auth-email").setAttribute("aria-required", String(isRegister ? isEnglish : isEmail));
+  document.getElementById("auth-phone").setAttribute("aria-required", String(isRegister || !isEmail));
+  document.getElementById("auth-country").setAttribute("aria-required", String(isRegister || !isEmail));
 }
 
 function authPhone(prefix = "auth") {
@@ -193,18 +203,32 @@ async function loadPhoneCountries() {
 
 function openAuthDialog(mode = "login") {
   const dialog = document.getElementById("auth-dialog");
-  if (isAuthenticated()) {
-    document.getElementById("auth-form-view").hidden = true;
-    document.getElementById("account-view").hidden = false;
-    document.getElementById("account-manage-view").hidden = true;
-    document.getElementById("auth-title").textContent = authText("account", "账号", "Account");
-  } else {
-    document.getElementById("auth-form-view").hidden = false;
-    document.getElementById("account-view").hidden = true;
-    document.getElementById("account-manage-view").hidden = true;
-    setAuthMode(mode);
-  }
+  if (isAuthenticated()) return;
+  setAuthMode(mode);
   if (!dialog.open) dialog.showModal();
+}
+
+function closeAccountMenu({ restoreFocus = false } = {}) {
+  const menu = document.getElementById("account-menu");
+  const toggle = document.getElementById("account-toggle");
+  if (!menu || menu.hidden) return;
+  menu.hidden = true;
+  toggle?.setAttribute("aria-expanded", "false");
+  if (restoreFocus) toggle?.focus();
+}
+
+function toggleAccountMenu() {
+  if (!isAuthenticated()) {
+    openAuthDialog("login");
+    return;
+  }
+  const menu = document.getElementById("account-menu");
+  const toggle = document.getElementById("account-toggle");
+  const opening = Boolean(menu?.hidden);
+  if (!menu) return;
+  menu.hidden = !opening;
+  toggle?.setAttribute("aria-expanded", String(opening));
+  if (opening) menu.querySelector('[role="menuitem"]:not([hidden])')?.focus();
 }
 
 function requireLogin(action) {
@@ -227,17 +251,16 @@ function renderAccountState() {
   label.textContent = isAuthenticated() ? (currentUser.display_name || currentUser.email || currentUser.phone || authText("accountFallback", "账号", "Account")) : authText("login", "登录", "Sign in");
   if (isAuthenticated()) {
     const display = currentUser.display_name || `BOTEN ${authText("user", "用户", "User")}`;
-    document.getElementById("account-avatar").textContent = display.charAt(0).toUpperCase();
-    document.getElementById("account-name").textContent = display;
-    document.getElementById("account-contact").textContent = currentUser.email || currentUser.phone || "";
-    document.getElementById("account-role").textContent = { customer: authText("customer", "客户", "Customer"), sales: authText("sales", "业务员", "Sales"), admin: authText("admin", "管理员", "Admin") }[currentUser.role] || currentUser.role;
-  }
+    document.getElementById("account-menu-name").textContent = display;
+    document.getElementById("account-menu-contact").textContent = currentUser.email || [currentUser.phone_calling_code, currentUser.phone].filter(Boolean).join(" ") || "";
+  } else closeAccountMenu();
 }
 
 function enterAdmin() {
   if (!isAuthenticated() || !["admin", "sales"].includes(currentUser.role)) return;
   const token = sessionStorage.getItem(USER_TOKEN_KEY);
   if (!token) return;
+  closeAccountMenu();
   sessionStorage.setItem(ADMIN_TOKEN_KEY, token);
   // The new same-origin window receives a copy of this sessionStorage at open
   // time, allowing the admin page to validate the existing session normally.
@@ -259,14 +282,15 @@ async function submitAuth(event) {
   submit.setAttribute("aria-busy", "true");
   submit.textContent = authMode === "register" ? authText("registering", "注册中…", "Registering…") : authText("signingIn", "登录中…", "Signing in…");
   try {
+    const isEnglish = localStorage.getItem("boten-language") === "en";
     if (authMode === "register" && !document.getElementById("auth-name").value.trim()) throw new Error(authText("nameHint", "请输入姓名", "Enter your name"));
-    if ((authMode === "register" || authIdentifierMode === "email") && !document.getElementById("auth-email").value.trim()) throw new Error(authText("emailHint", "请输入邮箱", "Enter your email"));
+    if (((authMode === "register" && isEnglish) || (authMode === "login" && authIdentifierMode === "email")) && !document.getElementById("auth-email").value.trim()) throw new Error(authText("emailHint", "请输入邮箱", "Enter your email"));
     if (!password) throw new Error(authText("passwordHint", "请输入密码", "Enter your password"));
     if (authMode === "register" && password.length < 8) throw new Error(authText("passwordHint", "密码至少 8 个字符", "Password must be at least 8 characters"));
     const payload = authMode === "register"
       ? {
           display_name: document.getElementById("auth-name").value.trim(),
-          email: document.getElementById("auth-email").value.trim().toLowerCase(),
+          email: document.getElementById("auth-email").value.trim().toLowerCase() || null,
           password
         }
       : (authIdentifierMode === "email" ? { identifier: authIdentifier(), password } : { phone_country: authPhone().country, phone: authPhone().phone, password });
@@ -279,16 +303,18 @@ async function submitAuth(event) {
     sessionStorage.setItem(USER_TOKEN_KEY, result.session.token);
     currentUser = result.user;
     notifyAuth();
-    document.getElementById("auth-dialog").close();
-    document.getElementById("auth-form").reset();
     const action = pendingAuthenticatedAction;
     pendingAuthenticatedAction = null;
+    document.getElementById("auth-dialog").close();
+    document.getElementById("auth-form").reset();
     if (action) await action();
   } catch (failure) {
     error.textContent = formatAuthError(failure, authMode === "register" ? "register" : "login");
     error.hidden = false;
     const candidates = authMode === "register"
-      ? [document.getElementById("auth-name"), document.getElementById("auth-email"), document.getElementById("auth-country"), document.getElementById("auth-phone"), document.getElementById("auth-password")]
+      ? (localStorage.getItem("boten-language") === "en"
+        ? [document.getElementById("auth-name"), document.getElementById("auth-email"), document.getElementById("auth-country"), document.getElementById("auth-phone"), document.getElementById("auth-password")]
+        : [document.getElementById("auth-name"), document.getElementById("auth-country"), document.getElementById("auth-phone"), document.getElementById("auth-password"), document.getElementById("auth-email")])
       : [document.getElementById(authIdentifierMode === "email" ? "auth-email" : "auth-phone"), document.getElementById("auth-password")];
     const fieldMap = { display_name: "auth-name", email: "auth-email", phone_country: "auth-country", phone: "auth-phone", identifier: authIdentifierMode === "email" ? "auth-email" : "auth-phone", password: "auth-password" };
     const target = document.getElementById(fieldMap[failure.field]) || candidates.find((field) => field && !field.value.trim()) || (failure.code === "ACCOUNT_CREDENTIALS_INVALID" ? document.getElementById("auth-password") : candidates[0]);
@@ -307,52 +333,10 @@ async function logoutUser() {
   sessionStorage.removeItem(ADMIN_TOKEN_KEY);
   currentUser = null;
   pendingAuthenticatedAction = null;
-  document.getElementById("auth-dialog").close();
+  closeAccountMenu();
+  const authDialog = document.getElementById("auth-dialog");
+  if (authDialog?.open) authDialog.close();
   notifyAuth();
-}
-
-function openAccountManager() {
-  if (!isAuthenticated()) return;
-  document.getElementById("account-view").hidden = true;
-  document.getElementById("account-manage-view").hidden = false;
-  document.getElementById("auth-title").textContent = authText("accountManage", "账号管理", "Account management");
-  document.getElementById("profile-email").value = currentUser.email || "";
-  document.getElementById("profile-phone").value = currentUser.phone || "";
-  document.getElementById("profile-country").value = currentUser.phone_country || "CN";
-  updateCallingCode("profile");
-}
-
-async function saveContact(event) {
-  event.preventDefault();
-  const error = document.getElementById("profile-contact-error"); error.hidden = true;
-  try {
-    const country = document.getElementById("profile-country").value;
-    const phone = document.getElementById("profile-phone").value.trim();
-    const email = document.getElementById("profile-email").value.trim();
-    const currentPassword = document.getElementById("profile-contact-password").value;
-    if (!currentPassword) throw new Error(authText("currentPasswordRequired", "请输入当前密码", "Enter your current password"));
-    if (!email && !phone) throw new Error(authText("contactRequired", "请至少填写邮箱或手机号", "Enter an email or phone number"));
-    const payload = { current_password: currentPassword, email };
-    if (phone) { const parsedPhone = authPhone("profile"); payload.phone_country = parsedPhone.country; payload.phone = parsedPhone.phone; }
-    await authRequest("/auth/profile/contact", { method: "PATCH", body: JSON.stringify(payload) });
-    if (country) localStorage.setItem("boten-phone-country", country);
-    await logoutUser();
-  } catch (failure) { error.textContent = formatAuthError(failure, "contact"); error.hidden = false; }
-}
-
-async function savePassword(event) {
-  event.preventDefault();
-  const error = document.getElementById("profile-password-error"); error.hidden = true;
-  try {
-    const currentPassword = document.getElementById("profile-current-password").value;
-    const newPassword = document.getElementById("profile-new-password").value;
-    const confirmPassword = document.getElementById("profile-confirm-password").value;
-    if (!currentPassword) throw new Error(authText("currentPasswordRequired", "请输入当前密码", "Enter your current password"));
-    if (newPassword.length < 8) throw new Error(authText("newPasswordLength", "新密码至少 8 个字符", "New password must be at least 8 characters"));
-    if (newPassword !== confirmPassword) throw new Error(authText("passwordMismatch", "两次输入的新密码不一致", "New passwords do not match"));
-    await authRequest("/auth/change-password", { method: "POST", body: JSON.stringify({ current_password: currentPassword, new_password: newPassword, confirm_password: confirmPassword }) });
-    await logoutUser();
-  } catch (failure) { error.textContent = formatAuthError(failure, "password"); error.hidden = false; }
 }
 
 function formatAuthError(error, context = "login") {
@@ -369,14 +353,17 @@ function formatAuthError(error, context = "login") {
 }
 
 async function initAuth() {
-  document.getElementById("account-toggle")?.addEventListener("click", () => openAuthDialog());
+  document.getElementById("account-toggle")?.addEventListener("click", toggleAccountMenu);
   document.getElementById("auth-close")?.addEventListener("click", () => document.getElementById("auth-dialog").close());
+  document.getElementById("auth-dialog")?.addEventListener("close", () => {
+    // A restored action must only survive the successful-login path above.
+    // Closing, cancelling, or abandoning the dialog never submits an inquiry.
+    pendingAuthenticatedAction = null;
+  });
   document.getElementById("account-logout")?.addEventListener("click", logoutUser);
-  document.getElementById("account-manage")?.addEventListener("click", openAccountManager);
-  document.getElementById("account-manage-back")?.addEventListener("click", () => { document.getElementById("account-manage-view").hidden = true; document.getElementById("account-view").hidden = false; document.getElementById("auth-title").textContent = authText("account", "账号", "Account"); });
-  document.getElementById("account-contact-form")?.addEventListener("submit", saveContact);
-  document.getElementById("account-password-form")?.addEventListener("submit", savePassword);
-  ["auth", "profile"].forEach((prefix) => document.getElementById(`${prefix}-country`)?.addEventListener("change", () => { localStorage.setItem("boten-phone-country", document.getElementById(`${prefix}-country`).value); updateCallingCode(prefix); }));
+  document.getElementById("account-profile-entry")?.addEventListener("click", () => { closeAccountMenu(); window.location.assign("./account/#profile"); });
+  document.getElementById("account-share-entry")?.addEventListener("click", () => { closeAccountMenu(); window.openCustomerShareDialog?.(); });
+  document.getElementById("auth-country")?.addEventListener("change", () => { localStorage.setItem("boten-phone-country", document.getElementById("auth-country").value); updateCallingCode("auth"); });
   document.getElementById("account-admin-entry")?.addEventListener("click", enterAdmin);
   document.getElementById("auth-form")?.addEventListener("submit", submitAuth);
   document.getElementById("auth-form")?.addEventListener("input", (event) => {
@@ -394,6 +381,18 @@ async function initAuth() {
     event.preventDefault(); const next = event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 : (current + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
     setAuthIdentifierMode(tabs[next].dataset.authIdentifier); tabs[next].focus();
   });
+  document.getElementById("account-menu")?.addEventListener("keydown", (event) => {
+    const items = Array.from(event.currentTarget.querySelectorAll('[role="menuitem"]:not([hidden])'));
+    const current = items.indexOf(document.activeElement);
+    if (event.key === "Escape") { event.preventDefault(); closeAccountMenu({ restoreFocus: true }); return; }
+    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key) || !items.length) return;
+    event.preventDefault();
+    const next = event.key === "Home" ? 0 : event.key === "End" ? items.length - 1 : (Math.max(current, 0) + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
+    items[next].focus();
+  });
+  document.addEventListener("pointerdown", (event) => {
+    if (!event.target.closest(".account-menu-anchor")) closeAccountMenu();
+  });
   await loadPhoneCountries();
   refreshAuthCopy();
   setAuthIdentifierMode(authIdentifierMode);
@@ -404,4 +403,10 @@ async function initAuth() {
     catch (_) { sessionStorage.removeItem(USER_TOKEN_KEY); currentUser = null; }
   }
   notifyAuth();
+  const pageUrl = new URL(window.location.href);
+  if (!currentUser && pageUrl.searchParams.get("auth") === "login") {
+    pageUrl.searchParams.delete("auth");
+    history.replaceState(null, "", `${pageUrl.pathname}${pageUrl.search}${pageUrl.hash}`);
+    openAuthDialog("login");
+  }
 }

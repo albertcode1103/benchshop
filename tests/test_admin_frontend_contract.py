@@ -14,8 +14,12 @@ CUSTOMER_SCROLL_RESET = (PROJECT_ROOT / "js" / "scroll-reset.js").read_text(enco
 CUSTOMER_LANGUAGE = (PROJECT_ROOT / "js" / "language.js").read_text(encoding="utf-8")
 CUSTOMER_MARKETPLACE = (PROJECT_ROOT / "js" / "catalog-marketplace.js").read_text(encoding="utf-8")
 CUSTOMER_NAVIGATION_DRAWER = (PROJECT_ROOT / "js" / "navigation-drawer.js").read_text(encoding="utf-8")
+CUSTOMER_SHARE_VIEWER = (PROJECT_ROOT / "js" / "share-viewer.js").read_text(encoding="utf-8")
 CUSTOMER_LAYOUT_CSS = (PROJECT_ROOT / "css" / "layout.css").read_text(encoding="utf-8")
 CUSTOMER_COMPONENTS_CSS = (PROJECT_ROOT / "css" / "components.css").read_text(encoding="utf-8")
+ACCOUNT_HTML = (PROJECT_ROOT / "account" / "index.html").read_text(encoding="utf-8")
+ACCOUNT_JS = (PROJECT_ROOT / "account" / "account.js").read_text(encoding="utf-8")
+ACCOUNT_CSS = (PROJECT_ROOT / "account" / "account.css").read_text(encoding="utf-8")
 
 
 class AdminFrontendContractTests(unittest.TestCase):
@@ -35,11 +39,37 @@ class AdminFrontendContractTests(unittest.TestCase):
         self.assertIn('visibility: hidden; pointer-events: none;', CUSTOMER_COMPONENTS_CSS)
         self.assertIn('transform: translateX(-200%);', CUSTOMER_COMPONENTS_CSS)
 
-    def test_signed_in_account_actions_are_grouped_and_consistently_sized(self) -> None:
-        self.assertIn('class="account-actions"', CUSTOMER_HTML)
-        self.assertIn('class="btn btn-ghost btn-block account-logout"', CUSTOMER_HTML)
-        self.assertIn('.account-actions { display: grid; gap: 10px;', CUSTOMER_COMPONENTS_CSS)
-        self.assertIn('.account-actions .btn { min-height: 44px;', CUSTOMER_COMPONENTS_CSS)
+    def test_signed_in_account_actions_use_an_accessible_anchored_menu(self) -> None:
+        self.assertIn('id="account-menu"', CUSTOMER_HTML)
+        self.assertIn('id="account-profile-entry" role="menuitem"', CUSTOMER_HTML)
+        self.assertIn('id="account-share-entry" role="menuitem"', CUSTOMER_HTML)
+        self.assertIn('id="account-logout" class="account-menu-logout" role="menuitem"', CUSTOMER_HTML)
+        self.assertIn('.account-menu-anchor { position: relative; }', CUSTOMER_COMPONENTS_CSS)
+        self.assertIn('event.key === "Escape"', (PROJECT_ROOT / "js" / "auth.js").read_text(encoding="utf-8"))
+
+    def test_profile_is_a_separate_hierarchical_page(self) -> None:
+        self.assertIn('data-account-panel="profile"', ACCOUNT_HTML)
+        self.assertIn('data-account-panel="account-contact"', ACCOUNT_HTML)
+        self.assertIn('data-account-panel="account-security"', ACCOUNT_HTML)
+        self.assertIn('/auth/profile/details', ACCOUNT_JS)
+        self.assertIn('/auth/profile/contact', ACCOUNT_JS)
+        self.assertIn('/auth/change-password', ACCOUNT_JS)
+        self.assertIn('window.BOTEN_API_BASE || ""', ACCOUNT_JS)
+        self.assertIn('error?.status === 401 || error?.code === "ACCOUNT_SESSION_EXPIRED"', ACCOUNT_JS)
+        self.assertIn('id="profile-load-error"', ACCOUNT_HTML)
+        self.assertIn('data-account-panel="my-shares"', ACCOUNT_HTML)
+        self.assertIn('data-account-panel="my-quotes"', ACCOUNT_HTML)
+        self.assertIn('/customer/me/shares?page=', ACCOUNT_JS)
+        self.assertIn('/customer/me/quotes', ACCOUNT_JS)
+        self.assertIn('data-download-quote', ACCOUNT_JS)
+        self.assertIn('grid-template-columns: 240px minmax(0, 760px)', ACCOUNT_CSS)
+
+    def test_customer_share_viewer_marks_unavailable_items_and_imports_safely(self) -> None:
+        self.assertIn('id="customer-share-dialog"', CUSTOMER_HTML)
+        self.assertIn('/customer/shares/${code}?lang=${lang}', CUSTOMER_SHARE_VIEWER)
+        self.assertIn('/import', CUSTOMER_SHARE_VIEWER)
+        self.assertIn('item.available', CUSTOMER_SHARE_VIEWER)
+        self.assertIn('idempotency_key: customerShareImportKey', CUSTOMER_SHARE_VIEWER)
 
     def test_optional_configuration_grid_stays_two_columns_at_all_widths(self) -> None:
         self.assertGreaterEqual(
@@ -141,6 +171,9 @@ class AdminFrontendContractTests(unittest.TestCase):
         self.assertIn('id="auth-name"', customer_html)
         self.assertIn('register-only', customer_html)
         self.assertIn('phone_country: authPhone().country', customer_auth)
+        self.assertIn('localStorage.getItem("boten-language") === "en" ? "email" : "phone"', customer_auth)
+        self.assertIn('isRegister ? isEnglish : isEmail', customer_auth)
+        self.assertIn('email: document.getElementById("auth-email").value.trim().toLowerCase() || null', customer_auth)
 
     def test_auth_failure_releases_submit_and_uses_structured_translation(self) -> None:
         customer_auth = (PROJECT_ROOT / "js" / "auth.js").read_text(encoding="utf-8")
@@ -171,18 +204,27 @@ class AdminFrontendContractTests(unittest.TestCase):
         self.assertIn('设备至少需要保留一个启用的外观颜色', ADMIN_CATALOG_V2)
         self.assertIn('colorNames[color.code] = color.name || color.code', customer_api)
 
-    def test_customer_catalog_v2_price_preview_and_independent_catalog(self) -> None:
+    def test_customer_catalog_v2_sales_contact_and_independent_catalog(self) -> None:
         customer_api = (PROJECT_ROOT / "js" / "catalog-api.js").read_text(encoding="utf-8")
         customer_price = (PROJECT_ROOT / "js" / "price.js").read_text(encoding="utf-8")
+        runtime_config = (PROJECT_ROOT / "js" / "runtime-config.js").read_text(encoding="utf-8")
         self.assertIn('/snapshot?lang=${language}', customer_api)
         self.assertIn('base_option_groups', customer_api)
         self.assertIn('optional_categories', customer_api)
-        self.assertIn('id="pricing-preview"', CUSTOMER_HTML)
+        self.assertNotIn('id="pricing-preview"', CUSTOMER_HTML)
         self.assertNotIn('/api/v1/pricing/preview', customer_price)
-        self.assertIn('contactSalesQuote', customer_price)
+        self.assertIn('id="sales-contact-open"', CUSTOMER_HTML)
+        self.assertIn('id="sales-contact-dialog"', CUSTOMER_HTML)
+        self.assertIn('function initSalesContact()', customer_price)
+        self.assertIn('window.BOTEN_SALES_CONTACT', runtime_config)
+        self.assertIn('info@boten-diesel.com', runtime_config)
+        self.assertNotIn('id="sales-contact-phone"', CUSTOMER_HTML)
+        self.assertIn('class="btn btn-secondary btn-sm sales-whatsapp-button"', CUSTOMER_HTML)
+        self.assertIn('https://wa.me/8617625542926', runtime_config)
         self.assertIn('id="catalog-marketplace"', CUSTOMER_HTML)
         self.assertIn('/api/v1/catalog/items?type=', CUSTOMER_MARKETPLACE)
-        self.assertIn('/cart/catalog-items', CUSTOMER_MARKETPLACE)
+        self.assertIn('/cart/catalog-options/${encodeURIComponent(optionId)}', CUSTOMER_MARKETPLACE)
+        self.assertIn('window.refreshCatalogCartOnly', CUSTOMER_MARKETPLACE)
         self.assertNotIn('catalog-item-price', CUSTOMER_MARKETPLACE)
         self.assertIn('specialNote: option.special_note || ""', customer_api)
         self.assertIn('option-special-note', CUSTOMER_RENDERER)
@@ -209,7 +251,7 @@ class AdminFrontendContractTests(unittest.TestCase):
         self.assertLess(CUSTOMER_CART.index('item.itemType === "device_config"'), CUSTOMER_CART.index('item.catalogType === "tools"'))
         self.assertLess(CUSTOMER_CART.index('item.catalogType === "tools"'), CUSTOMER_CART.index('item.catalogType === "accessories"'))
         self.assertIn("renderCatalogCartGroup(type, items)", CUSTOMER_CART)
-        self.assertIn("data-select-cart-group=", CUSTOMER_CART)
+        self.assertNotIn("data-select-cart-group=", CUSTOMER_CART)
         self.assertIn("data-edit-catalog-group=", CUSTOMER_CART)
         self.assertNotIn("data-detail-catalog-group=", CUSTOMER_CART)
         self.assertIn("COALESCE(o.sort_order, 2147483647)", catalog_repository)
@@ -242,12 +284,41 @@ class AdminFrontendContractTests(unittest.TestCase):
         self.assertIn('.cart-batch-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));', CUSTOMER_COMPONENTS_CSS)
         self.assertIn('.cart-batch-actions .danger { grid-column: 1 / -1;', CUSTOMER_COMPONENTS_CSS)
 
-    def test_cart_batch_actions_explain_when_nothing_is_selected(self) -> None:
-        self.assertIn("function showCartSelectionRequired()", CUSTOMER_CART)
-        self.assertEqual(CUSTOMER_CART.count("if (!items.length) { showCartSelectionRequired(); return; }"), 3)
-        self.assertIn("button.disabled = serverCart.length === 0", CUSTOMER_CART)
-        self.assertIn('selectionRequiredTitle: "请先选择内容"', CUSTOMER_LANGUAGE)
-        self.assertIn('selectionRequiredTitle: "Select Items First"', CUSTOMER_LANGUAGE)
+    def test_cart_actions_operate_on_all_saved_items(self) -> None:
+        self.assertIn("function allCartItems()", CUSTOMER_CART)
+        self.assertIn("async function shareCart()", CUSTOMER_CART)
+        self.assertIn("async function exportCartPdf()", CUSTOMER_CART)
+        self.assertIn("function requestCartInquiry()", CUSTOMER_CART)
+        self.assertIn('document.getElementById("cart-share")', CUSTOMER_CART)
+        self.assertIn('document.getElementById("cart-inquiry")', CUSTOMER_CART)
+        self.assertIn('inquiryTitle: "联系销售获取报价"', CUSTOMER_LANGUAGE)
+        self.assertIn('inquiryTitle: "Contact Sales for a Quote"', CUSTOMER_LANGUAGE)
+
+    def test_quote_lifecycle_management_exposes_archive_restore_and_history(self) -> None:
+        self.assertIn('data-view-panel="quotes"', ADMIN_HTML)
+        self.assertIn('报价草稿、已发送版本和归档记录', ADMIN_HTML)
+        self.assertIn('function quoteLifecycleLabel(status)', ADMIN_JS)
+        self.assertIn('data-archive-quote=', ADMIN_JS)
+        self.assertIn('data-restore-quote=', ADMIN_JS)
+        self.assertIn('data-quote-history=', ADMIN_JS)
+        self.assertIn('/staff/quotes/${encodeURIComponent(quote.id)}/archive', ADMIN_JS)
+        self.assertIn('/staff/quotes/${encodeURIComponent(quote.id)}/restore', ADMIN_JS)
+        self.assertIn('/staff/quotes/${encodeURIComponent(quoteId)}/history', ADMIN_JS)
+        self.assertIn('dialog.quote-history-dialog', ADMIN_CSS)
+
+    def test_admin_api_status_lives_in_sidebar_without_a_desktop_topbar(self) -> None:
+        self.assertIn('id="sidebar-api-status"', ADMIN_HTML)
+        overview = ADMIN_HTML.index('data-view="dashboard"')
+        self.assertLess(overview, ADMIN_HTML.index('id="sidebar-api-status"'))
+        self.assertLess(ADMIN_HTML.index('id="sidebar-api-status"'), ADMIN_HTML.index('data-view="products"'))
+        self.assertNotIn('<header class="topbar">', ADMIN_HTML)
+        self.assertIn('sidebarStatus.querySelector("span").textContent = "API 正常"', ADMIN_JS)
+        self.assertIn('.nav-api-status', ADMIN_CSS)
+
+    def test_tool_and_accessory_navigation_use_semantic_svg_icons(self) -> None:
+        self.assertIn('data-view="tool-catalog" type="button"><span class="nav-icon nav-icon-svg"', ADMIN_HTML)
+        self.assertIn('data-view="accessory-catalog" type="button"><span class="nav-icon nav-icon-svg"', ADMIN_HTML)
+        self.assertIn('.nav-icon-svg svg', ADMIN_CSS)
 
     def test_catalog_pages_add_directly_to_cart_without_pending_summary(self) -> None:
         for marker in (
@@ -262,7 +333,7 @@ class AdminFrontendContractTests(unittest.TestCase):
         self.assertIn("window.getCatalogCartSnapshot", CUSTOMER_CART)
         self.assertIn("function renderMarketplaceSummary", CUSTOMER_MARKETPLACE)
         self.assertIn("const selected = inCartQuantity > 0", CUSTOMER_MARKETPLACE)
-        self.assertIn('body: JSON.stringify({ option_id: optionId, quantity, lang: marketplaceLanguage() })', CUSTOMER_MARKETPLACE)
+        self.assertIn('body: JSON.stringify({ quantity: submittedQuantity, lang: marketplaceLanguage() })', CUSTOMER_MARKETPLACE)
         self.assertIn('class="catalog-product-selected-mark"', CUSTOMER_MARKETPLACE)
         self.assertIn('window.addEventListener("boten:cart-updated"', CUSTOMER_MARKETPLACE)
         self.assertIn('catalogSummary.hidden = !showCatalog', CUSTOMER_RENDERER)
@@ -271,20 +342,40 @@ class AdminFrontendContractTests(unittest.TestCase):
         self.assertIn('panel.setAttribute("aria-modal", "true")', CUSTOMER_MARKETPLACE)
         self.assertIn('.catalog-summary-panel.open {', CUSTOMER_COMPONENTS_CSS)
         self.assertIn('.catalog-product-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-sm); }', CUSTOMER_COMPONENTS_CSS)
-        self.assertIn('.catalog-summary-section {', CUSTOMER_COMPONENTS_CSS)
+        self.assertIn('aria-labelledby="catalog-cart-summary-title"', CUSTOMER_HTML)
+        self.assertNotIn('id="catalog-summary-title"', CUSTOMER_HTML)
+        self.assertNotIn('class="catalog-summary-section"', CUSTOMER_HTML)
+        self.assertIn('.catalog-summary-heading {', CUSTOMER_COMPONENTS_CSS)
+        self.assertIn('.catalog-summary-list { display: grid;', CUSTOMER_COMPONENTS_CSS)
         self.assertNotIn('.catalog-summary-quantity {', CUSTOMER_COMPONENTS_CSS)
         self.assertIn('.catalog-product-card.selected {', CUSTOMER_COMPONENTS_CSS)
         self.assertIn('id="catalog-drawer-toggle"', CUSTOMER_HTML)
         self.assertNotIn('setMarketplaceStatus(marketplaceText("addedToCart"', CUSTOMER_MARKETPLACE)
         self.assertNotIn('.catalog-marketplace-status.success', CUSTOMER_COMPONENTS_CSS)
+        self.assertIn('async function changeMarketplaceCartQuantity(optionId, quantity, delta)', CUSTOMER_MARKETPLACE)
+        self.assertIn('if (delta < 0 && quantity === 1)', CUSTOMER_MARKETPLACE)
+        self.assertIn('await window.confirmCartRemoval?.(message, title)', CUSTOMER_MARKETPLACE)
+        self.assertIn('scheduleMarketplaceQuantitySave(optionId, quantity + delta)', CUSTOMER_MARKETPLACE)
+        self.assertIn('method: "PUT"', CUSTOMER_MARKETPLACE)
+        self.assertIn('window.refreshCatalogCartOnly', CUSTOMER_MARKETPLACE)
+        self.assertIn('window.refreshCatalogCartOnly = async function refreshCatalogCartOnly()', CUSTOMER_CART)
+        self.assertIn('window.confirmCartRemoval = confirmCartRemoval', CUSTOMER_CART)
 
-    def test_cart_batch_workflow_and_share_filters_are_exposed(self) -> None:
+    def test_desktop_selection_sidebars_scroll_inside_the_viewport(self) -> None:
+        self.assertIn('max-height: calc(100dvh - var(--header-height) - (2 * var(--space-lg)))', CUSTOMER_COMPONENTS_CSS)
+        self.assertIn('.summary-panel .summary-list,\n  .catalog-summary-panel .catalog-summary-list {', CUSTOMER_COMPONENTS_CSS)
+        self.assertIn('overscroll-behavior: contain;', CUSTOMER_COMPONENTS_CSS)
+        self.assertIn('scrollbar-gutter: stable;', CUSTOMER_COMPONENTS_CSS)
+
+    def test_cart_actions_and_share_filters_are_exposed(self) -> None:
         customer_html = (PROJECT_ROOT / "index.html").read_text(encoding="utf-8")
         customer_state = (PROJECT_ROOT / "js" / "state.js").read_text(encoding="utf-8")
         self.assertNotIn('id="share-current"', customer_html)
         self.assertNotIn('id="export-print"', customer_html)
-        for element_id in ("cart-select-all", "cart-share-selected", "cart-pdf-selected", "cart-remove-selected", "config-edit-status", "cart-operation-status"):
+        for element_id in ("cart-share", "cart-pdf", "cart-inquiry", "config-edit-status", "cart-operation-status"):
             self.assertIn('id="{}"'.format(element_id), customer_html)
+        for removed_id in ("cart-select-all", "cart-share-selected", "cart-pdf-selected", "cart-remove-selected"):
+            self.assertNotIn('id="{}"'.format(removed_id), customer_html)
         self.assertIn("missingCount", customer_state)
         for element_id in ("share-filter-form", "share-query", "share-status-filter", "share-page-summary"):
             self.assertIn('id="{}"'.format(element_id), ADMIN_HTML)
@@ -304,6 +395,17 @@ class AdminFrontendContractTests(unittest.TestCase):
             self.assertIn(value, customer_renderer)
         self.assertIn('window.botenShowDeviceSelection', customer_renderer)
 
+    def test_inquiry_workflow_is_separate_from_shares_and_exposed_to_staff(self) -> None:
+        backend_routes = (PROJECT_ROOT / "backend" / "config_routes.py").read_text(encoding="utf-8")
+        inquiry_repository = (PROJECT_ROOT / "backend" / "inquiry_repository.py").read_text(encoding="utf-8")
+        self.assertIn('data-view="inquiries"', ADMIN_HTML)
+        self.assertIn('data-view-panel="inquiries"', ADMIN_HTML)
+        self.assertIn('/api/v1/staff/inquiries?', ADMIN_JS)
+        self.assertIn('convert-to-quote', ADMIN_JS)
+        self.assertIn('@router.get("/staff/inquiries")', backend_routes)
+        self.assertIn('@router.post("/staff/inquiries/{inquiry_id}/convert-to-quote"', backend_routes)
+        self.assertIn('def inquiry_quote_items(', inquiry_repository)
+
     def test_customer_page_restores_the_last_catalog_and_defaults_to_cr1016(self) -> None:
         customer_state = (PROJECT_ROOT / "js" / "state.js").read_text(encoding="utf-8")
         customer_renderer = (PROJECT_ROOT / "js" / "renderer.js").read_text(encoding="utf-8")
@@ -316,10 +418,10 @@ class AdminFrontendContractTests(unittest.TestCase):
     def test_cart_cards_and_destructive_confirmation_use_the_page_design_system(self) -> None:
         self.assertIn('class="cart-item-toolbar"', CUSTOMER_CART)
         self.assertIn('btn btn-secondary btn-sm cart-item-details', CUSTOMER_CART)
-        self.assertIn('confirmCartRemoval(message)', CUSTOMER_CART)
+        self.assertIn('confirmCartRemoval(message, title)', CUSTOMER_CART)
         self.assertIn('dialog.className = "share-dialog cart-confirm-dialog"', CUSTOMER_CART)
         self.assertNotIn('window.confirm(message)', CUSTOMER_CART)
-        self.assertIn('width: min(630px, 80vw)', CUSTOMER_COMPONENTS_CSS)
+        self.assertIn('width: min(420px, 80vw)', CUSTOMER_COMPONENTS_CSS)
         self.assertIn('id="cancel-config-edit" class="btn btn-secondary btn-sm config-edit-cancel"', CUSTOMER_HTML)
 
     def test_cart_device_edit_uses_the_loaded_snapshot_model(self) -> None:

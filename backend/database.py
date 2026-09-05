@@ -182,6 +182,9 @@ CREATE TABLE IF NOT EXISTS users (
     password_hash TEXT,
     role TEXT NOT NULL CHECK (role IN ('guest', 'customer', 'sales', 'admin')),
     display_name TEXT NOT NULL DEFAULT '',
+    gender TEXT NOT NULL DEFAULT '' CHECK (gender IN ('', 'male', 'female', 'other')),
+    birth_date TEXT,
+    signature TEXT NOT NULL DEFAULT '',
     enabled INTEGER NOT NULL DEFAULT 1,
     deleted_at TEXT,
     deleted_by TEXT,
@@ -309,6 +312,19 @@ CREATE TABLE IF NOT EXISTS commerce_quotes (
     items_json TEXT NOT NULL,
     total_price REAL NOT NULL DEFAULT 0,
     currency TEXT NOT NULL DEFAULT 'CNY',
+    quote_number TEXT UNIQUE,
+    lifecycle_status TEXT NOT NULL DEFAULT 'draft',
+    version INTEGER NOT NULL DEFAULT 1,
+    valid_until TEXT,
+    payment_terms TEXT NOT NULL DEFAULT '',
+    delivery_terms TEXT NOT NULL DEFAULT '',
+    tax_note TEXT NOT NULL DEFAULT '',
+    freight_note TEXT NOT NULL DEFAULT '',
+    sales_contact TEXT NOT NULL DEFAULT '',
+    quote_note TEXT NOT NULL DEFAULT '',
+    sent_at TEXT,
+    archived_at TEXT,
+    archived_by TEXT,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -316,6 +332,89 @@ CREATE TABLE IF NOT EXISTS commerce_quotes (
 CREATE INDEX IF NOT EXISTS idx_commerce_shares_expiry ON commerce_shares(active, expires_at);
 CREATE INDEX IF NOT EXISTS idx_commerce_share_items_share ON commerce_share_items(share_id, sort_order);
 CREATE INDEX IF NOT EXISTS idx_commerce_quotes_user ON commerce_quotes(user_id, updated_at);
+CREATE INDEX IF NOT EXISTS idx_commerce_quotes_lifecycle ON commerce_quotes(lifecycle_status, updated_at);
+
+CREATE TABLE IF NOT EXISTS quote_revisions (
+    id TEXT PRIMARY KEY,
+    quote_id TEXT NOT NULL REFERENCES commerce_quotes(id) ON DELETE CASCADE,
+    revision_number INTEGER NOT NULL CHECK (revision_number > 0),
+    snapshot_json TEXT NOT NULL,
+    created_by TEXT NOT NULL REFERENCES users(id),
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(quote_id, revision_number)
+);
+CREATE INDEX IF NOT EXISTS idx_quote_revisions_quote ON quote_revisions(quote_id, revision_number DESC);
+
+CREATE TABLE IF NOT EXISTS quote_deliveries (
+    id TEXT PRIMARY KEY,
+    quote_id TEXT NOT NULL,
+    document_version INTEGER NOT NULL DEFAULT 2 CHECK (document_version IN (1, 2)),
+    recipient_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    source_share_id TEXT,
+    delivered_by TEXT NOT NULL REFERENCES users(id),
+    status TEXT NOT NULL DEFAULT 'delivered' CHECK (status IN ('delivered', 'withdrawn')),
+    delivered_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    viewed_at TEXT,
+    withdrawn_at TEXT,
+    revision_id TEXT,
+    last_viewed_revision_id TEXT,
+    notification_state TEXT NOT NULL DEFAULT 'unread',
+    UNIQUE(quote_id, recipient_user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_quote_deliveries_recipient ON quote_deliveries(recipient_user_id, status, delivered_at);
+CREATE INDEX IF NOT EXISTS idx_quote_deliveries_quote ON quote_deliveries(quote_id, status);
+CREATE INDEX IF NOT EXISTS idx_quote_deliveries_revision ON quote_deliveries(revision_id, status);
+
+CREATE TABLE IF NOT EXISTS customer_inquiries (
+    id TEXT PRIMARY KEY,
+    inquiry_number TEXT NOT NULL UNIQUE,
+    created_by TEXT NOT NULL REFERENCES users(id),
+    source_type TEXT NOT NULL CHECK (source_type IN ('current_device', 'cart')),
+    status TEXT NOT NULL DEFAULT 'new' CHECK (status IN ('new', 'assigned', 'contacted', 'quoted', 'closed', 'cancelled')),
+    language TEXT NOT NULL DEFAULT 'zh',
+    customer_name_snapshot TEXT NOT NULL DEFAULT '',
+    customer_email_snapshot TEXT NOT NULL DEFAULT '',
+    customer_phone_snapshot TEXT NOT NULL DEFAULT '',
+    customer_country_snapshot TEXT NOT NULL DEFAULT '',
+    message TEXT NOT NULL DEFAULT '',
+    item_count INTEGER NOT NULL DEFAULT 0 CHECK (item_count > 0),
+    assigned_to TEXT REFERENCES users(id) ON DELETE SET NULL,
+    converted_quote_id TEXT REFERENCES commerce_quotes(id) ON DELETE SET NULL,
+    idempotency_key TEXT NOT NULL,
+    version INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    contacted_at TEXT,
+    quoted_at TEXT,
+    closed_at TEXT,
+    UNIQUE(created_by, idempotency_key)
+);
+CREATE INDEX IF NOT EXISTS idx_customer_inquiries_customer ON customer_inquiries(created_by, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_customer_inquiries_status ON customer_inquiries(status, assigned_to, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS customer_inquiry_items (
+    id TEXT PRIMARY KEY,
+    inquiry_id TEXT NOT NULL REFERENCES customer_inquiries(id) ON DELETE CASCADE,
+    item_type TEXT NOT NULL CHECK (item_type IN ('device_config', 'tool', 'accessory')),
+    source_id TEXT,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    quantity INTEGER NOT NULL DEFAULT 1 CHECK (quantity > 0),
+    display_name TEXT NOT NULL DEFAULT '',
+    snapshot_json TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_customer_inquiry_items_inquiry ON customer_inquiry_items(inquiry_id, sort_order);
+
+CREATE TABLE IF NOT EXISTS share_imports (
+    id TEXT PRIMARY KEY,
+    share_id TEXT NOT NULL,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    idempotency_key TEXT NOT NULL,
+    result_json TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, idempotency_key)
+);
+CREATE INDEX IF NOT EXISTS idx_share_imports_user ON share_imports(user_id, created_at);
 
 CREATE TABLE IF NOT EXISTS quotes (
     id TEXT PRIMARY KEY,
@@ -382,6 +481,9 @@ def initialize_database() -> None:
             ("deleted_by", "TEXT"),
             ("delete_reason", "TEXT NOT NULL DEFAULT ''"),
             ("version", "INTEGER NOT NULL DEFAULT 1"),
+            ("gender", "TEXT NOT NULL DEFAULT ''"),
+            ("birth_date", "TEXT"),
+            ("signature", "TEXT NOT NULL DEFAULT ''"),
         ):
             if column not in user_columns:
                 connection.execute("ALTER TABLE users ADD COLUMN {} {}".format(column, definition))
@@ -395,6 +497,32 @@ def initialize_database() -> None:
         qcols = {row[1] for row in connection.execute("PRAGMA table_info(quotes)").fetchall()}
         if "currency" not in qcols:
             connection.execute("ALTER TABLE quotes ADD COLUMN currency TEXT NOT NULL DEFAULT 'CNY'")
+        commerce_quote_columns = {row[1] for row in connection.execute("PRAGMA table_info(commerce_quotes)").fetchall()}
+        for column, definition in (
+            ("quote_number", "TEXT"),
+            ("lifecycle_status", "TEXT NOT NULL DEFAULT 'draft'"),
+            ("version", "INTEGER NOT NULL DEFAULT 1"),
+            ("valid_until", "TEXT"),
+            ("payment_terms", "TEXT NOT NULL DEFAULT ''"),
+            ("delivery_terms", "TEXT NOT NULL DEFAULT ''"),
+            ("tax_note", "TEXT NOT NULL DEFAULT ''"),
+            ("freight_note", "TEXT NOT NULL DEFAULT ''"),
+            ("sales_contact", "TEXT NOT NULL DEFAULT ''"),
+            ("quote_note", "TEXT NOT NULL DEFAULT ''"),
+            ("sent_at", "TEXT"),
+            ("archived_at", "TEXT"),
+            ("archived_by", "TEXT"),
+        ):
+            if column not in commerce_quote_columns:
+                connection.execute("ALTER TABLE commerce_quotes ADD COLUMN {} {}".format(column, definition))
+        delivery_columns = {row[1] for row in connection.execute("PRAGMA table_info(quote_deliveries)").fetchall()}
+        for column, definition in (
+            ("revision_id", "TEXT"),
+            ("last_viewed_revision_id", "TEXT"),
+            ("notification_state", "TEXT NOT NULL DEFAULT 'unread'"),
+        ):
+            if column not in delivery_columns:
+                connection.execute("ALTER TABLE quote_deliveries ADD COLUMN {} {}".format(column, definition))
         saved_config_columns = {row[1] for row in connection.execute("PRAGMA table_info(saved_configs)").fetchall()}
         for column, definition in (
             ("version", "INTEGER NOT NULL DEFAULT 1"),

@@ -8,7 +8,7 @@ from .account_validation import phone_national
 from .account_errors import AccountError
 
 
-PUBLIC_USER_FIELDS = "id, email, phone, phone_country, role, display_name, enabled, deleted_at, deleted_by, delete_reason, version, created_at, updated_at"
+PUBLIC_USER_FIELDS = "id, email, phone, phone_country, role, display_name, gender, birth_date, signature, enabled, deleted_at, deleted_by, delete_reason, version, created_at, updated_at"
 
 
 def _public(row: Any) -> Optional[Dict[str, Any]]:
@@ -98,7 +98,8 @@ def get_user_by_token(raw_token: str) -> Optional[Dict[str, Any]]:
     with get_connection() as connection:
         row = connection.execute(
             """
-            SELECT u.id, u.email, u.phone, u.phone_country, u.role, u.display_name, u.enabled,
+            SELECT u.id, u.email, u.phone, u.phone_country, u.role, u.display_name,
+                   u.gender, u.birth_date, u.signature, u.enabled,
                    u.deleted_at, u.deleted_by, u.delete_reason, u.version, u.created_at, u.updated_at,
                    CASE WHEN s.last_seen_at <= datetime('now', '-5 minutes') THEN 1 ELSE 0 END AS should_touch_session
             FROM sessions s
@@ -210,7 +211,7 @@ def set_user_enabled(user_id: str, enabled: bool, expected_version: Optional[int
     return _public(row)
 
 def update_user(user_id: str, values: Dict[str, Any], expected_version: Optional[int] = None) -> Optional[Dict[str, Any]]:
-    allowed = {"email", "phone", "phone_country", "display_name", "role", "password"}
+    allowed = {"email", "phone", "phone_country", "display_name", "gender", "birth_date", "signature", "role", "password"}
     values = {k: v for k, v in values.items() if k in allowed}
     password_changed = bool(values.get("password"))
     if password_changed:

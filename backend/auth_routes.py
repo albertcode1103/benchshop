@@ -1,4 +1,5 @@
 import sqlite3
+from datetime import date
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
@@ -52,6 +53,14 @@ class PasswordChangeRequest(BaseModel):
     confirm_password: str
 
 
+class ProfileDetailsRequest(BaseModel):
+    display_name: str
+    gender: str = ""
+    birth_date: Optional[str] = None
+    signature: str = ""
+    version: int
+
+
 def bearer_token(authorization: Optional[str] = Header(default=None)) -> str:
     if not authorization or not authorization.lower().startswith("bearer "):
         raise AccountError("ACCOUNT_SESSION_EXPIRED", status_code=401)
@@ -94,7 +103,11 @@ def register(payload: RegisterRequest, request: Request):
     phone = normalize_phone(payload.phone_country, payload.phone)
     validate_display_name(payload.display_name)
     validate_password(payload.password)
-    if not email or not phone: raise AccountError("ACCOUNT_CONTACT_REQUIRED", field="contact")
+    ui_language = (request.headers.get("X-UI-Language") or "zh-CN").strip().lower()
+    if not phone:
+        raise AccountError("ACCOUNT_PHONE_REQUIRED", field="phone")
+    if ui_language.startswith("en") and not email:
+        raise AccountError("ACCOUNT_EMAIL_REQUIRED", field="email")
     try:
         user = create_user(email, phone, payload.password, display_name=payload.display_name, phone_country=payload.phone_country)
     except sqlite3.IntegrityError:
@@ -122,6 +135,35 @@ def login(payload: LoginRequest, request: Request):
 @router.get("/me")
 def me(user=Depends(current_user)):
     return user
+
+
+@router.get("/profile")
+def profile(user=Depends(current_user)):
+    return user
+
+
+@router.patch("/profile/details")
+def update_profile_details(payload: ProfileDetailsRequest, user=Depends(current_user)):
+    display_name = validate_display_name(payload.display_name)
+    gender = (payload.gender or "").strip().lower()
+    if gender not in ("", "male", "female", "other"):
+        raise AccountError("ACCOUNT_GENDER_INVALID", field="gender")
+    birth_date = (payload.birth_date or "").strip() or None
+    if birth_date:
+        try:
+            parsed_birth_date = date.fromisoformat(birth_date)
+        except ValueError:
+            raise AccountError("ACCOUNT_BIRTH_DATE_INVALID", field="birth_date")
+        if parsed_birth_date > date.today() or parsed_birth_date.year < 1900:
+            raise AccountError("ACCOUNT_BIRTH_DATE_INVALID", field="birth_date")
+    signature = (payload.signature or "").strip()
+    if len(signature) > 160:
+        raise AccountError("ACCOUNT_SIGNATURE_TOO_LONG", field="signature")
+    return update_user(
+        user["id"],
+        {"display_name": display_name, "gender": gender, "birth_date": birth_date, "signature": signature},
+        expected_version=payload.version,
+    )
 
 
 @router.get("/countries")

@@ -3,6 +3,10 @@
   const copy = {
     zh: {
       account: "登录", device: "请选择", cart: "购物车", cartTitle: "我的购物车", clear: "清空购物车",
+      profileCenter: "个人中心", viewShare: "查看分享", shareCode: "分享码", viewAction: "查看",
+      shareCodeHint: "请输入 6 位分享码", addAllToCart: "全部加入购物车", addAvailableToCart: "加入可用内容",
+      shareUnavailable: "当前不可用", shareAvailable: "可加入", missingContent: "缺失或已停用",
+      shareImportSuccess: "已加入购物车", shareImportPartial: "可用内容已加入，失效内容未处理", shareQuantityAdjusted: "部分数量已达到购物车上限",
       share: "复制分享码", selected: "已选配置快捷导航", summary: "配置清单",
       summaryTitle: "当前选配", reset: "重置", model: "型号", empty: "尚未选择任何配置项",
       saveCart: "保存配置到购物车",
@@ -27,7 +31,7 @@
       saveRelogin: "保存并重新登录", changeRelogin: "修改密码并重新登录", back: "返回",
       contactInfo: "联系方式", changePassword: "修改密码", enterAdmin: "进入后台",
       currentPasswordRequired: "请输入当前密码", contactRequired: "请至少填写邮箱或手机号", newPasswordLength: "新密码至少 8 个字符", passwordMismatch: "两次输入的新密码不一致",
-      appearance: "外观颜色", cartSelectAll: "全选", shareSelected: "分享所选", exportCombinedPdf: "导出 PDF", removeSelected: "删除所选",
+      appearance: "外观颜色", cartSelectAll: "全选", shareSelected: "分享", exportCombinedPdf: "导出 PDF", removeSelected: "删除所选",
       cancelEdit: "取消修改", saveChanges: "保存修改", saving: "保存中…", editingConfiguration: "正在修改", editAction: "修改", viewDetails: "查看详情",
       configurationDetails: "配置详情", selectConfiguration: "选择配置", configuration: "配置", cartSelectedCount: "已选择 {selected} / {total} 项",
       removeConfirmTitle: "删除所选配置", cancelAction: "取消", confirmRemoveAction: "确认删除", confirmRemoveOne: "确定从购物车删除这项配置？", confirmRemoveSelected: "确定从购物车删除 {count} 项配置？",
@@ -40,11 +44,21 @@
       allCategories: "全部", catalogEmpty: "暂无内容", addToCart: "加入购物车", addingToCart: "正在加入…",
       addedToCart: "已加入购物车", quantity: "数量", referencePrice: "参考价",
       requestQuote: "获取报价", contactSalesQuote: "请联系销售人员获取报价",
+      cartContactSales: "联系销售获取报价", cartView: "详情",
+      loginToContactSales: "登录后联系销售", inquiryCartEmpty: "购物车为空，暂时无法提交询价。", inquiryConfigInvalid: "当前设备选配不完整，请检查后再询价。",
+      inquiryTitle: "联系销售获取报价", inquiryConfirmCopy: "请确认需要提交给销售人员的内容。提交后，销售人员将基于此配置与您联系。",
+      inquiryMessage: "备注（选填）", inquiryMessageHint: "例如：请通过邮箱联系我", submitInquiry: "提交询价", submitting: "提交中…",
+      inquirySubmitted: "询价已提交，销售人员将与您联系。询价编号：", inquiryFailed: "询价提交失败", devices: "设备",
+      removeDevice: "删除设备配置", removeCatalogGroup: "删除{type}", confirmRemoveCatalogGroup: "确定从购物车移除全部 {type}（{count} 个项目，共 {quantity} 件）吗？",
+      contactSalesLink: "联系销售获取报价", salesContactTitle: "联系销售",
+      salesContactDescription: "通过以下方式联系我们，获取产品报价与选型支持。",
+      salesEmail: "业务邮箱", salesWhatsapp: "WhatsApp", openWhatsapp: "打开 WhatsApp",
       catalogStandaloneDesc: "可独立选择数量并加入购物车，无需选择设备。",
       cartDevices: "设备配置", cartGroupCount: "{count} 项", inCart: "购物车中已有",
       selectCatalogGroup: "选择全部", catalogGroupSummary: "共 {count} 项", editCatalogGroup: "修改{type}",
       catalogGroupDetails: "{type}详情", undoDelete: "撤销删除",
       selectionRequiredTitle: "请先选择内容", selectionRequiredMessage: "请先勾选需要操作的设备配置、工具或附件。", understood: "知道了",
+      removeCartItemTitle: "移除购物车项目", confirmRemoveCatalogItem: "确定从购物车中移除“{name}”吗？",
       decreaseQuantity: "减少数量", increaseQuantity: "增加数量", removeFromSelection: "从本次选择中移除",
       selectedItem: "已选择",
       deviceSequence: "设备 {number}", totalQuantity: "总数", quantityUnit: "件",
@@ -63,6 +77,10 @@
     },
     en: {
       account: "Sign in", device: "Select", cart: "Cart", cartTitle: "My Cart", clear: "Clear Cart",
+      profileCenter: "Profile", viewShare: "View Share", shareCode: "Share code", viewAction: "View",
+      shareCodeHint: "Enter the 6-digit share code", addAllToCart: "Add All to Cart", addAvailableToCart: "Add Available Items",
+      shareUnavailable: "Unavailable", shareAvailable: "Available", missingContent: "Missing or disabled",
+      shareImportSuccess: "Added to cart", shareImportPartial: "Available items were added. Unavailable items were skipped", shareQuantityAdjusted: "Some quantities reached the cart limit",
       share: "Copy Share Code", selected: "Selected Configuration", summary: "Configuration Summary",
       summaryTitle: "Selected Configuration", reset: "Reset", model: "Model", empty: "No Configuration Selected",
       saveCart: "Save Configuration to Cart",
@@ -87,7 +105,7 @@
       saveRelogin: "Save and sign in again", changeRelogin: "Change password and sign in again", back: "Back",
       contactInfo: "Contact details", changePassword: "Change password", enterAdmin: "Open admin",
       currentPasswordRequired: "Enter your current password", contactRequired: "Enter an email or phone number", newPasswordLength: "New password must be at least 8 characters", passwordMismatch: "New passwords do not match",
-      appearance: "Appearance", cartSelectAll: "Select All", shareSelected: "Share Selected", exportCombinedPdf: "Export PDF", removeSelected: "Remove Selected",
+      appearance: "Appearance", cartSelectAll: "Select All", shareSelected: "Share", exportCombinedPdf: "Export PDF", removeSelected: "Remove Selected",
       cancelEdit: "Cancel Editing", saveChanges: "Save Changes", saving: "Saving…", editingConfiguration: "Editing", editAction: "Edit", viewDetails: "View Details",
       configurationDetails: "Configuration Details", selectConfiguration: "Select configuration", configuration: "Configuration", cartSelectedCount: "{selected} of {total} Selected",
       removeConfirmTitle: "Remove Selected Configurations", cancelAction: "Cancel", confirmRemoveAction: "Remove", confirmRemoveOne: "Remove this configuration from the cart?", confirmRemoveSelected: "Remove {count} selected configurations from the cart?",
@@ -100,11 +118,21 @@
       allCategories: "All", catalogEmpty: "No items", addToCart: "Add to Cart", addingToCart: "Adding…",
       addedToCart: "Added to cart", quantity: "Quantity", referencePrice: "Reference Price",
       requestQuote: "Request a Quote", contactSalesQuote: "Please contact our sales team for a quotation",
+      cartContactSales: "Contact Sales for a Quote", cartView: "View",
+      loginToContactSales: "Sign in to Contact Sales", inquiryCartEmpty: "Your cart is empty, so an inquiry cannot be submitted.", inquiryConfigInvalid: "Complete the current device configuration before requesting a quote.",
+      inquiryTitle: "Contact Sales for a Quote", inquiryConfirmCopy: "Review the content for sales. After submission, a sales representative will contact you about this request.",
+      inquiryMessage: "Note(Optional)", inquiryMessageHint: "For example: please contact me by email", submitInquiry: "Submit Inquiry", submitting: "Submitting…",
+      inquirySubmitted: "Inquiry submitted. Sales will contact you. Inquiry number: ", inquiryFailed: "Inquiry submission failed", devices: "Devices",
+      removeDevice: "Remove Device Configuration", removeCatalogGroup: "Remove {type}", confirmRemoveCatalogGroup: "Remove all {type} ({count} items, {quantity} total) from the cart?",
+      contactSalesLink: "Contact Sales for a Quote", salesContactTitle: "Contact Sales",
+      salesContactDescription: "Contact us for product quotations and configuration support.",
+      salesEmail: "Sales Email", salesWhatsapp: "WhatsApp", openWhatsapp: "Open WhatsApp",
       catalogStandaloneDesc: "Choose quantities and add items without selecting a device.",
       cartDevices: "Device Configurations", cartGroupCount: "{count} items", inCart: "Already in Cart",
       selectCatalogGroup: "Select all", catalogGroupSummary: "{count} items", editCatalogGroup: "Edit {type}",
       catalogGroupDetails: "{type} Details", undoDelete: "Undo Delete",
       selectionRequiredTitle: "Select Items First", selectionRequiredMessage: "Select the device configurations, tools, or accessories you want to use.", understood: "OK",
+      removeCartItemTitle: "Remove Cart Item", confirmRemoveCatalogItem: "Remove “{name}” from the cart?",
       decreaseQuantity: "Decrease quantity", increaseQuantity: "Increase quantity", removeFromSelection: "Remove from current selection",
       selectedItem: "Selected",
       deviceSequence: "Device {number}", totalQuantity: "Total", quantityUnit: "items",
@@ -150,12 +178,13 @@
       "auth-hint": "authHint", "account-name": "user", "account-role": "customer",
       "account-logout": "logout", "share-title": "shareTitle", "share-description": "shareDesc",
       "share-copy-status": "copyHint", "share-expiry-label": "expires", "cart-empty": "cartEmpty",
-      "cart-select-all-label": "cartSelectAll", "cart-share-selected": "shareSelected",
-      "cart-pdf-selected": "exportCombinedPdf", "cart-remove-selected": "removeSelected", "cancel-config-edit": "cancelEdit",
+      "cancel-config-edit": "cancelEdit",
       "overview-title": "overview", "overview-description-title": "overviewDescription",
       "overview-specifications-title": "overviewSpecifications", "specification-name-heading": "specificationName",
-      "specification-value-heading": "specificationValue", "pricing-preview-title": "requestQuote",
-      "pricing-enquiry-message": "contactSalesQuote",
+      "specification-value-heading": "specificationValue", "sales-contact-open": "contactSalesLink",
+      "sales-contact-title": "salesContactTitle", "sales-contact-description": "salesContactDescription",
+      "sales-contact-email-label": "salesEmail", "sales-contact-whatsapp-label": "salesWhatsapp",
+      "sales-contact-whatsapp": "openWhatsapp", "sales-contact-done": "close",
       "catalog-marketplace-title": "catalogMarketplace", "catalog-marketplace-description": "catalogMarketplaceDesc",
       "catalog-marketplace-search-label": "search", "catalog-marketplace-empty": "catalogEmpty"
     };
@@ -188,6 +217,7 @@
     const passwordInput = document.getElementById("auth-password");
     const authClose = document.getElementById("auth-close");
     const shareClose = document.getElementById("share-close");
+    const salesContactClose = document.getElementById("sales-contact-close");
     const cartClose = document.getElementById("cart-close");
     const footer = document.getElementById("site-footer-copy");
     if (nameInput) nameInput.placeholder = text.nameHint;
@@ -195,6 +225,7 @@
     if (passwordInput) passwordInput.placeholder = text.passwordHint;
     if (authClose) authClose.setAttribute("aria-label", text.close);
     if (shareClose) shareClose.setAttribute("aria-label", text.closeShare);
+    if (salesContactClose) salesContactClose.setAttribute("aria-label", text.close);
     if (cartClose) cartClose.setAttribute("aria-label", text.closeCart);
     if (footer) footer.innerHTML = `&copy; 2026 BOTEN DIESEL TEST BENCH. ${text.footer}`;
     const catalogSearch = document.getElementById("catalog-marketplace-search");
