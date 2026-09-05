@@ -158,6 +158,8 @@ py -m http.server 8080
 
 ## 部署准备
 
+阿里云 ECS 的安装、镜像离线导入、环境配置、空数据库处理及从 Albert-NAS 迁移完整业务数据库的操作，见 [阿里云 ECS 部署与数据库迁移指南](docs/2026-09-06-ecs-deployment-guide.md)。
+
 ### 2026-09-01 群晖部署状态
 
 最新代码与数据库已在群晖 `BOTEN_NAS` 的 `/volume1/docker/benchshop` 启动验证：`api` 容器状态为 `healthy`，`web` 容器已运行并通过宿主机 `8080` 端口提供服务。局域网验收使用 `http://<NAS-IP>:8080/`，管理后台使用 `http://<NAS-IP>:8080/admin/`。
