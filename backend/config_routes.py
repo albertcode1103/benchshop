@@ -100,9 +100,11 @@ class QuoteRequest(BaseModel):
     quote_id: Optional[str] = None
     currency: str = "CNY"
     source_share_id: Optional[str] = None
+    source_inquiry_id: Optional[str] = None
     customer_name: str = ""
     customer_email: str = ""
     language: str = "zh"
+    version: Optional[int] = Field(default=None, ge=1)
 
 
 class PricePreviewRequest(BaseModel):
@@ -140,6 +142,8 @@ class ShareImportRequest(BaseModel):
 class QuoteDeliveryRequest(BaseModel):
     recipient_user_id: Optional[str] = Field(default=None, max_length=100)
     source_share_id: Optional[str] = Field(default=None, max_length=100)
+    version: Optional[int] = Field(default=None, ge=1)
+    idempotency_key: Optional[str] = Field(default=None, min_length=8, max_length=80)
 
 
 class QuoteLifecycleRequest(BaseModel):
@@ -445,18 +449,24 @@ def update_inquiry(inquiry_id: str, payload: StaffInquiryUpdateRequest, user=Dep
 
 
 @router.post("/staff/inquiries/{inquiry_id}/convert-to-quote", status_code=status.HTTP_201_CREATED)
-def convert_inquiry_to_quote(inquiry_id: str, payload: InquiryQuoteRequest, user=Depends(staff_user)):
+def convert_inquiry_to_quote(inquiry_id: str, payload: InquiryQuoteRequest, response: Response, user=Depends(staff_user)):
     language = "en" if payload.currency == "USD" else "zh"
     inquiry = get_staff_inquiry(inquiry_id, user["id"], user["role"], language)
     if inquiry is None:
         raise AccountError("INQUIRY_NOT_FOUND", status_code=404)
     if inquiry.get("converted_quote_id"):
-        raise AccountError("INQUIRY_QUOTE_ALREADY_EXISTS", status_code=409)
+        quote = get_quote(inquiry["converted_quote_id"], None if user["role"] == "admin" else user["id"])
+        if quote is None:
+            raise AccountError("QUOTE_NOT_FOUND", status_code=404)
+        inquiry["replayed"] = True
+        response.status_code = status.HTTP_200_OK
+        return {"inquiry": inquiry, "quote": quote, "replayed": True}
     try:
         items = inquiry_quote_items(inquiry)
         title = payload.title.strip() or ("Inquiry {}".format(inquiry["inquiry_number"]) if language == "en" else "询价 {}".format(inquiry["inquiry_number"]))
         quote = save_quote(
             None, user["id"], title, items, 0, currency=payload.currency,
+            source_inquiry_id=inquiry_id,
             customer_name=inquiry.get("customer_name_snapshot") or inquiry.get("customer_display_name") or "",
             customer_email=inquiry.get("customer_email_snapshot") or "",
             language=language, allow_any_owner=user["role"] == "admin",
@@ -468,8 +478,15 @@ def convert_inquiry_to_quote(inquiry_id: str, payload: InquiryQuoteRequest, user
         raise AccountError("INQUIRY_SNAPSHOT_INVALID", status_code=422)
     if result is None:
         raise AccountError("INQUIRY_NOT_FOUND", status_code=404)
+    if result.get("replayed") and result.get("converted_quote_id") != quote["id"]:
+        delete_quote(quote["id"], None if user["role"] == "admin" else user["id"])
+        quote = get_quote(result["converted_quote_id"], None if user["role"] == "admin" else user["id"])
+        if quote is None:
+            raise AccountError("QUOTE_NOT_FOUND", status_code=404)
+        response.status_code = status.HTTP_200_OK
+        return {"inquiry": result, "quote": quote, "replayed": True}
     write_audit(user["id"], "inquiry_convert_quote", "customer_inquiries", inquiry_id, {"quote_id": quote["id"], "inquiry_number": inquiry["inquiry_number"]})
-    return {"inquiry": result, "quote": quote}
+    return {"inquiry": result, "quote": quote, "replayed": False}
 
 
 @router.get("/customer/me/shares")
@@ -504,6 +521,8 @@ def customer_own_quote_pdf(quote_id: str, user=Depends(registered_user)):
     result = get_customer_quote(quote_id, user["id"], mark_viewed=True)
     if result is None:
         raise AccountError("QUOTE_NOT_FOUND", status_code=404)
+    if result.get("lifecycle_status") == "archived":
+        raise AccountError("QUOTE_ARCHIVED", status_code=409)
     return _pdf_response(render_quote_pdf(result), "quote-{}.pdf".format(quote_id[:8]))
 
 
@@ -678,8 +697,18 @@ def preview_share(code: str, lang: str = "zh", user=Depends(staff_user)):
     return result
 
 @router.get("/quotes")
-def quotes(user=Depends(staff_user)):
-    return {"items": list_quotes(None if user["role"] == "admin" else user["id"])}
+def quotes(
+    status_filter: str = Query("all", alias="status", pattern="^(all|draft|sent|archived)$"),
+    include_archived: bool = True,
+    user=Depends(staff_user),
+):
+    return {
+        "items": list_quotes(
+            None if user["role"] == "admin" else user["id"],
+            status_filter=status_filter,
+            include_archived=include_archived,
+        )
+    }
 
 @router.get("/staff/reference-prices")
 def reference_prices(user=Depends(staff_user)):
@@ -700,18 +729,13 @@ def staff_customers(query: str = "", user=Depends(staff_user)):
 def add_quote(payload: QuoteRequest, user=Depends(staff_user)):
     try:
         result = save_quote(
-            payload.config_id,
-            user["id"],
-            payload.title,
-            payload.items,
-            payload.total_price,
-            payload.quote_id,
-            payload.currency,
-            payload.source_share_id,
-            payload.customer_name,
-            payload.customer_email,
-            payload.language,
+            payload.config_id, user["id"], payload.title, payload.items, payload.total_price,
+            quote_id=payload.quote_id, currency=payload.currency,
+            source_share_id=payload.source_share_id, source_inquiry_id=payload.source_inquiry_id,
+            customer_name=payload.customer_name, customer_email=payload.customer_email,
+            language=payload.language,
             allow_any_owner=user["role"] == "admin",
+            expected_version=payload.version,
         )
         write_audit(user["id"], "quote_update" if payload.quote_id else "quote_create", "commerce_quotes" if result.get("document_version") == 2 else "quotes", result["id"], {"item_count": len(payload.items), "currency": payload.currency, "source_share_id": payload.source_share_id or ""})
         return result
@@ -723,6 +747,8 @@ def add_quote(payload: QuoteRequest, user=Depends(staff_user)):
             status_code = 403
         elif detail == "Quote archived":
             raise AccountError("QUOTE_ARCHIVED", status_code=409)
+        elif detail == "Quote version conflict":
+            raise AccountError("QUOTE_VERSION_CONFLICT", status_code=409)
         else:
             status_code = 422
         raise HTTPException(status_code=status_code, detail=detail)
@@ -734,15 +760,19 @@ def send_quote_to_customer(quote_id: str, payload: QuoteDeliveryRequest, user=De
     if owned_quote is None:
         raise AccountError("QUOTE_NOT_FOUND", status_code=404)
     try:
-        result = deliver_quote(quote_id, user["id"], payload.recipient_user_id, payload.source_share_id)
+        result = deliver_quote(
+            quote_id, user["id"], payload.recipient_user_id, payload.source_share_id,
+            expected_version=payload.version, idempotency_key=payload.idempotency_key,
+        )
     except ValueError as error:
         code = {
             "Quote not found": "QUOTE_NOT_FOUND",
             "Quote recipient required": "QUOTE_RECIPIENT_REQUIRED",
             "Quote recipient unavailable": "QUOTE_RECIPIENT_UNAVAILABLE",
             "Quote archived": "QUOTE_ARCHIVED",
+            "Quote version conflict": "QUOTE_VERSION_CONFLICT",
         }.get(str(error), "ACCOUNT_VALIDATION_FAILED")
-        raise AccountError(code, field="recipient_user_id", status_code=404 if code == "QUOTE_NOT_FOUND" else 422)
+        raise AccountError(code, field="recipient_user_id", status_code=404 if code == "QUOTE_NOT_FOUND" else 409 if code in ("QUOTE_ARCHIVED", "QUOTE_VERSION_CONFLICT") else 422)
     write_audit(user["id"], "quote_deliver", "quote_deliveries", result["id"], {"quote_id": quote_id, "recipient_user_id": result["recipient_user_id"], "source_share_id": result.get("source_share_id") or ""})
     return result
 
@@ -810,6 +840,8 @@ def quote(quote_id: str, user=Depends(staff_user)):
 def quote_pdf(quote_id: str, user=Depends(staff_user)):
     result = get_quote(quote_id, None if user["role"] == "admin" else user["id"])
     if result is None: raise HTTPException(status_code=404, detail="Quote not found")
+    if result.get("lifecycle_status") == "archived":
+        raise AccountError("QUOTE_ARCHIVED", status_code=409)
     return _pdf_response(render_quote_pdf(result), "quote-{}.pdf".format(quote_id[:8]))
 
 @router.delete("/quotes/{quote_id}", status_code=status.HTTP_204_NO_CONTENT)

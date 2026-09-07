@@ -1308,7 +1308,7 @@ class BackendWorkflowTests(unittest.TestCase):
                 delivered = client.post(
                     "/api/v1/staff/quotes/{}/deliver".format(quote_id),
                     headers=staff_headers,
-                    json={"source_share_id": share_id},
+                    json={"source_share_id": share_id, "version": quote.json()["version"]},
                 )
                 self.assertEqual(200, delivered.status_code, delivered.text)
                 self.assertEqual(customer["id"], delivered.json()["recipient_user_id"])
@@ -1455,7 +1455,21 @@ class BackendWorkflowTests(unittest.TestCase):
                 self.assertEqual(201, converted.status_code, converted.text)
                 self.assertEqual("quoted", converted.json()["inquiry"]["status"])
                 self.assertTrue(converted.json()["quote"]["items"])
+                self.assertEqual(inquiry_id, converted.json()["quote"]["source_inquiry_id"])
                 quote_id = converted.json()["quote"]["id"]
+
+                replayed = client.post(
+                    "/api/v1/staff/inquiries/{}/convert-to-quote".format(inquiry_id), headers=sales_headers,
+                    json={"version": assigned.json()["version"], "currency": "CNY"},
+                )
+                self.assertEqual(200, replayed.status_code, replayed.text)
+                self.assertTrue(replayed.json()["replayed"])
+                self.assertEqual(quote_id, replayed.json()["quote"]["id"])
+                with get_connection() as database:
+                    quote_count = database.execute(
+                        "SELECT COUNT(*) FROM commerce_quotes WHERE id = ?", (quote_id,)
+                    ).fetchone()[0]
+                self.assertEqual(1, quote_count)
         finally:
             with get_connection() as database:
                 if quote_id:
@@ -1479,11 +1493,38 @@ class BackendWorkflowTests(unittest.TestCase):
                 self.assertEqual(201, created.status_code, created.text)
                 quote_id = created.json()["id"]
 
+                updated = client.post(
+                    "/api/v1/quotes", headers=sales_headers,
+                    json={
+                        "quote_id": quote_id, "version": created.json()["version"],
+                        "title": "Lifecycle quote updated",
+                        "items": [{"kind": "product", "code": "CR1016", "name": "Test bench", "quantity": 1, "price": 101}],
+                        "total_price": 0, "currency": "USD",
+                    },
+                )
+                self.assertEqual(201, updated.status_code, updated.text)
+                stale_update = client.post(
+                    "/api/v1/quotes", headers=sales_headers,
+                    json={
+                        "quote_id": quote_id, "version": created.json()["version"],
+                        "title": "Stale update",
+                        "items": [{"kind": "product", "name": "Stale", "quantity": 1, "price": 1}],
+                        "total_price": 1,
+                    },
+                )
+                self.assertEqual(409, stale_update.status_code, stale_update.text)
+
                 delivered = client.post(
                     "/api/v1/staff/quotes/{}/deliver".format(quote_id), headers=sales_headers,
-                    json={"recipient_user_id": customer["id"]},
+                    json={"recipient_user_id": customer["id"], "version": updated.json()["version"], "idempotency_key": "quote-delivery-lifecycle-1"},
                 )
                 self.assertEqual(200, delivered.status_code, delivered.text)
+                replayed_delivery = client.post(
+                    "/api/v1/staff/quotes/{}/deliver".format(quote_id), headers=sales_headers,
+                    json={"recipient_user_id": customer["id"], "version": updated.json()["version"], "idempotency_key": "quote-delivery-lifecycle-1"},
+                )
+                self.assertEqual(200, replayed_delivery.status_code, replayed_delivery.text)
+                self.assertTrue(replayed_delivery.json()["replayed"])
 
                 sent = client.get("/api/v1/quotes/{}".format(quote_id), headers=sales_headers)
                 self.assertEqual("sent", sent.json()["lifecycle_status"])
@@ -1493,6 +1534,32 @@ class BackendWorkflowTests(unittest.TestCase):
                 )
                 self.assertEqual(200, archived.status_code, archived.text)
                 self.assertEqual("archived", archived.json()["lifecycle_status"])
+                self.assertEqual(
+                    409,
+                    client.get("/api/v1/quotes/{}/pdf".format(quote_id), headers=sales_headers).status_code,
+                )
+
+                archived_listing = client.get("/api/v1/quotes?status=archived", headers=sales_headers)
+                self.assertEqual(200, archived_listing.status_code, archived_listing.text)
+                self.assertEqual([quote_id], [item["id"] for item in archived_listing.json()["items"]])
+                active_listing = client.get("/api/v1/quotes?include_archived=false", headers=sales_headers)
+                self.assertNotIn(quote_id, [item["id"] for item in active_listing.json()["items"]])
+
+                customer_listing = client.get("/api/v1/customer/me/quotes", headers=customer_headers)
+                customer_quote = next(item for item in customer_listing.json()["items"] if item["id"] == quote_id)
+                self.assertEqual("archived", customer_quote["lifecycle_status"])
+                self.assertTrue(customer_quote["prices_hidden"])
+                self.assertEqual([], customer_quote["items"])
+                self.assertEqual(0, customer_quote["total_price"])
+                customer_detail = client.get(
+                    "/api/v1/customer/me/quotes/{}".format(quote_id), headers=customer_headers,
+                )
+                self.assertEqual(200, customer_detail.status_code, customer_detail.text)
+                self.assertEqual([], customer_detail.json()["items"])
+                self.assertEqual(
+                    409,
+                    client.get("/api/v1/customer/me/quotes/{}/pdf".format(quote_id), headers=customer_headers).status_code,
+                )
 
                 blocked = client.post(
                     "/api/v1/quotes", headers=sales_headers,
@@ -1776,10 +1843,12 @@ class BackendWorkflowTests(unittest.TestCase):
                 category_columns = {row[1] for row in connection.execute("PRAGMA table_info(categories)")}
                 option_columns = {row[1] for row in connection.execute("PRAGMA table_info(options)")}
                 share_item_columns = {row[1] for row in connection.execute("PRAGMA table_info(config_share_items)")}
+                quote_columns = {row[1] for row in connection.execute("PRAGMA table_info(commerce_quotes)")}
+                delivery_columns = {row[1] for row in connection.execute("PRAGMA table_info(quote_deliveries)")}
             finally:
                 connection.close()
             self.assertIsNotNone(version_row, process.stdout + process.stderr)
-            self.assertEqual("20260905_0018", version_row[0])
+            self.assertEqual("20260907_0019", version_row[0])
             self.assertTrue({"products", "options", "users", "quotes", "audit_logs", "product_motor_prices", "product_specifications", "config_share_items", "product_base_option_groups", "product_base_options", "product_price_variants", "saved_catalog_items", "commerce_shares", "commerce_share_items", "commerce_quotes", "share_imports", "quote_deliveries"}.issubset(tables))
             self.assertIn("description_override_en", columns)
             self.assertTrue({"label_en", "display_color", "enabled", "version", "translation_status"}.issubset(color_columns))
@@ -1788,6 +1857,8 @@ class BackendWorkflowTests(unittest.TestCase):
             self.assertTrue({"note_en", "deleted_at", "version", "translation_status"}.issubset(option_columns))
             self.assertTrue({"image_width", "image_height"}.issubset(option_columns))
             self.assertTrue({"item_type", "source_id"}.issubset(share_item_columns))
+            self.assertIn("source_inquiry_id", quote_columns)
+            self.assertIn("idempotency_key", delivery_columns)
 
 
 if __name__ == "__main__":

@@ -30,7 +30,35 @@ def _normalize_quote_items(items: Any) -> List[Dict[str, Any]]:
         normalized_item["quantity"] = quantity
         normalized_item["price"] = round(price, 2)
         normalized.append(normalized_item)
-    return normalized
+    return _canonical_quote_items(normalized)
+
+
+def _canonical_quote_items(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Keep device groups stable, then tools and accessories in catalog order."""
+    def item_type(item: Dict[str, Any]) -> str:
+        kind = str(item.get("kind") or "")
+        if kind == "tool":
+            return "tool"
+        if kind == "accessory":
+            return "accessory"
+        return "device_config"
+
+    def safe_order(value: Any) -> int:
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return 2147483647
+
+    indexed = list(enumerate(items))
+    ranks = {"device_config": 0, "tool": 1, "accessory": 2}
+    indexed.sort(key=lambda pair: (
+        ranks[item_type(pair[1])],
+        pair[0] if item_type(pair[1]) == "device_config" else safe_order(pair[1].get("category_sort_order", pair[1].get("catalog_category_sort_order"))),
+        pair[0] if item_type(pair[1]) == "device_config" else safe_order(pair[1].get("sort_order", pair[1].get("catalog_sort_order"))),
+        "" if item_type(pair[1]) == "device_config" else str(pair[1].get("code") or ""),
+        pair[0],
+    ))
+    return [item for _, item in indexed]
 
 
 def _optional_text(value: Any, limit: int = 200) -> str:
@@ -114,10 +142,12 @@ def save_quote(
     quote_id: Optional[str] = None,
     currency: str = "CNY",
     source_share_id: Optional[str] = None,
+    source_inquiry_id: Optional[str] = None,
     customer_name: str = "",
     customer_email: str = "",
     language: str = "zh",
     allow_any_owner: bool = False,
+    expected_version: Optional[int] = None,
 ) -> Dict[str, Any]:
     normalized_items = _normalize_quote_items(items)
     try:
@@ -133,6 +163,7 @@ def save_quote(
     selected_language = "en" if language == "en" else "zh"
     clean_config_id = _optional_text(config_id, 100) or None
     clean_source_share_id = _optional_text(source_share_id, 100) or None
+    clean_source_inquiry_id = _optional_text(source_inquiry_id, 100) or None
     clean_title = _optional_text(title, 200) or ("Quotation" if selected_language == "en" else "配置报价单")
 
     with get_connection() as db:
@@ -147,26 +178,33 @@ def save_quote(
             share = db.execute("SELECT id FROM commerce_shares WHERE id = ?", (clean_source_share_id,)).fetchone()
             if share is None:
                 clean_source_share_id = None
+        if clean_source_inquiry_id:
+            inquiry = db.execute("SELECT id FROM customer_inquiries WHERE id = ?", (clean_source_inquiry_id,)).fetchone()
+            if inquiry is None:
+                clean_source_inquiry_id = None
 
         if quote_id:
-            new_row = db.execute("SELECT user_id, lifecycle_status FROM commerce_quotes WHERE id = ?", (quote_id,)).fetchone()
+            new_row = db.execute("SELECT user_id, lifecycle_status, version FROM commerce_quotes WHERE id = ?", (quote_id,)).fetchone()
             if new_row is not None:
                 if not allow_any_owner and new_row["user_id"] != user_id:
                     raise ValueError("Quote access denied")
                 if new_row["lifecycle_status"] == "archived":
                     raise ValueError("Quote archived")
-                db.execute(
+                if expected_version is None or int(new_row["version"] or 1) != int(expected_version):
+                    raise ValueError("Quote version conflict")
+                cursor = db.execute(
                     """
                     UPDATE commerce_quotes
-                    SET config_id = ?, source_share_id = ?, title = ?,
+                    SET config_id = ?, source_share_id = ?, source_inquiry_id = ?, title = ?,
                         customer_name = ?, customer_email = ?, language = ?,
                         items_json = ?, total_price = ?, currency = ?,
                         version = version + 1, updated_at = CURRENT_TIMESTAMP
-                    WHERE id = ?
+                    WHERE id = ? AND version = ?
                     """,
                     (
                         clean_config_id,
                         clean_source_share_id,
+                        clean_source_inquiry_id,
                         clean_title,
                         _optional_text(customer_name, 200),
                         _optional_text(customer_email, 320),
@@ -175,8 +213,11 @@ def save_quote(
                         calculated_total,
                         currency,
                         quote_id,
+                        expected_version,
                     ),
                 )
+                if not cursor.rowcount:
+                    raise ValueError("Quote version conflict")
                 row = db.execute("SELECT * FROM commerce_quotes WHERE id = ?", (quote_id,)).fetchone()
                 return _decode(row, document_version=2)
 
@@ -210,15 +251,16 @@ def save_quote(
         db.execute(
             """
             INSERT INTO commerce_quotes
-                (id, config_id, source_share_id, user_id, title,
+                (id, config_id, source_share_id, source_inquiry_id, user_id, title,
                  customer_name, customer_email, language, items_json,
                  total_price, currency)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 new_quote_id,
                 clean_config_id,
                 clean_source_share_id,
+                clean_source_inquiry_id,
                 user_id,
                 clean_title,
                 _optional_text(customer_name, 200),
@@ -239,6 +281,7 @@ def _decode(row, document_version: int = 2):
     result = dict(row)
     result["items"] = json.loads(result.pop("items_json"))
     result.setdefault("source_share_id", None)
+    result.setdefault("source_inquiry_id", None)
     result.setdefault("customer_name", "")
     result.setdefault("customer_email", "")
     result.setdefault("language", "zh")
@@ -246,7 +289,11 @@ def _decode(row, document_version: int = 2):
     return result
 
 
-def list_quotes(user_id: Optional[str] = None) -> List[Dict[str, Any]]:
+def list_quotes(
+    user_id: Optional[str] = None,
+    status_filter: str = "all",
+    include_archived: bool = True,
+) -> List[Dict[str, Any]]:
     restriction = "WHERE q.user_id = ?" if user_id else ""
     params = (user_id,) if user_id else ()
     with get_connection() as db:
@@ -279,7 +326,12 @@ def list_quotes(user_id: Optional[str] = None) -> List[Dict[str, Any]]:
     delivery_map = {row["quote_id"]: dict(row) for row in delivery_rows}
     results = [_decode(row, 2) for row in new_rows] + [_decode(row, 1) for row in legacy_rows]
     for item in results:
+        item.setdefault("lifecycle_status", "draft")
         item.update(delivery_map.get(item["id"], {"delivery_count": 0, "recipient_summary": ""}))
+    if not include_archived:
+        results = [item for item in results if item["lifecycle_status"] != "archived"]
+    if status_filter != "all":
+        results = [item for item in results if item["lifecycle_status"] == status_filter]
     return sorted(results, key=lambda item: str(item.get("updated_at") or ""), reverse=True)
 
 
@@ -308,13 +360,25 @@ def deliver_quote(
     delivered_by: str,
     recipient_user_id: Optional[str] = None,
     source_share_id: Optional[str] = None,
+    expected_version: Optional[int] = None,
+    idempotency_key: Optional[str] = None,
 ) -> Dict[str, Any]:
     quote = get_quote(quote_id)
     if quote is None:
         raise ValueError("Quote not found")
     document_version = int(quote.get("document_version") or 2)
     resolved_share_id = _optional_text(source_share_id or quote.get("source_share_id"), 100) or None
+    clean_idempotency_key = _optional_text(idempotency_key, 80) or None
     with get_connection() as db:
+        if clean_idempotency_key:
+            replay = db.execute(
+                "SELECT * FROM quote_deliveries WHERE delivered_by = ? AND idempotency_key = ?",
+                (delivered_by, clean_idempotency_key),
+            ).fetchone()
+            if replay is not None:
+                result = dict(replay)
+                result["replayed"] = True
+                return result
         recipient_id = _optional_text(recipient_user_id, 100) or _share_owner(db, resolved_share_id)
         if not recipient_id:
             raise ValueError("Quote recipient required")
@@ -327,13 +391,15 @@ def deliver_quote(
         revision_id = None
         if document_version == 2:
             current = db.execute(
-                "SELECT lifecycle_status, quote_number FROM commerce_quotes WHERE id = ?",
+                "SELECT lifecycle_status, quote_number, version FROM commerce_quotes WHERE id = ?",
                 (quote_id,),
             ).fetchone()
             if current is None:
                 raise ValueError("Quote not found")
             if current["lifecycle_status"] == "archived":
                 raise ValueError("Quote archived")
+            if expected_version is None or int(current["version"] or 1) != int(expected_version):
+                raise ValueError("Quote version conflict")
             quote_number = current["quote_number"] or _allocate_quote_number(db)
             db.execute(
                 """
@@ -359,10 +425,11 @@ def deliver_quote(
                 SET document_version = ?, revision_id = ?, source_share_id = ?, delivered_by = ?,
                     status = 'delivered', delivered_at = CURRENT_TIMESTAMP,
                     viewed_at = NULL, withdrawn_at = NULL,
-                    last_viewed_revision_id = NULL, notification_state = 'unread'
+                    last_viewed_revision_id = NULL, notification_state = 'unread',
+                    idempotency_key = ?
                 WHERE id = ?
                 """,
-                (document_version, revision_id, resolved_share_id, delivered_by, delivery_id),
+                (document_version, revision_id, resolved_share_id, delivered_by, clean_idempotency_key, delivery_id),
             )
         else:
             delivery_id = uuid.uuid4().hex
@@ -370,13 +437,14 @@ def deliver_quote(
                 """
                 INSERT INTO quote_deliveries
                     (id, quote_id, document_version, revision_id, recipient_user_id,
-                     source_share_id, delivered_by, notification_state)
-                VALUES (?, ?, ?, ?, ?, ?, ?, 'unread')
+                     source_share_id, delivered_by, notification_state, idempotency_key)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 'unread', ?)
                 """,
-                (delivery_id, quote_id, document_version, revision_id, recipient_id, resolved_share_id, delivered_by),
+                (delivery_id, quote_id, document_version, revision_id, recipient_id, resolved_share_id, delivered_by, clean_idempotency_key),
             )
         row = db.execute("SELECT * FROM quote_deliveries WHERE id = ?", (delivery_id,)).fetchone()
     result = dict(row)
+    result["replayed"] = False
     result["recipient"] = {
         "id": recipient["id"], "display_name": recipient["display_name"],
         "email": recipient["email"], "phone": recipient["phone"],
@@ -538,9 +606,12 @@ def list_customer_quotes(user_id: str) -> List[Dict[str, Any]]:
     for delivery in deliveries:
         delivery_data = dict(delivery)
         revision_id = str(delivery_data.get("revision_id") or "")
-        quote = get_quote_revision(revision_id) if revision_id else get_quote(delivery_data["quote_id"])
+        current_quote = get_quote(delivery_data["quote_id"])
+        quote = get_quote_revision(revision_id) if revision_id else current_quote
         if quote is None:
             continue
+        if current_quote and current_quote.get("lifecycle_status") == "archived":
+            quote = _archived_customer_quote(quote, current_quote)
         quote["delivery"] = delivery_data
         quote["sender"] = {
             "display_name": delivery_data.pop("sender_name", "") or "",
@@ -574,9 +645,12 @@ def get_customer_quote(quote_id: str, user_id: str, mark_viewed: bool = False) -
                 (delivery["id"],),
             )
     revision_id = str(delivery["revision_id"] or "")
-    result = get_quote_revision(revision_id) if revision_id else get_quote(quote_id)
+    current_quote = get_quote(quote_id)
+    result = get_quote_revision(revision_id) if revision_id else current_quote
     if result is None:
         return None
+    if current_quote and current_quote.get("lifecycle_status") == "archived":
+        result = _archived_customer_quote(result, current_quote)
     delivery_data = dict(delivery)
     if mark_viewed:
         delivery_data["viewed_at"] = to_iso(utc_now())
@@ -592,6 +666,21 @@ def get_customer_quote(quote_id: str, user_id: str, mark_viewed: bool = False) -
         (bool(revision_id) and delivery_data.get("last_viewed_revision_id") != revision_id)
         or (not revision_id and (not delivery_data.get("viewed_at") or str(result.get("updated_at") or "") > str(delivery_data.get("viewed_at") or "")))
     )
+    return result
+
+
+def _archived_customer_quote(delivered_quote: Dict[str, Any], current_quote: Dict[str, Any]) -> Dict[str, Any]:
+    """Keep a customer-visible history row without exposing withdrawn pricing."""
+    result = dict(delivered_quote)
+    result.update({
+        "lifecycle_status": "archived",
+        "archived_at": current_quote.get("archived_at"),
+        "updated_at": current_quote.get("updated_at") or result.get("updated_at"),
+        "items": [],
+        "item_count": 0,
+        "total_price": 0,
+        "prices_hidden": True,
+    })
     return result
 
 

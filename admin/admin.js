@@ -6,7 +6,7 @@ const TOKEN_KEY = "boten_admin_token";
 const CUSTOMER_TOKEN_KEY = "boten_user_token";
 
 function getStoredCollapsedCategories() { try { const value = JSON.parse(localStorage.getItem("boten-admin-collapsed-categories") || "[]"); return Array.isArray(value) ? value : []; } catch (_) { return []; } }
-const state = { user: null, products: [], users: [], userTotal: 0, userPage: 1, userPageSize: 20, userQuery: "", userRoleFilter: "all", userStatusFilter: "all", userArchivedFilter: false, shares: [], shareTotal: 0, sharePage: 1, sharePageSize: 20, shareQuery: "", shareStatus: "all", shareProduct: "", shareCreatedFrom: "", shareCreatedTo: "", shareActiveTotal: 0, shareViewTotal: 0, inquiries: [], inquiryTotal: 0, inquiryPage: 1, inquiryPageSize: 20, inquiryQuery: "", inquiryStatus: "all", quotes: [], audits: [], countries: [], editingProduct: null, mappingEditor: null, catalogLanguage: localStorage.getItem("boten-admin-language") || "zh", configCatalog: [], collapsedCategories: new Set(getStoredCollapsedCategories()) };
+const state = { user: null, products: [], users: [], userTotal: 0, userPage: 1, userPageSize: 20, userQuery: "", userRoleFilter: "all", userStatusFilter: "all", userArchivedFilter: false, shares: [], shareTotal: 0, sharePage: 1, sharePageSize: 20, shareQuery: "", shareStatus: "all", shareProduct: "", shareCreatedFrom: "", shareCreatedTo: "", shareActiveTotal: 0, shareViewTotal: 0, inquiries: [], inquiryTotal: 0, inquiryPage: 1, inquiryPageSize: 20, inquiryQuery: "", inquiryStatus: "all", quoteStatus: "all", quotes: [], audits: [], countries: [], editingProduct: null, mappingEditor: null, catalogLanguage: localStorage.getItem("boten-admin-language") || "zh", configCatalog: [], collapsedCategories: new Set(getStoredCollapsedCategories()) };
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
 let shareDrawerElement = null;
@@ -329,6 +329,37 @@ function restoreUserFilterState() {
   $$("[data-user-role]", $("#user-role-filter")).forEach((item) => { const active = item.dataset.userRole === state.userRoleFilter; item.classList.toggle("active", active); item.setAttribute("aria-pressed", String(active)); });
 }
 
+function syncBusinessFilterUrl() {
+  const url = new URL(window.location.href);
+  const values = {
+    shareQuery: state.shareQuery,
+    shareStatus: state.shareStatus,
+    sharePage: state.sharePage > 1 ? String(state.sharePage) : "",
+    inquiryQuery: state.inquiryQuery,
+    inquiryStatus: state.inquiryStatus,
+    inquiryPage: state.inquiryPage > 1 ? String(state.inquiryPage) : "",
+    quoteStatus: state.quoteStatus,
+  };
+  Object.entries(values).forEach(([key, value]) => value && value !== "all" ? url.searchParams.set(key, value) : url.searchParams.delete(key));
+  history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+}
+
+function restoreBusinessFilterState() {
+  const query = new URLSearchParams(window.location.search);
+  state.shareQuery = query.get("shareQuery") || "";
+  state.shareStatus = ["active", "expired", "closed"].includes(query.get("shareStatus")) ? query.get("shareStatus") : "all";
+  state.sharePage = Math.max(1, Number(query.get("sharePage") || 1) || 1);
+  state.inquiryQuery = query.get("inquiryQuery") || "";
+  state.inquiryStatus = ["new", "assigned", "contacted", "quoted", "closed", "cancelled"].includes(query.get("inquiryStatus")) ? query.get("inquiryStatus") : "all";
+  state.inquiryPage = Math.max(1, Number(query.get("inquiryPage") || 1) || 1);
+  state.quoteStatus = ["draft", "sent", "archived"].includes(query.get("quoteStatus")) ? query.get("quoteStatus") : "all";
+  if ($("#share-query")) $("#share-query").value = state.shareQuery;
+  if ($("#share-status-filter")) $("#share-status-filter").value = state.shareStatus;
+  if ($("#inquiry-query")) $("#inquiry-query").value = state.inquiryQuery;
+  if ($("#inquiry-status-filter")) $("#inquiry-status-filter").value = state.inquiryStatus;
+  if ($("#quote-status-filter")) $("#quote-status-filter").value = state.quoteStatus;
+}
+
 async function loadUsers() {
   const response = await api(userListPath());
   state.users = response.items || [];
@@ -353,6 +384,7 @@ async function loadShares() {
   state.shareActiveTotal = Number(response.active_total || 0);
   state.shareViewTotal = Number(response.view_total || 0);
   renderShares(); renderDashboard();
+  syncBusinessFilterUrl();
 }
 
 function inquiryListPath() {
@@ -367,6 +399,7 @@ async function loadInquiries() {
   state.inquiryTotal = Number(response.total || 0);
   state.inquiryPage = Number(response.page || 1);
   renderInquiries();
+  syncBusinessFilterUrl();
 }
 
 async function refreshUsersAfterMutation() {
@@ -399,7 +432,7 @@ async function loadData() {
   const requests = {
     shares: api(shareListPath()),
     inquiries: api(inquiryListPath()),
-    quotes: api("/api/v1/quotes"),
+    quotes: api(`/api/v1/quotes?status=${encodeURIComponent(state.quoteStatus)}`),
     products: api("/api/v1/admin/products"),
     configCatalog: api("/api/v1/admin/catalog-tree"),
     countries: api("/api/v1/auth/countries?lang=zh")
@@ -813,11 +846,20 @@ function renderQuotes() {
     const status = quote.lifecycle_status || "draft";
     const delivery = Number(quote.delivery_count || 0) ? `<br><small>已发送给 ${escapeHtml(quote.recipient_summary || `${quote.delivery_count} 个账号`)}</small>` : '<br><small>尚未发送给客户</small>';
     const number = quote.quote_number || quote.id.slice(0, 8);
+    const source = quote.source_inquiry_id ? "来源：客户询价" : quote.source_share_id ? "来源：分享配置" : "来源：直接创建";
     const primary = status === "archived" ? `<button class="table-action" data-restore-quote="${escapeHtml(quote.id)}">恢复</button>` : `<button class="table-action" data-edit-quote="${escapeHtml(quote.id)}">编辑</button>`;
     const destructive = status === "draft" ? `<button class="table-action danger" data-delete-quote="${escapeHtml(quote.id)}">删除</button>` : `<button class="table-action danger" data-archive-quote="${escapeHtml(quote.id)}">归档</button>`;
-    const actions = `<span class="table-actions">${primary}<details class="table-actions-menu"><summary aria-label="更多报价操作">更多</summary><div><button class="table-action" data-export-quote="${escapeHtml(quote.id)}">导出 PDF</button><button class="table-action" data-quote-history="${escapeHtml(quote.id)}">版本与发送历史</button>${status === "archived" ? "" : destructive}</div></details></span>`;
-    return `<tr><td><strong>${escapeHtml(quote.title)}</strong><br><small>${escapeHtml(number)}</small>${delivery}</td><td><span class="badge ${status === "archived" ? "off" : status === "sent" ? "good" : ""}">${escapeHtml(quoteLifecycleLabel(status))}</span></td><td>${escapeHtml(quote.display_name || quote.email || quote.phone || "—")}</td><td>${symbol}${Number(quote.total_price || 0).toLocaleString("zh-CN")}</td><td>${formatDate(quote.updated_at)}</td><td class="align-right">${actions}</td></tr>`;
+    const exportAction = status === "archived" ? "" : `<button class="table-action" data-export-quote="${escapeHtml(quote.id)}">导出 PDF</button>`;
+    const actions = `<span class="table-actions">${primary}<details class="table-actions-menu"><summary aria-label="更多报价操作">更多</summary><div>${exportAction}<button class="table-action" data-quote-history="${escapeHtml(quote.id)}">版本与发送历史</button>${status === "archived" ? "" : destructive}</div></details></span>`;
+    return `<tr><td><strong>${escapeHtml(quote.title)}</strong><br><small>${escapeHtml(number)} · V${Number(quote.version || 1)} · ${escapeHtml(source)}</small>${delivery}</td><td><span class="badge ${status === "archived" ? "off" : status === "sent" ? "good" : ""}">${escapeHtml(quoteLifecycleLabel(status))}</span></td><td>${escapeHtml(quote.display_name || quote.email || quote.phone || "—")}</td><td>${symbol}${Number(quote.total_price || 0).toLocaleString("zh-CN")}</td><td>${formatDate(quote.updated_at)}</td><td class="align-right">${actions}</td></tr>`;
   }).join("") || '<tr><td colspan="6" class="empty">暂无报价单</td></tr>';
+}
+
+async function loadQuotes() {
+  const result = await api(`/api/v1/quotes?status=${encodeURIComponent(state.quoteStatus)}`);
+  state.quotes = result.items || [];
+  renderQuotes();
+  syncBusinessFilterUrl();
 }
 
 function quoteLifecycleLabel(status) {
@@ -834,6 +876,41 @@ function renderInquirySummary(item) {
   return summary.map((part) => `${labels[part.item_type] || part.item_type} ${Number(part.item_count || 0)} 项`).join(" · ") || `${Number(item.item_count || 0)} 项`;
 }
 
+function commerceItemType(item) {
+  const explicit = item.item_type || item.itemType;
+  if (["device_config", "tool", "accessory"].includes(explicit)) return explicit;
+  if (item.kind === "tool") return "tool";
+  if (item.kind === "accessory") return "accessory";
+  return "device_config";
+}
+
+function canonicalCommerceItems(items = []) {
+  const typeOrder = { device_config: 0, tool: 1, accessory: 2 };
+  return items.map((item, index) => ({ item, index })).sort((left, right) => {
+    const leftType = commerceItemType(left.item); const rightType = commerceItemType(right.item);
+    if (typeOrder[leftType] !== typeOrder[rightType]) return typeOrder[leftType] - typeOrder[rightType];
+    if (leftType === "device_config") return left.index - right.index;
+    const number = (entry) => Number(entry.catalog_category_sort_order ?? entry.category_sort_order ?? entry.snapshot?.category_sort_order ?? Number.MAX_SAFE_INTEGER);
+    const order = (entry) => Number(entry.catalog_sort_order ?? entry.sort_order ?? entry.snapshot?.sort_order ?? Number.MAX_SAFE_INTEGER);
+    return number(left.item) - number(right.item)
+      || order(left.item) - order(right.item)
+      || String(left.item.code || left.item.snapshot?.code || "").localeCompare(String(right.item.code || right.item.snapshot?.code || ""), "en", { numeric: true })
+      || left.index - right.index;
+  }).map(({ item }) => item);
+}
+
+function aggregateCommerceItems(items = []) {
+  const ordered = canonicalCommerceItems(items);
+  const groups = { devices: [], tools: [], accessories: [] };
+  ordered.forEach((item) => {
+    const type = commerceItemType(item);
+    if (type === "tool") groups.tools.push(item);
+    else if (type === "accessory") groups.accessories.push(item);
+    else groups.devices.push(item);
+  });
+  return groups;
+}
+
 function renderInquiries() {
   const target = $("#inquiries-table");
   if (!target) return;
@@ -841,7 +918,13 @@ function renderInquiries() {
     const isMine = item.assigned_to && item.assigned_to === state.user?.id;
     const canTake = !item.assigned_to && item.status === "new";
     const stateClass = item.status === "new" ? "good" : item.status === "cancelled" ? "off" : "";
-    const actions = `<button class="table-action" data-view-inquiry="${escapeHtml(item.id)}">查看</button>${canTake ? ` <button class="table-action" data-take-inquiry="${escapeHtml(item.id)}">接手</button>` : ""}${item.status !== "cancelled" && !item.converted_quote_id && (isMine || state.user?.role === "admin") ? ` <button class="table-action" data-quote-inquiry="${escapeHtml(item.id)}">转报价</button>` : ""}`;
+    const canManageQuote = isMine || state.user?.role === "admin";
+    const quoteAction = item.converted_quote_id && canManageQuote
+      ? ` <button class="table-action" data-open-inquiry-quote="${escapeHtml(item.converted_quote_id)}">查看报价</button>`
+      : item.status !== "cancelled" && canManageQuote
+        ? ` <button class="table-action" data-quote-inquiry="${escapeHtml(item.id)}">转报价</button>`
+        : "";
+    const actions = `<button class="table-action" data-view-inquiry="${escapeHtml(item.id)}">查看</button>${canTake ? ` <button class="table-action" data-take-inquiry="${escapeHtml(item.id)}">接手</button>` : ""}${quoteAction}`;
     const customer = item.customer_name_snapshot || item.customer_display_name || "未填写";
     const contact = item.customer_email_snapshot || item.customer_phone_snapshot || "—";
     return `<tr><td><strong>${escapeHtml(item.inquiry_number)}</strong><br><small>${escapeHtml(item.source_type === "cart" ? "购物车" : "当前选配")}</small></td><td><strong>${escapeHtml(customer)}</strong><br><small>${escapeHtml(contact)}</small></td><td>${escapeHtml(renderInquirySummary(item))}<br><small>${escapeHtml(item.message || "无补充说明")}</small></td><td><span class="badge ${stateClass}">${escapeHtml(inquiryStatusLabel(item.status))}</span></td><td>${escapeHtml(item.assignee_name || (item.assigned_to ? "已分配" : "待分配"))}</td><td>${escapeHtml(formatDateTime(item.created_at))}</td><td class="align-right">${actions}</td></tr>`;
@@ -869,12 +952,18 @@ async function viewInquiry(inquiryId) {
     const inquiry = await api(`/api/v1/staff/inquiries/${encodeURIComponent(inquiryId)}?lang=${state.catalogLanguage === "en" ? "en" : "zh"}`);
     const dialog = document.createElement("dialog");
     dialog.className = "product-dialog inquiry-detail-dialog";
-    const rows = (inquiry.items || []).map((item) => {
+    const inquiryGroups = aggregateCommerceItems(inquiry.items || []);
+    let deviceNumber = 0;
+    const renderInquiryGroup = (label, entries, type) => entries.length ? `<li class="commerce-group-heading"><strong>${label}</strong><small>${type === "device_config" ? `${entries.length} 台` : `${entries.reduce((sum, item) => sum + Number(item.quantity || 1), 0)} 件`}</small></li>${entries.map((item) => {
       const snapshot = item.snapshot || {};
       const name = snapshot.name || snapshot.product?.title_name || item.display_name || "未命名项目";
       const code = snapshot.code || snapshot.product?.name || "";
-      return `<li><strong>${escapeHtml(name)}</strong><small>${escapeHtml([item.item_type, code, `数量 ${item.quantity}`].filter(Boolean).join(" · "))}</small></li>`;
-    }).join("");
+      const prefix = type === "device_config" ? `设备 ${++deviceNumber}` : code;
+      return `<li><span><strong>${escapeHtml(name)}</strong><small>${escapeHtml(prefix || code)}</small></span><b>× ${Number(item.quantity || 1)}</b></li>`;
+    }).join("")}` : "";
+    const rows = renderInquiryGroup("设备", inquiryGroups.devices, "device_config")
+      + renderInquiryGroup("维修工具", inquiryGroups.tools, "tool")
+      + renderInquiryGroup("设备附件", inquiryGroups.accessories, "accessory");
     dialog.innerHTML = `<form method="dialog" class="dialog-card inquiry-detail-card"><header><div><span class="eyebrow">CUSTOMER INQUIRY</span><h2>${escapeHtml(inquiry.inquiry_number)}</h2></div><button class="icon-button" value="close" aria-label="关闭">×</button></header><div class="inquiry-detail-body"><dl><div><dt>客户</dt><dd>${escapeHtml(inquiry.customer_name_snapshot || inquiry.customer_display_name || "—")}</dd></div><div><dt>联系方式</dt><dd>${escapeHtml(inquiry.customer_email_snapshot || inquiry.customer_phone_snapshot || "—")}</dd></div><div><dt>状态</dt><dd>${escapeHtml(inquiryStatusLabel(inquiry.status))}</dd></div></dl>${inquiry.message ? `<p class="inquiry-detail-message">${escapeHtml(inquiry.message)}</p>` : ""}<h3>询价内容</h3><ul class="inquiry-detail-items">${rows}</ul></div><footer><button class="button button-secondary" value="close">关闭</button></footer></form>`;
     document.body.appendChild(dialog);
     dialog.addEventListener("close", () => dialog.remove(), { once: true });
@@ -889,8 +978,29 @@ async function quoteInquiry(button) {
     await runButtonAction(button, "创建中…", async () => {
       const result = await api(`/api/v1/staff/inquiries/${encodeURIComponent(inquiry.id)}/convert-to-quote`, { method: "POST", body: JSON.stringify({ version: inquiry.version, currency: "CNY" }) });
       await loadData();
-      openQuoteEditor({ quoteId: result.quote.id, title: result.quote.title, items: result.quote.items, currency: result.quote.currency || "CNY", customerName: result.quote.customer_name || "", customerEmail: result.quote.customer_email || "", language: result.quote.language || "zh", recipientUserId: inquiry.created_by || "", recipientLabel: inquiry.customer_name_snapshot || inquiry.customer_display_name || "客户账号" });
+      openQuoteEditor({ quoteId: result.quote.id, quoteVersion: result.quote.version, sourceInquiryId: result.quote.source_inquiry_id || inquiry.id, title: result.quote.title, items: result.quote.items, currency: result.quote.currency || "CNY", customerName: result.quote.customer_name || "", customerEmail: result.quote.customer_email || "", language: result.quote.language || "zh", recipientUserId: inquiry.created_by || "", recipientLabel: inquiry.customer_name_snapshot || inquiry.customer_display_name || "客户账号" });
       showToast("报价草稿已创建，请填写价格后保存或发送");
+    });
+  } catch (failure) { showToast(failure.message, "error"); }
+}
+
+async function openInquiryQuote(button) {
+  try {
+    await runButtonAction(button, "打开中…", async () => {
+      const quote = await api(`/api/v1/quotes/${encodeURIComponent(button.dataset.openInquiryQuote)}`);
+      openQuoteEditor({
+        quoteId: quote.id,
+        quoteVersion: quote.version,
+        configId: quote.config_id,
+        title: quote.title,
+        items: quote.items,
+        currency: quote.currency || "CNY",
+        sourceShareId: quote.source_share_id,
+        sourceInquiryId: quote.source_inquiry_id,
+        customerName: quote.customer_name || "",
+        customerEmail: quote.customer_email || "",
+        language: quote.language || "zh",
+      });
     });
   } catch (failure) { showToast(failure.message, "error"); }
 }
@@ -1110,8 +1220,9 @@ async function exportQuote(quote) {
   }
 }
 
-function openQuoteEditor({ quoteId = null, configId = null, title, items, currency = "CNY", sourceShareId = null, customerName = "", customerEmail = "", language = "zh", recipientUserId = "", recipientLabel = "" }) {
-  const normalizedItems = (items || []).map((item) => ({
+function openQuoteEditor({ quoteId = null, quoteVersion = null, configId = null, title, items, currency = "CNY", sourceShareId = null, sourceInquiryId = null, customerName = "", customerEmail = "", language = "zh", recipientUserId = "", recipientLabel = "" }) {
+  const opener = document.activeElement;
+  const normalizedItems = canonicalCommerceItems(items || []).map((item) => ({
     ...item,
     quantity: toPositiveInteger(item.quantity),
     price: Math.max(0, toFiniteNumber(item.price))
@@ -1119,12 +1230,13 @@ function openQuoteEditor({ quoteId = null, configId = null, title, items, curren
   const dialog = document.createElement("dialog");
   dialog.className = "product-dialog quote-editor-dialog";
   dialog.dataset.dynamic = "true";
+  dialog.dataset.warnUnsaved = "true";
   dialog.innerHTML = `<form method="dialog" class="dialog-card quote-editor-card">
     <header><div><span class="eyebrow">QUOTATION</span><h2>${quoteId ? "修改报价" : "创建报价"}</h2></div><button class="icon-button" value="cancel" aria-label="关闭">×</button></header>
     <div class="quote-editor-meta">
       <label class="quote-title-field"><span>配置名称</span><input name="title" autocomplete="off" placeholder="例如：客户 A · CR1016 配置报价" value="${escapeHtml(title || "")}" required /></label>
       <div class="quote-currency-row"><label class="quote-currency-field"><span>报价货币</span><select name="currency" aria-label="报价货币"><option value="CNY" ${currency === "CNY" ? "selected" : ""}>CNY · 人民币</option><option value="USD" ${currency === "USD" ? "selected" : ""}>USD · 美元</option></select></label><button class="button button-secondary quote-auto-price" type="button">自动填价</button></div>
-      <div class="quote-customer-row"><label><span>客户名称</span><input name="customer_name" autocomplete="organization" placeholder="填写客户或公司名称" value="${escapeHtml(customerName)}" /></label><label><span>客户邮箱</span><input name="customer_email" autocomplete="email" spellcheck="false" placeholder="用于报价单页头" value="${escapeHtml(customerEmail)}" /></label></div>
+      <div class="quote-customer-row"><label><span>客户名称</span><input name="customer_name" autocomplete="organization" placeholder="填写客户或公司名称" value="${escapeHtml(customerName)}" /></label><label><span>客户邮箱</span><input name="customer_email" type="email" autocomplete="email" spellcheck="false" placeholder="用于报价单页头" value="${escapeHtml(customerEmail)}" /></label></div>
       <div class="quote-recipient-row"><label><span>接收账号</span><select name="recipient_user_id"><option value="${escapeHtml(recipientUserId)}">${escapeHtml(recipientLabel || (recipientUserId ? "分享创建者" : "请选择客户账号"))}</option></select></label><label><span>搜索客户</span><input name="recipient_query" type="search" autocomplete="off" placeholder="姓名、邮箱或手机号" /></label></div>
     </div>
     <p class="quote-editor-error" role="alert" hidden></p>
@@ -1132,13 +1244,28 @@ function openQuoteEditor({ quoteId = null, configId = null, title, items, curren
       <div class="quote-edit-head"><span>产品 / 配置</span><span>数量</span><span>单价</span></div>
       ${normalizedItems.length ? normalizedItems.map((item, index) => {
         const context = item.device_label || item.device || item.code || (item.kind === "product" ? "设备" : "可选配置");
-        return `<div class="quote-edit-row"><div class="quote-item-name"><small>${escapeHtml(context)}</small><strong>${escapeHtml(item.name || "未命名项目")}</strong></div><input class="quote-qty-input" data-q="qty" data-i="${index}" aria-label="数量" type="number" min="1" step="1" value="${item.quantity}"><input class="quote-price-input" data-q="price" data-i="${index}" aria-label="单价" type="number" min="0" step="0.01" value="${item.price}"></div>`;
+        const type = commerceItemType(item);
+        const previous = normalizedItems[index - 1];
+        const startsGroup = !previous || commerceItemType(previous) !== type || (type === "device_config" && previous.device_label !== item.device_label);
+        const groupLabel = type === "tool" ? "维修工具" : type === "accessory" ? "设备附件" : context;
+        return `${startsGroup ? `<div class="quote-commerce-group-title">${escapeHtml(groupLabel)}</div>` : ""}<div class="quote-edit-row"><div class="quote-item-name"><small>${escapeHtml(context)}</small><strong>${escapeHtml(item.name || "未命名项目")}</strong></div><input class="quote-qty-input" data-q="qty" data-i="${index}" aria-label="数量" type="number" min="1" step="1" value="${item.quantity}"><input class="quote-price-input" data-q="price" data-i="${index}" aria-label="单价" type="number" min="0" step="0.01" value="${item.price}"></div>`;
       }).join("") : '<div class="quote-edit-empty">暂无可报价项目，请返回分享配置重新选择。</div>'}
     </div>
     <div class="quote-total-row"><span>合计</span><strong class="quote-total">0</strong></div>
     <footer><button class="button button-quiet" value="cancel">取消</button><button class="button button-secondary" value="save">保存报价</button><button class="button button-secondary" value="saveAndExport">保存并导出 PDF</button><button class="button button-primary" value="saveAndDeliver">保存并发送给客户</button></footer>
   </form>`;
   document.body.appendChild(dialog);
+  const quoteForm = $("form", dialog);
+  quoteForm.dataset.initialSnapshot = JSON.stringify(Object.fromEntries(new FormData(quoteForm)));
+  dialog.addEventListener("cancel", (event) => {
+    const dirty = quoteForm.dataset.initialSnapshot !== JSON.stringify(Object.fromEntries(new FormData(quoteForm)));
+    if (!dirty) return;
+    event.preventDefault();
+    confirmAction("放弃未保存修改", "当前报价尚未保存，确定关闭吗？", "放弃修改").then((confirmed) => {
+      if (confirmed) { dialog.close(); dialog.remove(); }
+    });
+  });
+  dialog.addEventListener("close", () => { if (opener?.isConnected) opener.focus(); }, { once: true });
   const totalElement = $(".quote-total", dialog);
   const errorElement = $(".quote-editor-error", dialog);
   const setQuoteError = (message = "") => { errorElement.textContent = message; errorElement.hidden = !message; };
@@ -1213,12 +1340,26 @@ function openQuoteEditor({ quoteId = null, configId = null, title, items, curren
     const quoteTitle = $("[name=title]", dialog).value.trim();
     if (!quoteTitle) { setQuoteError("请填写配置名称后再保存报价。"); $("[name=title]", dialog).focus(); return; }
     if (!finalItems.length) { setQuoteError("没有可保存的报价项目，请返回分享配置重新选择。"); return; }
+    if (action === "saveAndDeliver") {
+      const recipientSelect = $("[name=recipient_user_id]", dialog);
+      if (!recipientSelect.value) { setQuoteError("请选择接收报价的客户账号。"); recipientSelect.focus(); return; }
+      const recipient = recipientSelect.selectedOptions[0]?.textContent?.trim() || "所选客户";
+      const email = $("[name=customer_email]", dialog).value.trim() || "未填写报价页头邮箱";
+      const confirmed = await confirmAction("确认发送报价", `接收账号：${recipient}；客户邮箱：${email}；当前版本：${quoteVersion || "新报价"}。保存后将发送最新版本。`, "确认发送");
+      if (!confirmed) return;
+    }
     try { await runButtonAction(event.submitter, "正在保存…", async () => {
-      const savedQuote = await api("/api/v1/quotes", { method: "POST", body: JSON.stringify({ quote_id: quoteId, config_id: configId, title: quoteTitle, items: finalItems, total_price: total, currency: $("[name=currency]", dialog).value, source_share_id: sourceShareId, customer_name: $("[name=customer_name]", dialog).value.trim(), customer_email: $("[name=customer_email]", dialog).value.trim(), language }) });
+      const savedQuote = await api("/api/v1/quotes", { method: "POST", body: JSON.stringify({ quote_id: quoteId, version: quoteId ? quoteVersion : null, config_id: configId, title: quoteTitle, items: finalItems, total_price: total, currency: $("[name=currency]", dialog).value, source_share_id: sourceShareId, source_inquiry_id: sourceInquiryId, customer_name: $("[name=customer_name]", dialog).value.trim(), customer_email: $("[name=customer_email]", dialog).value.trim(), language }) });
       const exported = action === "saveAndExport" ? await exportQuote(savedQuote) : false;
+      if (action === "saveAndExport" && !exported) {
+        quoteId = savedQuote.id; quoteVersion = savedQuote.version;
+        quoteForm.dataset.initialSnapshot = JSON.stringify(Object.fromEntries(new FormData(quoteForm)));
+        throw new Error("报价已保存，但 PDF 下载失败。请检查网络后再次点击导出。");
+      }
       if (action === "saveAndDeliver") {
         try {
-          await api(`/api/v1/staff/quotes/${encodeURIComponent(savedQuote.id)}/deliver`, { method: "POST", body: JSON.stringify({ recipient_user_id: $("[name=recipient_user_id]", dialog).value || null, source_share_id: sourceShareId }) });
+          const deliveryKey = dialog.dataset.deliveryKey || (dialog.dataset.deliveryKey = (crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`));
+          await api(`/api/v1/staff/quotes/${encodeURIComponent(savedQuote.id)}/deliver`, { method: "POST", body: JSON.stringify({ recipient_user_id: $("[name=recipient_user_id]", dialog).value || null, source_share_id: sourceShareId, version: savedQuote.version, idempotency_key: deliveryKey }) });
         } catch (deliveryError) {
           throw new Error(`报价已保存，但发送失败：${deliveryError.message}`);
         }
@@ -1231,10 +1372,11 @@ function openQuoteEditor({ quoteId = null, configId = null, title, items, curren
   updateTotal();
   loadRecipients().catch((error) => setQuoteError(error.message));
   dialog.showModal();
+  requestAnimationFrame(() => $("[name=title]", dialog)?.focus());
 }
 
 async function editQuote(quote) {
-  openQuoteEditor({ quoteId: quote.id, configId: quote.config_id, title: quote.title, items: quote.items, currency: quote.currency || "CNY", sourceShareId: quote.source_share_id, customerName: quote.customer_name, customerEmail: quote.customer_email, language: quote.language || "zh" });
+  openQuoteEditor({ quoteId: quote.id, quoteVersion: quote.version, configId: quote.config_id, title: quote.title, items: quote.items, currency: quote.currency || "CNY", sourceShareId: quote.source_share_id, sourceInquiryId: quote.source_inquiry_id, customerName: quote.customer_name, customerEmail: quote.customer_email, language: quote.language || "zh" });
 }
 
 function plainDescription(value) {
@@ -1242,8 +1384,10 @@ function plainDescription(value) {
 }
 
 function renderShareDetail(share) {
-  const shareItems = share.items?.length ? share.items : [{ snapshot: share.snapshot, display_name: share.name }];
-  const deviceItems = shareItems.filter((item) => (item.item_type || "device_config") === "device_config");
+  const rawItems = share.items?.length ? share.items : [{ item_type: "device_config", snapshot: share.snapshot, display_name: share.name }];
+  const groupedItems = aggregateCommerceItems(rawItems);
+  const shareItems = [...groupedItems.devices, ...groupedItems.tools, ...groupedItems.accessories];
+  const deviceItems = groupedItems.devices;
   const devices = deviceItems.map((shareItem, index) => {
     const snapshot = shareItem.snapshot || {};
     const categoryList = snapshot.categories || [];
@@ -1270,7 +1414,7 @@ function renderShareDetail(share) {
     return `<article class="share-device-block"><h4>设备 ${index + 1} · ${escapeHtml(snapshot.product?.name || "未填写")}</h4><section class="share-detail-group share-device-basics"><header><span>设备信息</span><small>型号与基本配置</small></header><div class="share-basic-list">${basics}</div></section><div class="share-detail-groups">${categories || '<div class="empty">该设备未选择其他选配项目</div>'}</div></article>`;
   }).join("");
   const catalogSections = [["tool", "维修工具"], ["accessory", "设备附件"]].map(([type, label]) => {
-    const entries = shareItems.filter((item) => item.item_type === type);
+    const entries = type === "tool" ? groupedItems.tools : groupedItems.accessories;
     if (!entries.length) return "";
     const rows = entries.map((entry) => {
       const snapshot = entry.snapshot || {};
@@ -1282,8 +1426,10 @@ function renderShareDetail(share) {
   const contact = share.sender_email || share.sender_phone || "未填写联系方式";
   const summaryParts = [];
   if (deviceItems.length) summaryParts.push(`${deviceItems.length} 台设备`);
-  const catalogCount = shareItems.length - deviceItems.length;
-  if (catalogCount) summaryParts.push(`${catalogCount} 项工具或附件`);
+    const toolCount = shareItems.filter((item) => item.item_type === "tool").reduce((sum, item) => sum + Number(item.quantity || 1), 0);
+    const accessoryCount = shareItems.filter((item) => item.item_type === "accessory").reduce((sum, item) => sum + Number(item.quantity || 1), 0);
+    if (toolCount) summaryParts.push(`${toolCount} 件工具`);
+    if (accessoryCount) summaryParts.push(`${accessoryCount} 件附件`);
   return `<header class="share-result-header"><div><span class="eyebrow">CONFIGURATION ${escapeHtml(share.code)}</span><h3>${escapeHtml(summaryParts.join(" · ") || "分享配置")}</h3></div><span class="badge good">有效至 ${formatDate(share.expires_at)}</span></header><div class="share-device-summary"><div><span>发送用户</span><strong>${escapeHtml(sender)}</strong><small>${escapeHtml(contact)}</small></div></div>${devices}${catalogSections}`;
 }
 
@@ -1541,6 +1687,9 @@ function bindEvents() {
   $("#inquiry-status-filter")?.addEventListener("change", () => { state.inquiryStatus = $("#inquiry-status-filter").value; state.inquiryPage = 1; loadInquiries().catch((failure) => showToast(failure.message, "error")); });
   $("#inquiry-page-prev")?.addEventListener("click", () => { if (state.inquiryPage > 1) { state.inquiryPage -= 1; loadInquiries().catch((failure) => showToast(failure.message, "error")); } });
   $("#inquiry-page-next")?.addEventListener("click", () => { if (state.inquiryPage * state.inquiryPageSize < state.inquiryTotal) { state.inquiryPage += 1; loadInquiries().catch((failure) => showToast(failure.message, "error")); } });
+  $("#quote-filter-form")?.addEventListener("submit", (event) => { event.preventDefault(); state.quoteStatus = $("#quote-status-filter").value; loadQuotes().catch((failure) => showToast(failure.message, "error")); });
+  $("#quote-status-filter")?.addEventListener("change", () => { state.quoteStatus = $("#quote-status-filter").value; loadQuotes().catch((failure) => showToast(failure.message, "error")); });
+  $("#quote-filter-reset")?.addEventListener("click", () => { $("#quote-filter-form").reset(); state.quoteStatus = "all"; loadQuotes().catch((failure) => showToast(failure.message, "error")); });
   $("#refresh-audit")?.addEventListener("click", loadData);
   addLanguageToggles(); addProductButton(); addCatalogLanguageSwitches();
   $("#menu-button").addEventListener("click", openSidebar);
@@ -1559,7 +1708,7 @@ function bindEvents() {
       closeTableActionMenus();
     }
     const imageButton = event.target.closest("[data-pick-image]"); if (imageButton) { imageButton.closest(".image-path-control, .color-image-control")?.querySelector("[data-image-file]")?.click(); return; }
-    const cancelButton = event.target.closest('button[value="cancel"]'); if (cancelButton) { const dialog = cancelButton.closest("dialog"); if (dialog) { if (dialog.classList.contains("confirm-dialog")) return; event.preventDefault(); const form = $("form", dialog); const dirty = dialog.classList.contains("account-dialog") && form?.dataset.initialSnapshot && form.dataset.initialSnapshot !== JSON.stringify(Object.fromEntries(new FormData(form))); if (dirty) { confirmAction("放弃未保存修改", "当前修改尚未保存，确定关闭吗？", "放弃修改").then((confirmed) => { if (confirmed) dialog.close(); }); } else dialog.close(); if (dialog.dataset.dynamic === "true") dialog.remove(); return; } }
+    const cancelButton = event.target.closest('button[value="cancel"]'); if (cancelButton) { const dialog = cancelButton.closest("dialog"); if (dialog) { if (dialog.classList.contains("confirm-dialog")) return; event.preventDefault(); const form = $("form", dialog); const shouldWarn = dialog.classList.contains("account-dialog") || dialog.dataset.warnUnsaved === "true"; const dirty = shouldWarn && form?.dataset.initialSnapshot && form.dataset.initialSnapshot !== JSON.stringify(Object.fromEntries(new FormData(form))); const closeAndRemove = () => { dialog.close(); if (dialog.dataset.dynamic === "true") dialog.remove(); }; if (dirty) { confirmAction("放弃未保存修改", "当前修改尚未保存，确定关闭吗？", "放弃修改").then((confirmed) => { if (confirmed) closeAndRemove(); }); } else closeAndRemove(); return; } }
     const userButton = event.target.closest("[data-user-status]"); if (userButton) setUserStatus(userButton);
     const editUserButton = event.target.closest("[data-edit-user]"); if (editUserButton) { const user = findUser(editUserButton.dataset.editUser); if (user) openUserEditor(user, editUserButton); }
     const roleButton = event.target.closest("[data-edit-user-role]"); if (roleButton) { const user = findUser(roleButton.dataset.editUserRole); if (user) openRoleEditor(user, roleButton); }
@@ -1585,6 +1734,7 @@ function bindEvents() {
     const viewInquiryButton = event.target.closest("[data-view-inquiry]"); if (viewInquiryButton) viewInquiry(viewInquiryButton.dataset.viewInquiry);
     const takeInquiryButton = event.target.closest("[data-take-inquiry]"); if (takeInquiryButton) takeInquiry(takeInquiryButton);
     const quoteInquiryButton = event.target.closest("[data-quote-inquiry]"); if (quoteInquiryButton) quoteInquiry(quoteInquiryButton);
+    const openInquiryQuoteButton = event.target.closest("[data-open-inquiry-quote]"); if (openInquiryQuoteButton) openInquiryQuote(openInquiryQuoteButton);
     const productButton = event.target.closest("[data-edit-product]"); if (productButton) openProductEditor(productButton.dataset.editProduct);
     const mappingNoteButton = event.target.closest("[data-edit-mapping-note]"); if (mappingNoteButton) openMappingNoteEditor(mappingNoteButton.dataset.editMappingNote);
     const mappingGroupButton = event.target.closest("[data-mapping-category]");
@@ -1687,7 +1837,7 @@ async function saveConfigOption(event) {
 }
 
 document.addEventListener("DOMContentLoaded", async () => {
-  restoreUserFilterState(); bindEvents(); await checkApi(); await restoreSession();
+  restoreUserFilterState(); restoreBusinessFilterState(); bindEvents(); await checkApi(); await restoreSession();
 });
 document.addEventListener("click", (event) => {
   if (event.target.closest("[data-catalog-lang]")) setTimeout(renderProducts, 0);

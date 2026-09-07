@@ -398,7 +398,7 @@ async function saveCurrentConfigToServer() {
 
 function addCurrentConfigToCart() { requireLogin(saveCurrentConfigToServer); }
 
-function beginConfigEdit(id) {
+async function beginConfigEdit(id) {
   const item = serverCart.find((candidate) => candidate.id === id);
   if (!item) {
     setCartStatus(cartText("configUnavailable", "该配置无法载入，请刷新后重试", "This configuration could not be loaded. Refresh and try again"), "error");
@@ -407,7 +407,15 @@ function beginConfigEdit(id) {
   const loadResult = state.loadSnapshot(item.snapshot);
   if (!loadResult.loaded && loadResult.missingCount) {
     const warning = cartText("unavailableSelectionConfirm", "该历史配置有 {count} 项内容已不可用。是否移除这些内容并继续修改？", "{count} saved selections are no longer available. Remove them and continue editing?").replace("{count}", loadResult.missingCount);
-    if (!window.confirm(warning)) return;
+    const confirmed = await confirmCartRemoval(
+      warning,
+      cartText("continueEditingTitle", "继续修改配置", "Continue Editing"),
+      {
+        confirmLabel: cartText("continueEditingAction", "移除并继续", "Remove and Continue"),
+        danger: false,
+      },
+    );
+    if (!confirmed) return;
     state.loadSnapshot(item.snapshot, true);
   } else if (!loadResult.loaded) {
     setCartStatus(cartText("configUnavailable", "该配置无法载入，请刷新后重试", "This configuration could not be loaded. Refresh and try again"), "error");
@@ -468,7 +476,21 @@ async function copyShareCode() {
   try {
     await navigator.clipboard.writeText(code);
     document.getElementById("share-copy-status").textContent = `${cartText("copied", "已复制", "Copied")} ${code}`;
-  } catch (_) { window.prompt(cartText("copyCode", "复制分享码", "Copy Code"), code); }
+  } catch (_) {
+    const codeElement = document.getElementById("share-code");
+    const selection = window.getSelection?.();
+    if (codeElement && selection) {
+      const range = document.createRange();
+      range.selectNodeContents(codeElement);
+      selection.removeAllRanges();
+      selection.addRange(range);
+    }
+    document.getElementById("share-copy-status").textContent = cartText(
+      "copyManually",
+      "浏览器未授权剪贴板，分享码已选中，请按 Ctrl+C 复制",
+      "Clipboard access was denied. The code is selected; press Ctrl+C to copy."
+    );
+  }
 }
 
 async function shareCart() {
@@ -638,7 +660,11 @@ function requestCartInquiry() {
 
 window.openCurrentInquiryDialog = requestCurrentInquiry;
 
-function confirmCartRemoval(message, title = cartText("removeConfirmTitle", "删除所选配置", "Remove Selected Configurations")) {
+function confirmCartRemoval(
+  message,
+  title = cartText("removeConfirmTitle", "删除所选配置", "Remove Selected Configurations"),
+  options = {},
+) {
   return new Promise((resolve) => {
     const returnFocus = document.activeElement;
     const dialog = document.createElement("dialog");
@@ -653,7 +679,7 @@ function confirmCartRemoval(message, title = cartText("removeConfirmTitle", "删
       <p id="cart-confirm-message" class="cart-confirm-message">${escapeCartHtml(message)}</p>
       <div class="cart-confirm-actions">
         <button class="btn btn-secondary" type="submit" value="cancel">${cartText("cancelAction", "取消", "Cancel")}</button>
-        <button class="btn btn-danger" type="submit" value="confirm">${cartText("confirmRemoveAction", "确认删除", "Remove")}</button>
+        <button class="btn ${options.danger === false ? "btn-primary" : "btn-danger"}" type="submit" value="confirm">${escapeCartHtml(options.confirmLabel || cartText("confirmRemoveAction", "确认删除", "Remove"))}</button>
       </div>
     </form>`;
     document.body.appendChild(dialog);

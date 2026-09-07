@@ -304,6 +304,7 @@ CREATE TABLE IF NOT EXISTS commerce_quotes (
     id TEXT PRIMARY KEY,
     config_id TEXT REFERENCES saved_configs(id) ON DELETE SET NULL,
     source_share_id TEXT REFERENCES commerce_shares(id) ON DELETE SET NULL,
+    source_inquiry_id TEXT REFERENCES customer_inquiries(id) ON DELETE SET NULL,
     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     title TEXT NOT NULL DEFAULT '配置报价单',
     customer_name TEXT NOT NULL DEFAULT '',
@@ -359,6 +360,7 @@ CREATE TABLE IF NOT EXISTS quote_deliveries (
     revision_id TEXT,
     last_viewed_revision_id TEXT,
     notification_state TEXT NOT NULL DEFAULT 'unread',
+    idempotency_key TEXT,
     UNIQUE(quote_id, recipient_user_id)
 );
 CREATE INDEX IF NOT EXISTS idx_quote_deliveries_recipient ON quote_deliveries(recipient_user_id, status, delivered_at);
@@ -499,6 +501,7 @@ def initialize_database() -> None:
             connection.execute("ALTER TABLE quotes ADD COLUMN currency TEXT NOT NULL DEFAULT 'CNY'")
         commerce_quote_columns = {row[1] for row in connection.execute("PRAGMA table_info(commerce_quotes)").fetchall()}
         for column, definition in (
+            ("source_inquiry_id", "TEXT"),
             ("quote_number", "TEXT"),
             ("lifecycle_status", "TEXT NOT NULL DEFAULT 'draft'"),
             ("version", "INTEGER NOT NULL DEFAULT 1"),
@@ -515,14 +518,17 @@ def initialize_database() -> None:
         ):
             if column not in commerce_quote_columns:
                 connection.execute("ALTER TABLE commerce_quotes ADD COLUMN {} {}".format(column, definition))
+        connection.execute("CREATE INDEX IF NOT EXISTS idx_commerce_quotes_source_inquiry ON commerce_quotes(source_inquiry_id)")
         delivery_columns = {row[1] for row in connection.execute("PRAGMA table_info(quote_deliveries)").fetchall()}
         for column, definition in (
             ("revision_id", "TEXT"),
             ("last_viewed_revision_id", "TEXT"),
             ("notification_state", "TEXT NOT NULL DEFAULT 'unread'"),
+            ("idempotency_key", "TEXT"),
         ):
             if column not in delivery_columns:
                 connection.execute("ALTER TABLE quote_deliveries ADD COLUMN {} {}".format(column, definition))
+        connection.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_quote_deliveries_idempotency ON quote_deliveries(delivered_by, idempotency_key) WHERE idempotency_key IS NOT NULL")
         saved_config_columns = {row[1] for row in connection.execute("PRAGMA table_info(saved_configs)").fetchall()}
         for column, definition in (
             ("version", "INTEGER NOT NULL DEFAULT 1"),

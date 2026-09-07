@@ -4,7 +4,7 @@
  * separately started API on port 8001 without requiring a file edit.
  */
 const botenIsLocalStaticServer = ["localhost", "127.0.0.1"].includes(window.location.hostname)
-  && window.location.port === "8080";
+  && ["8080", "8081"].includes(window.location.port);
 if (typeof window.BOTEN_API_BASE !== "string") {
   window.BOTEN_API_BASE = botenIsLocalStaticServer
     ? `${window.location.protocol}//${window.location.hostname}:8001`

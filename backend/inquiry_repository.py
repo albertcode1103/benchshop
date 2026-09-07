@@ -392,7 +392,8 @@ def mark_inquiry_quoted(inquiry_id: str, actor_id: str, actor_role: str, quote_i
     if not _staff_can_access(inquiry, actor_id, actor_role):
         raise InquiryError("INQUIRY_ACCESS_DENIED")
     if inquiry.get("converted_quote_id"):
-        raise InquiryError("INQUIRY_QUOTE_ALREADY_EXISTS")
+        inquiry["replayed"] = True
+        return inquiry
     if int(inquiry.get("version") or 0) != int(version):
         raise InquiryError("INQUIRY_STATUS_CONFLICT")
     with get_connection() as db:
@@ -407,4 +408,7 @@ def mark_inquiry_quoted(inquiry_id: str, actor_id: str, actor_role: str, quote_i
         )
     if not cursor.rowcount:
         raise InquiryError("INQUIRY_STATUS_CONFLICT")
-    return _load_inquiry(inquiry_id, "zh")
+    result = _load_inquiry(inquiry_id, "zh")
+    if result is not None:
+        result["replayed"] = False
+    return result
