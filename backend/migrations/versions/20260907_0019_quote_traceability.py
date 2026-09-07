@@ -10,9 +10,14 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.execute("ALTER TABLE commerce_quotes ADD COLUMN source_inquiry_id TEXT")
+    connection = op.get_bind()
+    quote_columns = {row[1] for row in connection.exec_driver_sql("PRAGMA table_info(commerce_quotes)").fetchall()}
+    delivery_columns = {row[1] for row in connection.exec_driver_sql("PRAGMA table_info(quote_deliveries)").fetchall()}
+    if "source_inquiry_id" not in quote_columns:
+        op.execute("ALTER TABLE commerce_quotes ADD COLUMN source_inquiry_id TEXT")
     op.execute("CREATE INDEX IF NOT EXISTS idx_commerce_quotes_source_inquiry ON commerce_quotes(source_inquiry_id)")
-    op.execute("ALTER TABLE quote_deliveries ADD COLUMN idempotency_key TEXT")
+    if "idempotency_key" not in delivery_columns:
+        op.execute("ALTER TABLE quote_deliveries ADD COLUMN idempotency_key TEXT")
     op.execute(
         "CREATE UNIQUE INDEX IF NOT EXISTS uq_quote_deliveries_idempotency "
         "ON quote_deliveries(delivered_by, idempotency_key) WHERE idempotency_key IS NOT NULL"
