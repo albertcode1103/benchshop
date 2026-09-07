@@ -880,7 +880,10 @@ def shared_config_pdf(code: str, request: Request, user=Depends(staff_user), lan
     title = result.get("name") or "客户配置清单"
     entries = [{"item_type": item.get("item_type", "device_config"), "source_id": item.get("source_id"), "quantity": item.get("quantity", 1), "display_name": item.get("display_name", ""), "snapshot": item["snapshot"]} for item in result.get("items", [])]
     customer = {"display_name": result.get("customer_name") or result.get("sender_name"), "email": result.get("customer_email") or result.get("sender_email")}
-    content = commerce_bundle_pdf(entries, customer, "en" if lang == "en" else "zh", "Share: {}".format(code), include_prices=True)
+    # A share communicates configuration content, not a commercial offer.
+    # Prices are restricted to quotation documents, regardless of whether a
+    # customer or a staff member initiates the share export.
+    content = commerce_bundle_pdf(entries, customer, "en" if lang == "en" else "zh", "Share: {}".format(code), include_prices=False)
     write_audit(user["id"], "share_pdf_export", "commerce_shares" if result.get("document_version") == 2 else "config_shares", result["id"], {"code": code, "item_count": len(entries)})
     return _pdf_response(content, "shared-configuration-{}.pdf".format(code))
 

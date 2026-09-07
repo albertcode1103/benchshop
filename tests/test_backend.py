@@ -1272,7 +1272,8 @@ class BackendWorkflowTests(unittest.TestCase):
                 self.assertEqual("application/pdf", exported.headers["content-type"])
                 self.assertGreater(len(exported.content), 100)
                 staff_pdf_text = "\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(exported.content)).pages)
-                self.assertIn("Reference Price", staff_pdf_text)
+                self.assertNotIn("Reference Price", staff_pdf_text)
+                self.assertNotIn("Device Base Price", staff_pdf_text)
 
                 quote = client.post(
                     "/api/v1/quotes", headers=staff_headers,
