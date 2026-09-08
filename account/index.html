@@ -8,9 +8,9 @@
   <link rel="icon" type="image/png" href="../tb/site/LOGO.png?v=20260831" />
   <link rel="stylesheet" href="../css/main.css?v=20260904-1" />
   <link rel="stylesheet" href="../css/components.css?v=20260905-17" />
-  <link rel="stylesheet" href="account.css?v=20260905-3" />
+  <link rel="stylesheet" href="account.css?v=20260908-1" />
   <script src="../js/runtime-config.js?v=20260907-1"></script>
-  <script src="account.js?v=20260905-4" defer></script>
+  <script src="account.js?v=20260908-1" defer></script>
 </head>
 <body class="profile-page">
   <a id="profile-skip-link" class="skip-link" href="#account-main">跳到主要内容</a>
@@ -43,6 +43,7 @@
         <button type="button" data-account-panel="account-security">密码与安全</button>
         <p id="profile-business-group">我的业务</p>
         <button type="button" data-account-panel="my-shares">我的分享记录</button>
+        <button type="button" data-account-panel="my-inquiries">我的询价</button>
         <button class="profile-quote-nav" type="button" data-account-panel="my-quotes">我的报价单 <span id="profile-quote-unread" class="profile-unread-badge" hidden>0</span></button>
       </nav>
       <button id="profile-sign-out" class="profile-sign-out" type="button">退出登录</button>
@@ -103,6 +104,13 @@
         <header class="profile-panel-header"><h1 id="profile-quotes-title">我的报价单</h1><p id="profile-quotes-description">查看业务员发送给您的正式报价和 PDF。</p></header>
         <div id="profile-quotes-status" class="profile-form-status" role="status" aria-live="polite"></div>
         <div id="profile-quotes-list" class="profile-business-list"></div>
+      </section>
+
+      <section class="profile-panel" data-account-content="my-inquiries" aria-labelledby="profile-inquiries-title" hidden>
+        <header class="profile-panel-header"><h1 id="profile-inquiries-title">我的询价</h1><p id="profile-inquiries-description">查看已经提交给销售人员的询价和当前处理进度。</p></header>
+        <div id="profile-inquiries-status" class="profile-form-status" role="status" aria-live="polite"></div>
+        <div id="profile-inquiries-list" class="profile-business-list"></div>
+        <footer class="profile-list-pagination"><span id="profile-inquiries-page">第 1 页</span><div><button id="profile-inquiries-prev" class="btn btn-secondary btn-sm" type="button">上一页</button><button id="profile-inquiries-next" class="btn btn-secondary btn-sm" type="button">下一页</button></div></footer>
       </section>
     </div>
   </main>

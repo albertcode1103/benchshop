@@ -24,6 +24,46 @@ MAX_DEVICE_CONFIGS_PER_BATCH = 100
 MAX_CART_ITEMS_PER_BATCH = 100
 
 
+def _source_key(source: Dict[str, Any]) -> str:
+    version = int(source.get("source_document_version") or 1)
+    identity = str(source.get("source_share_id") or source.get("source_share_code") or "").strip()
+    return "{}:{}".format(version, identity)
+
+
+def _decode_source_trace(value: Any) -> List[Dict[str, Any]]:
+    if isinstance(value, list):
+        decoded = value
+    else:
+        try:
+            decoded = json.loads(str(value or "[]"))
+        except (TypeError, ValueError, json.JSONDecodeError):
+            decoded = []
+    return [dict(item) for item in decoded if isinstance(item, dict) and _source_key(item) != "1:"]
+
+
+def _merge_source_trace(*groups: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    merged: List[Dict[str, Any]] = []
+    positions: Dict[Tuple[str, str], int] = {}
+    for group in groups:
+        for source in _decode_source_trace(group):
+            key = (_source_key(source), str(source.get("source_item_id") or ""))
+            quantity = max(1, int(source.get("imported_quantity") or source.get("quantity") or 1))
+            if key in positions:
+                merged[positions[key]]["imported_quantity"] += quantity
+                continue
+            normalized = {
+                "source_key": key[0],
+                "source_share_id": str(source.get("source_share_id") or ""),
+                "source_share_code": str(source.get("source_share_code") or ""),
+                "source_document_version": int(source.get("source_document_version") or 1),
+                "source_item_id": key[1],
+                "imported_quantity": quantity,
+            }
+            positions[key] = len(merged)
+            merged.append(normalized)
+    return merged
+
+
 def _snapshot_selections(snapshot: Dict[str, Any]) -> Dict[str, Any]:
     selections: Dict[str, Any] = {}
     for category in snapshot.get("categories") or []:
@@ -110,11 +150,40 @@ def customer_share_preview(code: str, language: str = "zh", increment_view: bool
     }
 
 
+def share_lookup_status(code: str) -> str:
+    """Return a stable lookup state without exposing share contents."""
+    with get_connection() as db:
+        row = db.execute(
+            """
+            SELECT active, expires_at FROM commerce_shares WHERE code = ?
+            UNION ALL
+            SELECT active, expires_at FROM config_shares WHERE code = ?
+            LIMIT 1
+            """,
+            (code, code),
+        ).fetchone()
+    if row is None:
+        return "missing"
+    if not row["active"]:
+        return "closed"
+    if str(row["expires_at"] or "") <= to_iso(utc_now()):
+        return "expired"
+    return "active"
+
+
+def _share_lookup_error(code: str) -> str:
+    return {
+        "closed": "SHARE_CLOSED",
+        "expired": "SHARE_EXPIRED",
+        "missing": "SHARE_NOT_FOUND",
+    }.get(share_lookup_status(code), "SHARE_NOT_FOUND")
+
+
 def import_share_to_cart(code: str, user_id: str, idempotency_key: str, language: str = "zh") -> Dict[str, Any]:
     selected_language = "en" if language == "en" else "zh"
     share = get_any_share(code, selected_language, increment_view=False)
     if share is None:
-        raise CatalogValidationError("SHARE_NOT_FOUND", "code")
+        raise CatalogValidationError(_share_lookup_error(code), "code")
     prepared = []
     skipped = []
     for index, item in enumerate(share.get("items") or []):
@@ -144,34 +213,46 @@ def import_share_to_cart(code: str, user_id: str, idempotency_key: str, language
 
         imported = []
         warnings = []
-        for _, item, candidate in prepared:
+        for index, item, candidate in prepared:
             item_type = str(item.get("item_type") or "device_config")
+            requested_quantity = int(item.get("quantity") or 1)
+            source_trace = {
+                "source_share_id": str(share.get("id") or ""),
+                "source_share_code": str(share.get("code") or code),
+                "source_document_version": int(share.get("document_version") or 1),
+                "source_item_id": str(item.get("id") or "{}:{}".format(share.get("id") or code, index)),
+                "imported_quantity": requested_quantity,
+            }
+            source_trace["source_key"] = _source_key(source_trace)
             if item_type == "device_config":
                 config_id = uuid.uuid4().hex
                 snapshot = candidate["snapshot"]
                 name = str(item.get("display_name") or (snapshot.get("product") or {}).get("name") or "Configuration")
                 db.execute(
-                    "INSERT INTO saved_configs (id, user_id, name, product_id, snapshot_json) VALUES (?, ?, ?, ?, ?)",
-                    (config_id, user_id, name, candidate["product_id"], json.dumps(snapshot, ensure_ascii=False)),
+                    "INSERT INTO saved_configs (id, user_id, name, product_id, snapshot_json, source_trace_json) VALUES (?, ?, ?, ?, ?, ?)",
+                    (config_id, user_id, name, candidate["product_id"], json.dumps(snapshot, ensure_ascii=False), json.dumps([source_trace], ensure_ascii=False)),
                 )
                 imported.append({"item_type": item_type, "id": config_id, "quantity": 1})
                 continue
 
             option_id = candidate["option_id"]
             rows = db.execute(
-                "SELECT id, quantity FROM saved_catalog_items WHERE user_id = ? AND option_id = ? AND archived_at IS NULL ORDER BY created_at, id",
+                "SELECT id, quantity, source_trace_json FROM saved_catalog_items WHERE user_id = ? AND option_id = ? AND archived_at IS NULL ORDER BY created_at, id",
                 (user_id, option_id),
             ).fetchall()
-            requested_quantity = int(item.get("quantity") or 1)
             existing_quantity = sum(int(row["quantity"] or 0) for row in rows)
             target_quantity = min(999, existing_quantity + requested_quantity)
             if target_quantity < existing_quantity + requested_quantity:
                 warnings.append({"item_type": item_type, "display_name": item.get("display_name") or "", "code": "QUANTITY_LIMIT"})
             if rows:
                 item_id = rows[0]["id"]
+                combined_trace = _merge_source_trace(
+                    *[_decode_source_trace(row["source_trace_json"]) for row in rows],
+                    [source_trace],
+                )
                 db.execute(
-                    "UPDATE saved_catalog_items SET quantity = ?, version = version + 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-                    (target_quantity, item_id),
+                    "UPDATE saved_catalog_items SET quantity = ?, source_trace_json = ?, version = version + 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                    (target_quantity, json.dumps(combined_trace, ensure_ascii=False), item_id),
                 )
                 for duplicate in rows[1:]:
                     db.execute(
@@ -182,8 +263,8 @@ def import_share_to_cart(code: str, user_id: str, idempotency_key: str, language
                 item_id = uuid.uuid4().hex
                 live_snapshot = candidate["snapshot"]
                 db.execute(
-                    "INSERT INTO saved_catalog_items (id, user_id, option_id, catalog_type, quantity, snapshot_json) VALUES (?, ?, ?, ?, ?, ?)",
-                    (item_id, user_id, option_id, live_snapshot["catalog_type"], target_quantity, json.dumps(live_snapshot, ensure_ascii=False)),
+                    "INSERT INTO saved_catalog_items (id, user_id, option_id, catalog_type, quantity, snapshot_json, source_trace_json) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (item_id, user_id, option_id, live_snapshot["catalog_type"], target_quantity, json.dumps(live_snapshot, ensure_ascii=False), json.dumps([source_trace], ensure_ascii=False)),
                 )
             imported.append({"item_type": item_type, "id": item_id, "quantity": target_quantity})
 
@@ -194,6 +275,11 @@ def import_share_to_cart(code: str, user_id: str, idempotency_key: str, language
             "items": imported,
             "skipped": skipped,
             "warnings": warnings,
+            "source": {
+                "share_id": str(share.get("id") or ""),
+                "share_code": str(share.get("code") or code),
+                "document_version": int(share.get("document_version") or 1),
+            },
             "replayed": False,
         }
         db.execute(
@@ -278,6 +364,7 @@ def _load_share_item(item_type: str, source_id: str, user_id: str) -> Dict[str, 
             "display_name": zh.get("name") or (zh.get("snapshot") or {}).get("product", {}).get("name") or "",
             "product_model": (zh.get("snapshot") or {}).get("product", {}).get("name") or "",
             "payload": {"zh": zh["snapshot"], "en": en["snapshot"]},
+            "source_trace": zh.get("source_trace") or [],
         }
 
     expected_catalog_type = "tools" if item_type == "tool" else "accessories"
@@ -298,6 +385,7 @@ def _load_share_item(item_type: str, source_id: str, user_id: str) -> Dict[str, 
             "zh": _catalog_document(zh_saved, item_type),
             "en": _catalog_document(en_saved, item_type),
         },
+        "source_trace": zh_saved.get("source_trace") or [],
     }
 
 

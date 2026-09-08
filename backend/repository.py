@@ -129,6 +129,7 @@ def get_public_product_snapshot(product_id: str, lang: str = "zh") -> Optional[D
             """,
             (product_id,),
         ).fetchall()
+        image_rows = connection.execute("SELECT id, image_path, image_width, image_height, alt_zh, alt_en, sort_order FROM product_images WHERE product_id = ? ORDER BY sort_order, id", (product_id,)).fetchall()
 
     product = dict(product_row)
     colors = []
@@ -238,6 +239,7 @@ def get_public_product_snapshot(product_id: str, lang: str = "zh") -> Optional[D
         }
         for row in specification_rows
     ]
+    images = [{"id": row["id"], "path": row["image_path"], "width": row["image_width"], "height": row["image_height"], "alt": row["alt_en"] if language == "en" else row["alt_zh"]} for row in image_rows]
     return {
         "schema_version": 2,
         "language": language,
@@ -251,6 +253,7 @@ def get_public_product_snapshot(product_id: str, lang: str = "zh") -> Optional[D
         "price_variants": variants,
         "optional_categories": list(optional_categories.values()),
         "specifications": specifications,
+        "images": images,
     }
 
 

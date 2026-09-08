@@ -50,6 +50,8 @@
 .profile-business-card-main span, .profile-business-card-meta { color: var(--color-text-secondary); font-size: .75rem; }
 .profile-business-card-meta { display: flex; flex-wrap: wrap; gap: var(--space-xs) var(--space-md); grid-column: 1 / -1; }
 .profile-business-card-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-sm); }
+.profile-danger-action { color: var(--color-danger); }
+.profile-danger-action:hover { border-color: var(--color-danger); background: #fff7f7; }
 .profile-status-badge { display: inline-flex; align-items: center; width: fit-content; min-height: 24px; padding: 2px 9px; border-radius: 999px; color: #08734f; background: #e9f8f2; font-size: .75rem; font-weight: 700; }
 .profile-status-badge.is-off { color: var(--color-text-secondary); background: var(--color-bg); }
 .profile-status-badge.is-new { color: var(--color-accent-dark); background: var(--color-accent-light); }
@@ -66,7 +68,13 @@
 .profile-detail-group h3 { margin-bottom: var(--space-sm); font-size: 1rem; }
 .profile-detail-list { display: grid; gap: var(--space-sm); }
 .profile-detail-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-md); padding: var(--space-sm) var(--space-md); border-radius: var(--radius-sm); background: var(--color-bg); }
+.profile-detail-row > span { display: grid; gap: 2px; min-width: 0; }
+.profile-detail-row small { color: var(--color-text-secondary); font-size: .75rem; }
 .profile-detail-row.is-unavailable { color: var(--color-danger); background: #fff7f7; }
+.profile-source-codes { display: flex; flex-wrap: wrap; gap: var(--space-sm); }
+.profile-source-codes code { padding: .35rem .6rem; border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-bg); font-family: inherit; font-weight: 700; }
+.profile-inquiry-note, .profile-inquiry-confirm { color: var(--color-text-secondary); line-height: 1.65; white-space: pre-wrap; }
+.profile-copy-fallback { position: fixed; inset: auto auto 0 0; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 .profile-quote-total { display: flex; justify-content: space-between; gap: var(--space-lg); padding: var(--space-lg) 0; font-size: 1.125rem; font-weight: 700; }
 
 @media (max-width: 800px) {

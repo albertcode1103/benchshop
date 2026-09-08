@@ -97,7 +97,9 @@ function mapApiProduct(product, localAssets) {
     colorDimensions,
     // data.js is retained only as a source for local gallery assets. All
     // customer-facing product text must come from the catalog API.
-    detailImages: localAssets?.detailImages || [],
+    detailImages: (product.images || []).map((image) => window.botenAssetUrl(image.path)).filter(Boolean).length
+      ? (product.images || []).map((image) => window.botenAssetUrl(image.path)).filter(Boolean)
+      : localAssets?.detailImages || [],
     categories: [...baseCategories, ...optionalCategories],
     specifications: product.specifications || []
   };

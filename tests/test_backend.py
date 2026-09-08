@@ -4,6 +4,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from datetime import datetime
 from io import BytesIO
 from pathlib import Path
 
@@ -42,7 +43,7 @@ from backend.database import get_connection
 from backend.database_maintenance import create_backup, restore_backup, verify_database
 from backend.media_routes import image_extension, store_image
 from backend.main import app
-from backend.pdf_service import configuration_pdf, quote_pdf
+from backend.pdf_service import commerce_bundle_pdf, configuration_pdf, quote_pdf, temporary_configuration_code
 from backend.repository import get_product, get_public_product_snapshot, list_products
 from backend.seed import seed
 from backend.user_repository import authenticate, create_session, create_user, get_user_by_token
@@ -195,6 +196,10 @@ class BackendWorkflowTests(unittest.TestCase):
                         "value_en": "3000 rpm",
                     }
                 ],
+                images=[
+                    {"id": "pricing-test-image-2", "image_path": "assets/test-detail-2.webp", "image_width": 1600, "image_height": 900, "alt_zh": "设备侧面", "alt_en": "Side view"},
+                    {"id": "pricing-test-image-1", "image_path": "assets/test-detail-1.webp", "image_width": 1600, "image_height": 900, "alt_zh": "设备正面", "alt_en": "Front view"},
+                ],
                 groups=[
                     {
                         "id": "base-pricing-test-motor",
@@ -249,12 +254,14 @@ class BackendWorkflowTests(unittest.TestCase):
             self.assertEqual(2, len(saved["base_option_groups"]))
             self.assertEqual("#147d3f", saved["colors"][0]["display_color"])
             self.assertEqual("最大转速", saved["specifications"][0]["label"])
+            self.assertEqual(["pricing-test-image-2", "pricing-test-image-1"], [image["id"] for image in saved["images"]])
             public_snapshot = get_public_product_snapshot(product_id, "en")
             self.assertEqual(2, public_snapshot["schema_version"])
             self.assertEqual("BOTEN TEST", public_snapshot["model"])
             self.assertEqual("Green", public_snapshot["colors"][0]["name"])
             self.assertEqual(["motor", "power"], [group["type"] for group in public_snapshot["base_option_groups"]])
             self.assertEqual("Maximum speed", public_snapshot["specifications"][0]["label"])
+            self.assertEqual(["Side view", "Front view"], [image["alt"] for image in public_snapshot["images"]])
             self.assertEqual(
                 "Device-specific note",
                 public_snapshot["optional_categories"][0]["options"][0]["special_note"],
@@ -1198,11 +1205,51 @@ class BackendWorkflowTests(unittest.TestCase):
                     json={"active": False},
                 )
                 self.assertEqual(200, closed_share.status_code, closed_share.text)
+                closed_preview = client.get(
+                    "/api/v1/customer/shares/{}?lang=zh".format(code), headers=other_headers,
+                )
+                self.assertEqual(410, closed_preview.status_code, closed_preview.text)
+                self.assertEqual("SHARE_CLOSED", closed_preview.json()["error"]["code"])
+                closed_import = client.post(
+                    "/api/v1/customer/shares/{}/import".format(code), headers=other_headers,
+                    json={"idempotency_key": "closed-share-import-0001", "lang": "zh"},
+                )
+                self.assertEqual(410, closed_import.status_code, closed_import.text)
+                self.assertEqual("SHARE_CLOSED", closed_import.json()["error"]["code"])
                 reopened_share = client.patch(
                     "/api/v1/admin/shares/{}/status".format(share_id), headers=admin_headers,
                     json={"active": True},
                 )
                 self.assertEqual(200, reopened_share.status_code, reopened_share.text)
+
+                missing_preview = client.get("/api/v1/customer/shares/000000?lang=en", headers=other_headers)
+                self.assertEqual(404, missing_preview.status_code, missing_preview.text)
+                self.assertEqual("SHARE_NOT_FOUND", missing_preview.json()["error"]["code"])
+                missing_import = client.post(
+                    "/api/v1/customer/shares/000000/import", headers=other_headers,
+                    json={"idempotency_key": "missing-share-import-0001", "lang": "en"},
+                )
+                self.assertEqual(404, missing_import.status_code, missing_import.text)
+                self.assertEqual("SHARE_NOT_FOUND", missing_import.json()["error"]["code"])
+
+                with get_connection() as database:
+                    original_expiry = database.execute(
+                        "SELECT expires_at FROM commerce_shares WHERE id = ?", (share_id,)
+                    ).fetchone()[0]
+                    database.execute("UPDATE commerce_shares SET expires_at = '2000-01-01T00:00:00Z' WHERE id = ?", (share_id,))
+                expired_preview = client.get(
+                    "/api/v1/customer/shares/{}?lang=en".format(code), headers=other_headers,
+                )
+                self.assertEqual(410, expired_preview.status_code, expired_preview.text)
+                self.assertEqual("SHARE_EXPIRED", expired_preview.json()["error"]["code"])
+                expired_import = client.post(
+                    "/api/v1/customer/shares/{}/import".format(code), headers=other_headers,
+                    json={"idempotency_key": "expired-share-import-0001", "lang": "en"},
+                )
+                self.assertEqual(410, expired_import.status_code, expired_import.text)
+                self.assertEqual("SHARE_EXPIRED", expired_import.json()["error"]["code"])
+                with get_connection() as database:
+                    database.execute("UPDATE commerce_shares SET expires_at = ? WHERE id = ?", (original_expiry, share_id))
 
                 preview = client.get(
                     "/api/v1/staff/shares/{}/preview?lang=en".format(code),
@@ -1242,6 +1289,39 @@ class BackendWorkflowTests(unittest.TestCase):
                 self.assertTrue(replayed.json()["replayed"])
                 self.assertEqual(2, len(client.get("/api/v1/configs", headers=other_headers).json()["items"]))
                 self.assertEqual(2, len(client.get("/api/v1/cart/catalog-items", headers=other_headers).json()["items"]))
+
+                second_source_import = client.post(
+                    "/api/v1/customer/shares/{}/import".format(catalog_only_code),
+                    headers=other_headers,
+                    json={"idempotency_key": "mixed-share-import-source-two", "lang": "zh"},
+                )
+                self.assertEqual(200, second_source_import.status_code, second_source_import.text)
+                adjusted_tool = client.put(
+                    "/api/v1/cart/catalog-options/{}".format(tool["id"]),
+                    headers=other_headers,
+                    json={"quantity": 5, "lang": "zh"},
+                )
+                self.assertEqual(200, adjusted_tool.status_code, adjusted_tool.text)
+                self.assertEqual(2, len(adjusted_tool.json()["source_trace"]))
+                lineage_inquiry = client.post(
+                    "/api/v1/customer/inquiries/cart", headers=other_headers,
+                    json={"lang": "zh", "message": "Two shares and one manual device", "idempotency_key": "mixed-cart-lineage-inquiry"},
+                )
+                self.assertEqual(201, lineage_inquiry.status_code, lineage_inquiry.text)
+                lineage_payload = lineage_inquiry.json()
+                self.assertEqual({code, catalog_only_code}, set(lineage_payload["source_codes"]))
+                self.assertEqual(2, lineage_payload["source_count"])
+                manual_device = next(item for item in lineage_payload["items"] if item["source_id"] == other_config["id"])
+                self.assertEqual([], manual_device["provenance"]["sources"])
+                self.assertEqual(1, manual_device["provenance"]["manual_quantity"])
+                imported_tool = next(item for item in lineage_payload["items"] if item["item_type"] == "tool")
+                self.assertEqual({code, catalog_only_code}, {source["source_share_code"] for source in imported_tool["provenance"]["sources"]})
+                self.assertEqual(1, imported_tool["provenance"]["manual_quantity"])
+                staff_lineage_search = client.get(
+                    "/api/v1/staff/inquiries?query={}".format(catalog_only_code), headers=staff_headers,
+                )
+                self.assertEqual(200, staff_lineage_search.status_code, staff_lineage_search.text)
+                self.assertIn(lineage_payload["id"], {item["id"] for item in staff_lineage_search.json()["items"]})
 
                 with get_connection() as database:
                     database.execute("UPDATE options SET enabled = 0 WHERE id = ?", (tool["id"],))
@@ -1354,6 +1434,7 @@ class BackendWorkflowTests(unittest.TestCase):
                 database.execute("DELETE FROM quote_deliveries WHERE recipient_user_id IN (?, ?)", (customer["id"], other["id"]))
                 database.execute("DELETE FROM commerce_shares WHERE created_by = ?", (customer["id"],))
                 database.execute("DELETE FROM share_imports WHERE user_id = ?", (other["id"],))
+                database.execute("DELETE FROM customer_inquiries WHERE created_by = ?", (other["id"],))
                 database.execute("DELETE FROM saved_catalog_items WHERE user_id IN (?, ?)", (customer["id"], other["id"]))
                 database.execute("DELETE FROM saved_configs WHERE user_id IN (?, ?)", (customer["id"], other["id"]))
                 database.execute("DELETE FROM options WHERE id IN (?, ?)", (tool["id"], accessory["id"]))
@@ -1392,6 +1473,42 @@ class BackendWorkflowTests(unittest.TestCase):
                 self.assertEqual(current_payload["id"], replay.json()["id"])
                 self.assertTrue(replay.json()["replayed"])
 
+                missing_product = client.post(
+                    "/api/v1/customer/inquiries/current-configuration", headers=headers,
+                    json={"product_id": "removed-product", "color": "unknown", "selections": {}, "lang": "en", "message": "", "idempotency_key": "current-inquiry-missing-product"},
+                )
+                self.assertEqual(404, missing_product.status_code, missing_product.text)
+                self.assertEqual("INQUIRY_PRODUCT_NOT_FOUND", missing_product.json()["error"]["code"])
+
+                unavailable_color = client.post(
+                    "/api/v1/customer/inquiries/current-configuration", headers=headers,
+                    json={"product_id": product["id"], "color": "removed-color", "selections": {}, "lang": "en", "message": "", "idempotency_key": "current-inquiry-missing-color"},
+                )
+                self.assertEqual(409, unavailable_color.status_code, unavailable_color.text)
+                self.assertEqual("INQUIRY_COLOR_UNAVAILABLE", unavailable_color.json()["error"]["code"])
+
+                option_category = next((category["id"] for category in product.get("optional_categories") or []), None)
+                if option_category is None:
+                    base_group = next(iter(product.get("base_option_groups") or []), None)
+                    option_category = ("voltage" if base_group["type"] == "power" else base_group["type"]) if base_group else product["categories"][0]["id"]
+                unavailable_option = client.post(
+                    "/api/v1/customer/inquiries/current-configuration", headers=headers,
+                    json={"product_id": product["id"], "color": product["colors"][0]["code"], "selections": {option_category: "removed-option"}, "lang": "zh", "message": "", "idempotency_key": "current-inquiry-missing-option"},
+                )
+                self.assertEqual(409, unavailable_option.status_code, unavailable_option.text)
+                self.assertEqual("INQUIRY_OPTION_UNAVAILABLE", unavailable_option.json()["error"]["code"])
+
+                with get_connection() as database:
+                    database.execute("UPDATE products SET enabled = 0 WHERE id = ?", (product["id"],))
+                inactive_product = client.post(
+                    "/api/v1/customer/inquiries/current-configuration", headers=headers,
+                    json={"product_id": product["id"], "color": product["colors"][0]["code"], "selections": {}, "lang": "zh", "message": "", "idempotency_key": "current-inquiry-inactive-product"},
+                )
+                self.assertEqual(409, inactive_product.status_code, inactive_product.text)
+                self.assertEqual("INQUIRY_PRODUCT_INACTIVE", inactive_product.json()["error"]["code"])
+                with get_connection() as database:
+                    database.execute("UPDATE products SET enabled = 1 WHERE id = ?", (product["id"],))
+
                 cart = client.post(
                     "/api/v1/customer/inquiries/cart", headers=headers,
                     json={"lang": "en", "message": "Cart inquiry", "idempotency_key": "cart-inquiry-000001"},
@@ -1423,10 +1540,12 @@ class BackendWorkflowTests(unittest.TestCase):
     def test_staff_can_assign_and_convert_an_inquiry_to_a_draft_quote(self) -> None:
         customer = create_user("inquiry-staff-customer@example.com", None, "password123", display_name="Inquiry Staff Customer")
         sales = create_user("inquiry-staff-sales@example.com", None, "password123", role="sales", display_name="Inquiry Staff Sales")
+        sales_two = create_user("inquiry-staff-sales-two@example.com", None, "password123", role="sales", display_name="Inquiry Staff Sales Two")
         product = get_product("cr1016")
         customer_headers = {"Authorization": "Bearer {}".format(create_session(customer)["token"])}
         sales_headers = {"Authorization": "Bearer {}".format(create_session(sales)["token"])}
-        quote_id = None
+        sales_two_headers = {"Authorization": "Bearer {}".format(create_session(sales_two)["token"])}
+        quote_ids = []
         inquiry_id = None
         try:
             with TestClient(app) as client:
@@ -1436,6 +1555,8 @@ class BackendWorkflowTests(unittest.TestCase):
                 )
                 self.assertEqual(201, created.status_code, created.text)
                 inquiry_id = created.json()["id"]
+                self.assertEqual("active", created.json()["items"][0]["availability"])
+                self.assertEqual("active", created.json()["items"][0]["captured_availability"])
 
                 listing = client.get("/api/v1/staff/inquiries?status=new", headers=sales_headers)
                 self.assertEqual(200, listing.status_code, listing.text)
@@ -1448,16 +1569,42 @@ class BackendWorkflowTests(unittest.TestCase):
                 )
                 self.assertEqual(200, assigned.status_code, assigned.text)
                 self.assertEqual(sales["id"], assigned.json()["assigned_to"])
+                self.assertTrue(assigned.json()["assigned_at"])
+
+                contacted = client.patch(
+                    "/api/v1/staff/inquiries/{}".format(inquiry_id), headers=sales_headers,
+                    json={"version": assigned.json()["version"], "status": "contacted", "assigned_to": sales["id"]},
+                )
+                self.assertEqual(200, contacted.status_code, contacted.text)
+                self.assertEqual("contacted", contacted.json()["status"])
+                self.assertTrue(contacted.json()["contacted_at"])
+                self.assertEqual(assigned.json()["assigned_at"], contacted.json()["assigned_at"])
 
                 converted = client.post(
                     "/api/v1/staff/inquiries/{}/convert-to-quote".format(inquiry_id), headers=sales_headers,
-                    json={"version": assigned.json()["version"], "currency": "CNY"},
+                    json={"version": contacted.json()["version"], "currency": "CNY"},
                 )
                 self.assertEqual(201, converted.status_code, converted.text)
                 self.assertEqual("quoted", converted.json()["inquiry"]["status"])
                 self.assertTrue(converted.json()["quote"]["items"])
                 self.assertEqual(inquiry_id, converted.json()["quote"]["source_inquiry_id"])
-                quote_id = converted.json()["quote"]["id"]
+                self.assertEqual("inquiry", converted.json()["quote"]["source_type"])
+                self.assertEqual(inquiry_id, converted.json()["quote"]["source_document_id"])
+                converted_quote = converted.json()["quote"]
+                self.assertRegex(converted_quote["quote_number"], r"^BTQ-\d{8}-\d{4}$")
+                product_line = next(item for item in converted_quote["items"] if item["kind"] == "product")
+                self.assertTrue(product_line["locked"])
+                self.assertEqual("base_device", product_line["configuration_role"])
+                self.assertTrue(product_line["device_specifications"])
+                self.assertEqual(float(product_line["price"]), float(product_line["reference_price"]))
+                self.assertFalse(any(
+                    item.get("source_id", "").startswith("base-") and item.get("configuration_role") not in ("base_power", "base_device")
+                    for item in converted_quote["items"]
+                ))
+                for item in converted_quote["items"]:
+                    if item.get("configuration_role") == "base_power":
+                        self.assertTrue(item["locked"])
+                quote_ids.append(converted.json()["quote"]["id"])
 
                 replayed = client.post(
                     "/api/v1/staff/inquiries/{}/convert-to-quote".format(inquiry_id), headers=sales_headers,
@@ -1465,19 +1612,139 @@ class BackendWorkflowTests(unittest.TestCase):
                 )
                 self.assertEqual(200, replayed.status_code, replayed.text)
                 self.assertTrue(replayed.json()["replayed"])
-                self.assertEqual(quote_id, replayed.json()["quote"]["id"])
+                self.assertEqual(quote_ids[0], replayed.json()["quote"]["id"])
+
+                # A second salesperson can discover an inquiry assigned to a
+                # colleague and create their own quote without replacing the
+                # legacy first-quote pointer.
+                second_listing = client.get("/api/v1/staff/inquiries?status=quoted", headers=sales_two_headers)
+                self.assertEqual(200, second_listing.status_code, second_listing.text)
+                second_source = next(item for item in second_listing.json()["items"] if item["id"] == inquiry_id)
+                self.assertEqual(1, second_source["quote_count"])
+                self.assertIsNone(second_source["own_latest_quote_id"])
+                second_converted = client.post(
+                    "/api/v1/staff/inquiries/{}/convert-to-quote".format(inquiry_id), headers=sales_two_headers,
+                    json={"version": second_source["version"], "currency": "USD", "idempotency_key": "second-sales-quote-0001"},
+                )
+                self.assertEqual(201, second_converted.status_code, second_converted.text)
+                quote_ids.append(second_converted.json()["quote"]["id"])
+                self.assertNotEqual(quote_ids[0], quote_ids[1])
+                self.assertRegex(second_converted.json()["quote"]["quote_number"], r"^BTQ-\d{8}-\d{4}$")
+                self.assertNotEqual(converted_quote["quote_number"], second_converted.json()["quote"]["quote_number"])
+
+                inquiry_pdf = client.get(
+                    "/api/v1/staff/inquiries/{}/pdf?lang=en".format(inquiry_id), headers=sales_two_headers,
+                )
+                self.assertEqual(200, inquiry_pdf.status_code, inquiry_pdf.text)
+                self.assertEqual("application/pdf", inquiry_pdf.headers["content-type"])
+                from pypdf import PdfReader
+                inquiry_pdf_text = "\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(inquiry_pdf.content)).pages)
+                self.assertNotIn("Unit price", inquiry_pdf_text)
+
                 with get_connection() as database:
                     quote_count = database.execute(
-                        "SELECT COUNT(*) FROM commerce_quotes WHERE id = ?", (quote_id,)
+                        "SELECT COUNT(*) FROM commerce_quotes WHERE source_type = 'inquiry' AND source_document_id = ?", (inquiry_id,)
                     ).fetchone()[0]
-                self.assertEqual(1, quote_count)
+                    first_quote_id = database.execute("SELECT converted_quote_id FROM customer_inquiries WHERE id = ?", (inquiry_id,)).fetchone()[0]
+                self.assertEqual(2, quote_count)
+                self.assertEqual(quote_ids[0], first_quote_id)
+        finally:
+            with get_connection() as database:
+                for quote_id in quote_ids:
+                    database.execute("DELETE FROM commerce_quotes WHERE id = ?", (quote_id,))
+                if inquiry_id:
+                    database.execute("DELETE FROM customer_inquiries WHERE id = ?", (inquiry_id,))
+                database.execute("DELETE FROM users WHERE id IN (?, ?, ?)", (customer["id"], sales["id"], sales_two["id"]))
+
+    def test_inquiry_availability_preserves_capture_and_refreshes_current_catalog_state(self) -> None:
+        root_id = "catalog-tools"
+        inserted_root = False
+        with get_connection() as database:
+            if database.execute("SELECT 1 FROM categories WHERE id = ?", (root_id,)).fetchone() is None:
+                database.execute(
+                    """
+                    INSERT INTO categories
+                        (id, name, name_en, multiple, sort_order, parent_id,
+                         catalog_type, enabled, version, translation_status)
+                    VALUES (?, '维修工具', 'Service Tools', 1, 1, NULL, 'tools', 1, 1, 'reviewed')
+                    """,
+                    (root_id,),
+                )
+                inserted_root = True
+        tool = create_catalog_item(
+            category_id=root_id, code="AVAIL-TOOL-001",
+            name_zh="状态测试工具", name_en="Availability Test Tool",
+            price_cny=120, price_usd=18, translation_status="reviewed",
+        )
+        customer = create_user("availability-customer@example.com", None, "password123", display_name="Availability Customer")
+        sales = create_user("availability-sales@example.com", None, "password123", role="sales", display_name="Availability Sales")
+        customer_headers = {"Authorization": "Bearer {}".format(create_session(customer)["token"])}
+        sales_headers = {"Authorization": "Bearer {}".format(create_session(sales)["token"])}
+        inquiry_id = None
+        quote_id = None
+        try:
+            with TestClient(app) as client:
+                added = client.post(
+                    "/api/v1/cart/catalog-items", headers=customer_headers,
+                    json={"option_id": tool["id"], "quantity": 2, "lang": "zh"},
+                )
+                self.assertEqual(201, added.status_code, added.text)
+                created = client.post(
+                    "/api/v1/customer/inquiries/cart", headers=customer_headers,
+                    json={"lang": "zh", "message": "Availability lifecycle", "idempotency_key": "availability-inquiry-0001"},
+                )
+                self.assertEqual(201, created.status_code, created.text)
+                inquiry_id = created.json()["id"]
+                created_item = created.json()["items"][0]
+                self.assertEqual("active", created_item["availability"])
+                self.assertEqual("active", created_item["captured_availability"])
+
+                with get_connection() as database:
+                    database.execute("UPDATE options SET enabled = 0 WHERE id = ?", (tool["id"],))
+                inactive = client.get(
+                    "/api/v1/staff/inquiries/{}?lang=zh".format(inquiry_id), headers=sales_headers,
+                )
+                self.assertEqual(200, inactive.status_code, inactive.text)
+                inactive_item = inactive.json()["items"][0]
+                self.assertEqual("inactive", inactive_item["availability"])
+                self.assertEqual("active", inactive_item["captured_availability"])
+
+                converted = client.post(
+                    "/api/v1/staff/inquiries/{}/convert-to-quote".format(inquiry_id), headers=sales_headers,
+                    json={"version": inactive.json()["version"], "currency": "CNY"},
+                )
+                self.assertEqual(201, converted.status_code, converted.text)
+                quote_id = converted.json()["quote"]["id"]
+                quote_item = next(item for item in converted.json()["quote"]["items"] if item["kind"] == "tool")
+                self.assertEqual("inactive", quote_item["availability"])
+                self.assertEqual("active", quote_item["captured_availability"])
+
+                inactive_refs = client.get("/api/v1/staff/reference-prices", headers=sales_headers)
+                self.assertEqual(200, inactive_refs.status_code, inactive_refs.text)
+                self.assertEqual("inactive", inactive_refs.json()["option_availability"][tool["id"]])
+
+                with get_connection() as database:
+                    database.execute("UPDATE options SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?", (tool["id"],))
+                missing = client.get(
+                    "/api/v1/staff/inquiries/{}?lang=en".format(inquiry_id), headers=sales_headers,
+                )
+                self.assertEqual(200, missing.status_code, missing.text)
+                missing_item = missing.json()["items"][0]
+                self.assertEqual("missing", missing_item["availability"])
+                self.assertEqual("active", missing_item["captured_availability"])
+                missing_refs = client.get("/api/v1/staff/reference-prices", headers=sales_headers)
+                self.assertEqual("missing", missing_refs.json()["option_availability"][tool["id"]])
         finally:
             with get_connection() as database:
                 if quote_id:
                     database.execute("DELETE FROM commerce_quotes WHERE id = ?", (quote_id,))
                 if inquiry_id:
                     database.execute("DELETE FROM customer_inquiries WHERE id = ?", (inquiry_id,))
+                database.execute("DELETE FROM saved_catalog_items WHERE user_id = ?", (customer["id"],))
+                database.execute("DELETE FROM options WHERE id = ?", (tool["id"],))
                 database.execute("DELETE FROM users WHERE id IN (?, ?)", (customer["id"], sales["id"]))
+                if inserted_root:
+                    database.execute("DELETE FROM categories WHERE id = ?", (root_id,))
 
     def test_staff_can_archive_restore_and_review_quote_history(self) -> None:
         customer = create_user("quote-history-customer@example.com", None, "password123", display_name="Quote History Customer")
@@ -1543,6 +1810,16 @@ class BackendWorkflowTests(unittest.TestCase):
                 archived_listing = client.get("/api/v1/quotes?status=archived", headers=sales_headers)
                 self.assertEqual(200, archived_listing.status_code, archived_listing.text)
                 self.assertEqual([quote_id], [item["id"] for item in archived_listing.json()["items"]])
+                quote_number = archived_listing.json()["items"][0]["quote_number"]
+                searched_listing = client.get(
+                    "/api/v1/quotes?status=archived&query={}".format(quote_number.lower()),
+                    headers=sales_headers,
+                )
+                self.assertEqual([quote_id], [item["id"] for item in searched_listing.json()["items"]])
+                empty_search = client.get(
+                    "/api/v1/quotes?status=archived&query=no-such-quote", headers=sales_headers,
+                )
+                self.assertEqual([], empty_search.json()["items"])
                 active_listing = client.get("/api/v1/quotes?include_archived=false", headers=sales_headers)
                 self.assertNotIn(quote_id, [item["id"] for item in active_listing.json()["items"]])
 
@@ -1585,6 +1862,59 @@ class BackendWorkflowTests(unittest.TestCase):
                     database.execute("DELETE FROM quote_deliveries WHERE quote_id = ?", (quote_id,))
                     database.execute("DELETE FROM commerce_quotes WHERE id = ?", (quote_id,))
                 database.execute("DELETE FROM users WHERE id IN (?, ?)", (customer["id"], sales["id"]))
+
+    def test_quote_lines_support_grouped_add_remove_quantity_and_price_edits(self) -> None:
+        sales = create_user("quote-line-editor@example.com", None, "password123", role="sales", display_name="Quote Line Editor")
+        headers = {"Authorization": "Bearer {}".format(create_session(sales)["token"])}
+        quote_id = None
+        try:
+            with TestClient(app) as client:
+                created = client.post(
+                    "/api/v1/quotes",
+                    headers=headers,
+                    json={
+                        "title": "Editable grouped quote",
+                        "currency": "CNY",
+                        "total_price": 1,
+                        "items": [
+                            {"kind": "product", "source_id": "cr1016", "device_key": "device-a", "device_sequence": 1, "device_label": "设备 1 · CR1016", "name": "CR1016", "quantity": 1, "price": 100},
+                            {"kind": "option", "source_id": "option-a", "parent_device_key": "device-a", "device_sequence": 1, "device_label": "设备 1 · CR1016", "name": "Optional A", "quantity": 1, "price": 20},
+                            {"kind": "tool", "source_id": "tool-a", "name": "Tool A", "quantity": 1, "price": 10},
+                        ],
+                    },
+                )
+                self.assertEqual(201, created.status_code, created.text)
+                quote = created.json()
+                quote_id = quote["id"]
+                self.assertEqual(130, quote["total_price"])
+                self.assertTrue(all(item.get("line_id") for item in quote["items"]))
+                self.assertEqual("device-a", quote["items"][1]["parent_device_key"])
+                self.assertIn("reference_price", quote["items"][0])
+                self.assertIn("quoted_price", quote["items"][0])
+
+                updated_items = [quote["items"][0], {**quote["items"][2], "quantity": 3, "price": 12}]
+                updated = client.post(
+                    "/api/v1/quotes",
+                    headers=headers,
+                    json={"quote_id": quote_id, "version": quote["version"], "title": quote["title"], "currency": "CNY", "items": updated_items, "total_price": 0},
+                )
+                self.assertEqual(201, updated.status_code, updated.text)
+                self.assertEqual(2, len(updated.json()["items"]))
+                self.assertEqual(136, updated.json()["total_price"])
+                self.assertEqual(3, updated.json()["items"][1]["quantity"])
+                self.assertTrue(updated.json()["items"][1]["price_overridden"])
+
+                invalid_parent = client.post(
+                    "/api/v1/quotes",
+                    headers=headers,
+                    json={"title": "Invalid parent", "items": [{"kind": "option", "parent_device_key": "missing-device", "name": "Orphan", "quantity": 1, "price": 0}]},
+                )
+                self.assertEqual(422, invalid_parent.status_code, invalid_parent.text)
+        finally:
+            with get_connection() as database:
+                if quote_id:
+                    database.execute("DELETE FROM commerce_quotes WHERE id = ?", (quote_id,))
+                database.execute("DELETE FROM users WHERE id = ?", (sales["id"],))
 
     def test_catalog_manager_permissions_and_atomic_product_save(self) -> None:
         admin = create_user("catalog-admin@example.com", None, "password123", role="admin", display_name="Catalog Admin")
@@ -1779,8 +2109,12 @@ class BackendWorkflowTests(unittest.TestCase):
             for currency, price in (("CNY", 1000), ("USD", 150)):
                 created = client.post("/api/v1/quotes", headers=headers, json={
                     "config_id": config["id"], "title": "{} Quote PDF".format(currency), "items": [{"code": "CR1016", "name": "Test Bench", "quantity": 1, "price": price}], "total_price": price, "currency": currency,
+                    "customer_name": "Manual Customer", "customer_email": "manual@example.com", "customer_phone": "+8613800000000",
                 })
                 self.assertEqual(201, created.status_code, created.text)
+                self.assertEqual("+8613800000000", created.json()["customer_phone"])
+                detail = client.get("/api/v1/quotes/{}".format(created.json()["id"]), headers=headers)
+                self.assertEqual("Quote PDF", detail.json()["quoted_by"]["display_name"])
                 response = client.get("/api/v1/quotes/{}/pdf".format(created.json()["id"]), headers=headers)
                 self.assertEqual(200, response.status_code, response.text)
                 self.assertEqual("application/pdf", response.headers["content-type"])
@@ -1807,6 +2141,87 @@ class BackendWorkflowTests(unittest.TestCase):
         quote_reader = PdfReader(BytesIO(quote_content))
         self.assertEqual(1, len(quote_reader.pages))
         self.assertIn("CR1016", quote_reader.pages[0].extract_text())
+
+    def test_unified_pdf_layout_content_and_price_boundary(self) -> None:
+        from pypdf import PdfReader
+
+        snapshot = {
+            "product": {"id": "cr1016", "name": "BOTEN CR1016", "title_name": "Common Rail Test Bench"},
+            "color": {"label": "Green"},
+            "categories": [
+                {"id": "channel", "name": "Channels", "sort_order": 3, "options": []},
+                {"id": "injector", "name": "Injector Test Kits", "sort_order": 5, "options": [
+                    {"id": "kit-2", "code": "KIT-002", "name": "Second Kit", "sort_order": 2},
+                    {"id": "kit-1", "code": "KIT-001", "name": "First Kit", "sort_order": 1},
+                ]},
+                {"id": "motor", "name": "Motor", "sort_order": 1, "options": [{"id": "m1", "name": "22kW Servo Motor"}]},
+            ],
+        }
+        entries = [
+            {"item_type": "accessory", "source_id": "a1", "quantity": 1, "snapshot": {"code": "ACC-001", "name": "Cable", "sort_order": 1}},
+            {"item_type": "tool", "source_id": "t1", "quantity": 1, "snapshot": {"code": "TOOL-001", "name": "Wrench", "sort_order": 2}},
+            {"item_type": "device_config", "source_id": "d1", "quantity": 1, "snapshot": snapshot},
+            {"item_type": "tool", "source_id": "t1", "quantity": 2, "snapshot": {"code": "TOOL-001", "name": "Wrench", "sort_order": 2}},
+        ]
+        config_content = commerce_bundle_pdf(
+            entries,
+            {"display_name": "PDF Customer", "email": "customer@example.com", "phone": "+8613800000000"},
+            "en",
+            document_code="123456",
+        )
+        config_text = "\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(config_content)).pages)
+        self.assertIn("BOTEN TESTING EQUIPMENT SUZHOU CO., LTD.", config_text)
+        self.assertIn("Configuration List", config_text)
+        self.assertIn("Document Code: 123456", config_text)
+        self.assertIn("PDF Customer", config_text)
+        self.assertNotIn("Unit Price", config_text)
+        self.assertLess(config_text.index("BOTEN CR1016"), config_text.index("Service Tools"))
+        self.assertLess(config_text.index("Service Tools"), config_text.index("Accessories"))
+        self.assertEqual(1, config_text.count("TOOL-001"))
+
+        inquiry_content = commerce_bundle_pdf(
+            entries,
+            {"display_name": "Inquiry Customer", "email": "inquiry@example.com"},
+            "en",
+            document_kind="inquiry",
+            document_code="BTI-20260909-0001",
+            note="Please contact me before shipping.",
+            status="New",
+            created_at="2026-09-09 09:30:00",
+        )
+        inquiry_text = "\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(inquiry_content)).pages)
+        self.assertIn("Inquiry", inquiry_text)
+        self.assertIn("Please contact me before shipping.", inquiry_text)
+        self.assertIn("BTI-20260909-0001", inquiry_text)
+        self.assertNotIn("Unit Price", inquiry_text)
+
+        quote_content = quote_pdf({
+            "id": "1234567890abcdef", "quote_number": "BTQ-20260909-0001", "title": "Export quotation",
+            "language": "en", "currency": "USD", "lifecycle_status": "sent", "created_at": "2026-09-09 09:30:00",
+            "customer_name": "Quote Customer", "customer_email": "quote@example.com", "customer_phone": "+8613800000001",
+            "quoted_by": {"display_name": "Sales Person", "email": "sales@example.com", "phone": "+8613900000000"},
+            "items": [
+                {"kind": "accessory", "code": "ACC-001", "name": "Cable", "quantity": 1, "price": 12},
+                {"kind": "tool", "code": "TOOL-001", "name": "Wrench", "quantity": 2, "price": 20},
+                {"kind": "product", "device_key": "device-1", "device_sequence": 1, "code": "CR1016", "name": "Test Bench", "quantity": 1, "price": 1000},
+                {"kind": "option", "parent_device_key": "device-1", "device_sequence": 1, "category_name": "Injector Test Kits", "code": "KIT-001", "name": "First Kit", "quantity": 1, "price": 50},
+            ],
+            "total_price": 1102,
+        })
+        quote_text = "\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(quote_content)).pages)
+        self.assertIn("Quotation", quote_text)
+        self.assertIn("Prepared By", quote_text)
+        self.assertIn("sales@example.com", quote_text)
+        self.assertIn("Unit Price", quote_text)
+        self.assertIn("Subtotal", quote_text)
+        self.assertIn("BTQ-20260909-0001", quote_text)
+        self.assertLess(quote_text.index("CR1016"), quote_text.index("Service Tools"))
+        self.assertLess(quote_text.index("Service Tools"), quote_text.index("Accessories"))
+
+        self.assertEqual(
+            "CFG-20260909-123456-AB12",
+            temporary_configuration_code(datetime(2026, 9, 9, 12, 34, 56), "ab12"),
+        )
 
     def test_safe_catalog_deletion(self) -> None:
         mapped = config_option_references("cri-1016")
@@ -1845,11 +2260,15 @@ class BackendWorkflowTests(unittest.TestCase):
                 option_columns = {row[1] for row in connection.execute("PRAGMA table_info(options)")}
                 share_item_columns = {row[1] for row in connection.execute("PRAGMA table_info(config_share_items)")}
                 quote_columns = {row[1] for row in connection.execute("PRAGMA table_info(commerce_quotes)")}
+                inquiry_columns = {row[1] for row in connection.execute("PRAGMA table_info(customer_inquiries)")}
                 delivery_columns = {row[1] for row in connection.execute("PRAGMA table_info(quote_deliveries)")}
+                saved_config_columns = {row[1] for row in connection.execute("PRAGMA table_info(saved_configs)")}
+                saved_catalog_columns = {row[1] for row in connection.execute("PRAGMA table_info(saved_catalog_items)")}
+                inquiry_source_columns = {row[1] for row in connection.execute("PRAGMA table_info(customer_inquiry_sources)")}
             finally:
                 connection.close()
             self.assertIsNotNone(version_row, process.stdout + process.stderr)
-            self.assertEqual("20260907_0019", version_row[0])
+            self.assertEqual("20260908_0024", version_row[0])
             self.assertTrue({"products", "options", "users", "quotes", "audit_logs", "product_motor_prices", "product_specifications", "config_share_items", "product_base_option_groups", "product_base_options", "product_price_variants", "saved_catalog_items", "commerce_shares", "commerce_share_items", "commerce_quotes", "share_imports", "quote_deliveries"}.issubset(tables))
             self.assertIn("description_override_en", columns)
             self.assertTrue({"label_en", "display_color", "enabled", "version", "translation_status"}.issubset(color_columns))
@@ -1858,7 +2277,11 @@ class BackendWorkflowTests(unittest.TestCase):
             self.assertTrue({"note_en", "deleted_at", "version", "translation_status"}.issubset(option_columns))
             self.assertTrue({"image_width", "image_height"}.issubset(option_columns))
             self.assertTrue({"item_type", "source_id"}.issubset(share_item_columns))
-            self.assertIn("source_inquiry_id", quote_columns)
+            self.assertTrue({"source_inquiry_id", "source_type", "source_document_version", "source_document_id", "source_code"}.issubset(quote_columns))
+            self.assertTrue({"assigned_at", "first_quoted_at", "latest_quoted_at"}.issubset(inquiry_columns))
+            self.assertIn("source_trace_json", saved_config_columns)
+            self.assertIn("source_trace_json", saved_catalog_columns)
+            self.assertTrue({"source_key", "source_share_id", "source_share_code"}.issubset(inquiry_source_columns))
             self.assertIn("idempotency_key", delivery_columns)
 
 

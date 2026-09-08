@@ -41,9 +41,11 @@
       modelList.innerHTML = models.filter((model) => model.enabled !== false).map((model) => {
         const value = `device:${model.id}`;
         const active = current === value;
+        const modelName = model.type || model.name || model.id;
+        const productName = model.titleName || model.title_name || model.title || "";
         return `<button type="button" class="catalog-model-item${active ? " active" : ""}" data-catalog-drawer-select="${escapeHtml(value)}" aria-current="${active ? "true" : "false"}">
-          <strong>${escapeHtml(model.type || model.name || model.id)}</strong>
-          <small>${escapeHtml(model.title_name || model.title || "")}</small>
+          <strong>${escapeHtml(modelName)}</strong>
+          ${productName ? `<small>${escapeHtml(productName)}</small>` : ""}
           ${active ? '<span class="catalog-model-check" aria-hidden="true">✓</span>' : ""}
         </button>`;
       }).join("") || `<p class="catalog-model-empty">${text("noEnabledDevices", "暂无已启用设备", "No enabled devices")}</p>`;

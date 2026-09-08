@@ -4,7 +4,10 @@ let profileUser = null;
 let profileCountries = [];
 let profileSharePage = 1;
 let profileShareTotal = 0;
+let profileInquiryPage = 1;
+let profileInquiryTotal = 0;
 const PROFILE_SHARE_PAGE_SIZE = 10;
+const PROFILE_INQUIRY_PAGE_SIZE = 10;
 
 const profileCopy = {
   zh: {
@@ -22,6 +25,26 @@ const profileCopy = {
     loading: "Loading account details…", saved: "Profile saved.", redirecting: "Changes saved. Returning to sign in.", nameRequired: "Enter your name.", passwordRequired: "Enter your current password.", passwordLength: "The new password must contain at least 8 characters.", passwordMismatch: "The new passwords do not match.", requestFailed: "The request failed. Check the entered information and try again.", networkError: "Unable to reach the service. Try again later.", selectCountry: "Select country", skip: "Skip to main content", profileNav: "Profile navigation", phoneInvalid: "Enter a valid phone number.", countryRequired: "Select a country.", loadErrorTitle: "Unable to load your profile", loadErrorMessage: "Your sign-in is still saved. Check the service and try again.", retry: "Try Again", myBusiness: "My Business", myShares: "My Shares", myQuotes: "My Quotations", sharesDesc: "View configuration share codes created by this account and their current status.", quotesDesc: "View formal quotations sent to your account by the sales team.", active: "Active", expired: "Expired", closed: "Closed", items: "items", views: "views", quoteCount: "quotations", createdAt: "Created", expiresAt: "Expires", details: "View Details", copyCode: "Copy Code", copied: "Share code copied", emptyShares: "This account has no share records yet.", emptyQuotes: "This account has not received any quotations yet.", previous: "Previous", next: "Next", page: "Page {page}", newQuote: "New", viewed: "Viewed", updated: "Updated", archivedQuote: "Withdrawn (history only)", sentAt: "Sent", quotationDetails: "Quotation Details", shareDetails: "Share Details", downloadPdf: "Download PDF", unavailable: "Currently unavailable", total: "Total", quantity: "Quantity", unitPrice: "Unit Price", loadingBusiness: "Loading…", close: "Close"
   }
 };
+Object.assign(profileCopy.zh, {
+  myInquiries: "我的询价", inquiriesDesc: "查看已经提交给销售人员的询价和当前处理进度。",
+  emptyInquiries: "当前账号还没有询价记录。", inquiryDetails: "询价详情", inquiryNumber: "询价编号",
+  inquirySource: "来源", currentDevice: "当前设备", cart: "购物车", submittedItems: "项内容",
+  copyInquiry: "复制询价编号", inquiryCopied: "询价编号已复制", cancelInquiry: "取消询价",
+  cancelInquiryConfirm: "仅处于新询价状态且尚未开始处理的记录可以取消。确定取消这条询价吗？",
+  confirmCancel: "确认取消", inquiryCancelled: "询价已取消。", note: "补充说明",
+  newInquiry: "新询价", assignedInquiry: "已分配", contactedInquiry: "已联系",
+  quotedInquiry: "已报价", closedInquiry: "已完成", cancelledInquiry: "已取消"
+});
+Object.assign(profileCopy.en, {
+  myInquiries: "My Inquiries", inquiriesDesc: "Review inquiries sent to sales and follow their current progress.",
+  emptyInquiries: "This account has no inquiry records yet.", inquiryDetails: "Inquiry Details", inquiryNumber: "Inquiry number",
+  inquirySource: "Source", currentDevice: "Current device", cart: "Cart", submittedItems: "items",
+  copyInquiry: "Copy inquiry number", inquiryCopied: "Inquiry number copied", cancelInquiry: "Cancel Inquiry",
+  cancelInquiryConfirm: "Only a new inquiry that has not been processed can be cancelled. Cancel this inquiry?",
+  confirmCancel: "Cancel Inquiry", inquiryCancelled: "Inquiry cancelled.", note: "Note",
+  newInquiry: "New", assignedInquiry: "Assigned", contactedInquiry: "Contacted",
+  quotedInquiry: "Quoted", closedInquiry: "Completed", cancelledInquiry: "Cancelled"
+});
 const pc = profileCopy[profileLanguage];
 
 class ProfileRequestError extends Error {
@@ -74,19 +97,25 @@ function applyProfileCopy() {
     "profile-load-error-title": pc.loadErrorTitle, "profile-load-error-message": pc.loadErrorMessage,
     "profile-load-retry": pc.retry, "profile-load-back": pc.backHome, "profile-business-group": pc.myBusiness,
     "profile-shares-title": pc.myShares, "profile-shares-description": pc.sharesDesc,
+    "profile-inquiries-title": pc.myInquiries, "profile-inquiries-description": pc.inquiriesDesc,
     "profile-quotes-title": pc.myQuotes, "profile-quotes-description": pc.quotesDesc,
-    "profile-shares-prev": pc.previous, "profile-shares-next": pc.next
+    "profile-shares-prev": pc.previous, "profile-shares-next": pc.next,
+    "profile-inquiries-prev": pc.previous, "profile-inquiries-next": pc.next
   };
   Object.entries(values).forEach(([id, value]) => { const element = document.getElementById(id); if (element) element.textContent = value; });
-  const panelLabels = { profile: pc.myProfile, "account-contact": pc.contact, "account-security": pc.security, "my-shares": pc.myShares, "my-quotes": pc.myQuotes };
-  document.querySelectorAll("[data-account-panel]").forEach((button) => { button.textContent = panelLabels[button.dataset.accountPanel]; });
+  const panelLabels = { profile: pc.myProfile, "account-contact": pc.contact, "account-security": pc.security, "my-shares": pc.myShares, "my-inquiries": pc.myInquiries, "my-quotes": pc.myQuotes };
+  document.querySelectorAll("[data-account-panel]").forEach((button) => {
+    const badge = button.querySelector(".profile-unread-badge");
+    if (!badge) button.textContent = panelLabels[button.dataset.accountPanel];
+    else button.firstChild.textContent = `${panelLabels[button.dataset.accountPanel]} `;
+  });
   const gender = document.getElementById("profile-gender");
   gender.options[0].textContent = pc.unset; gender.options[1].textContent = pc.male; gender.options[2].textContent = pc.female; gender.options[3].textContent = pc.other;
   document.querySelectorAll("[data-language]").forEach((button) => { button.classList.toggle("active", button.dataset.language === profileLanguage); button.setAttribute("aria-pressed", String(button.dataset.language === profileLanguage)); });
 }
 
 function showProfilePanel(name) {
-  const supported = ["profile", "account-contact", "account-security", "my-shares", "my-quotes"];
+  const supported = ["profile", "account-contact", "account-security", "my-shares", "my-inquiries", "my-quotes"];
   const panel = supported.includes(name) ? name : "profile";
   document.querySelectorAll("[data-account-content]").forEach((section) => { section.hidden = section.dataset.accountContent !== panel; });
   document.querySelectorAll("[data-account-panel]").forEach((button) => { const active = button.dataset.accountPanel === panel; button.classList.toggle("active", active); button.toggleAttribute("aria-current", active); });
@@ -198,6 +227,63 @@ function profileMoney(value, currency) {
 
 function shareStatusLabel(status) { return pc[status] || status; }
 
+function inquiryStatusLabel(status) {
+  return {
+    new: pc.newInquiry, assigned: pc.assignedInquiry, contacted: pc.contactedInquiry,
+    quoted: pc.quotedInquiry, closed: pc.closedInquiry, cancelled: pc.cancelledInquiry
+  }[status] || status || "--";
+}
+
+function inquirySourceLabel(source) {
+  return source === "current_device" ? pc.currentDevice : source === "cart" ? pc.cart : source || "--";
+}
+
+async function copyProfileText(value, button, statusId, successMessage) {
+  try {
+    await navigator.clipboard.writeText(value);
+    const original = button.textContent;
+    button.textContent = successMessage;
+    setTimeout(() => { if (button.isConnected) button.textContent = original; }, 1400);
+  } catch (error) {
+    const field = document.createElement("textarea");
+    field.value = value;
+    field.setAttribute("readonly", "");
+    field.className = "profile-copy-fallback";
+    document.body.appendChild(field);
+    field.select();
+    const copied = document.execCommand("copy");
+    field.remove();
+    if (!copied) throw error;
+    setFormStatus(statusId, successMessage, "success");
+  }
+}
+
+async function loadProfileInquiries(page = profileInquiryPage) {
+  const status = document.getElementById("profile-inquiries-status");
+  status.textContent = pc.loadingBusiness;
+  try {
+    const result = await profileRequest(`/customer/me/inquiries?page=${page}&page_size=${PROFILE_INQUIRY_PAGE_SIZE}`);
+    profileInquiryPage = Number(result.page || 1);
+    profileInquiryTotal = Number(result.total || 0);
+    const list = document.getElementById("profile-inquiries-list");
+    list.innerHTML = result.items.length ? result.items.map((inquiry) => `
+      <article class="profile-business-card">
+        <div class="profile-business-card-main"><strong translate="no">${escapeProfileHtml(inquiry.inquiry_number)}</strong><span>${escapeProfileHtml(inquirySourceLabel(inquiry.source_type))}</span></div>
+        <div class="profile-business-card-actions"><button class="btn btn-secondary btn-sm" type="button" data-copy-inquiry="${escapeProfileHtml(inquiry.inquiry_number)}">${pc.copyInquiry}</button><button class="btn btn-secondary btn-sm" type="button" data-open-inquiry="${escapeProfileHtml(inquiry.id)}">${pc.details}</button>${inquiry.status === "new" ? `<button class="btn btn-secondary btn-sm profile-danger-action" type="button" data-cancel-inquiry="${escapeProfileHtml(inquiry.id)}" data-inquiry-version="${Number(inquiry.version || 0)}" data-inquiry-number="${escapeProfileHtml(inquiry.inquiry_number)}">${pc.cancelInquiry}</button>` : ""}</div>
+        <div class="profile-business-card-meta"><span class="profile-status-badge${inquiry.status === "new" ? " is-new" : inquiry.status === "cancelled" ? " is-off" : ""}">${escapeProfileHtml(inquiryStatusLabel(inquiry.status))}</span><span>${Number(inquiry.item_count || 0)} ${pc.submittedItems}</span><span>${pc.createdAt} ${profileDate(inquiry.created_at)}</span>${inquiry.updated_at && inquiry.updated_at !== inquiry.created_at ? `<span>${pc.updated} ${profileDate(inquiry.updated_at)}</span>` : ""}</div>
+      </article>`).join("") : `<div class="profile-list-empty">${pc.emptyInquiries}</div>`;
+    const pages = Math.max(1, Math.ceil(profileInquiryTotal / PROFILE_INQUIRY_PAGE_SIZE));
+    document.getElementById("profile-inquiries-page").textContent = pc.page.replace("{page}", String(profileInquiryPage));
+    document.getElementById("profile-inquiries-prev").disabled = profileInquiryPage <= 1;
+    document.getElementById("profile-inquiries-next").disabled = profileInquiryPage >= pages;
+    status.textContent = "";
+    status.className = "profile-form-status";
+  } catch (error) {
+    status.textContent = error.message || pc.requestFailed;
+    status.className = "profile-form-status is-error";
+  }
+}
+
 async function loadProfileShares(page = profileSharePage) {
   const status = document.getElementById("profile-shares-status");
   status.textContent = pc.loadingBusiness;
@@ -272,6 +358,58 @@ async function openOwnShare(shareId) {
   openProfileBusinessDialog(result.title || result.code, pc.shareDetails, body || `<div class="profile-list-empty">${pc.emptyShares}</div>`);
 }
 
+async function openOwnInquiry(inquiryId) {
+  const inquiry = await profileRequest(`/customer/me/inquiries/${encodeURIComponent(inquiryId)}?lang=${profileLanguage}`);
+  const groups = [["device_config", profileLanguage === "en" ? "Devices" : "设备"], ["tool", profileLanguage === "en" ? "Service Tools" : "维修工具"], ["accessory", profileLanguage === "en" ? "Accessories" : "设备附件"]];
+  const summary = `<section class="profile-detail-group"><div class="profile-detail-list">
+    <div class="profile-detail-row"><span>${pc.inquiryNumber}</span><strong translate="no">${escapeProfileHtml(inquiry.inquiry_number)}</strong></div>
+    <div class="profile-detail-row"><span>${pc.inquirySource}</span><strong>${escapeProfileHtml(inquirySourceLabel(inquiry.source_type))}</strong></div>
+    <div class="profile-detail-row"><span>${profileLanguage === "en" ? "Status" : "状态"}</span><strong>${escapeProfileHtml(inquiryStatusLabel(inquiry.status))}</strong></div>
+    <div class="profile-detail-row"><span>${pc.createdAt}</span><strong>${profileDate(inquiry.created_at)}</strong></div>
+  </div></section>`;
+  const sourceCodes = (inquiry.source_codes || []).length
+    ? `<section class="profile-detail-group"><h3>${profileLanguage === "en" ? "Related share codes" : "关联分享码"}</h3><div class="profile-source-codes">${inquiry.source_codes.map((code) => `<code translate="no">${escapeProfileHtml(code)}</code>`).join("")}</div></section>`
+    : "";
+  const contents = groups.map(([type, label]) => {
+    const items = (inquiry.items || []).filter((item) => (item.item_type || "device_config") === type);
+    if (!items.length) return "";
+    return `<section class="profile-detail-group"><h3>${label}</h3><div class="profile-detail-list">${items.map((item) => {
+      const snapshot = item.snapshot || {};
+      const product = snapshot.product || {};
+      const name = type === "device_config" ? [product.name, product.title_name].filter(Boolean).join(" ") : [snapshot.code, snapshot.name].filter(Boolean).join(" ");
+      const unavailable = item.availability && item.availability !== "active";
+      const warning = unavailable ? `<small>${pc.unavailable}</small>` : "";
+      return `<div class="profile-detail-row${unavailable ? " is-unavailable" : ""}"><span>${escapeProfileHtml(name || item.display_name || "--")}${warning}</span><strong>× ${Number(item.quantity || 1)}</strong></div>`;
+    }).join("")}</div></section>`;
+  }).join("");
+  const note = inquiry.message ? `<section class="profile-detail-group"><h3>${pc.note}</h3><p class="profile-inquiry-note">${escapeProfileHtml(inquiry.message)}</p></section>` : "";
+  const actions = inquiry.status === "new"
+    ? `<button class="btn btn-secondary profile-danger-action" type="button" data-cancel-inquiry="${escapeProfileHtml(inquiry.id)}" data-inquiry-version="${Number(inquiry.version || 0)}" data-inquiry-number="${escapeProfileHtml(inquiry.inquiry_number)}">${pc.cancelInquiry}</button>`
+    : "";
+  openProfileBusinessDialog(inquiry.inquiry_number, pc.inquiryDetails, summary + sourceCodes + contents + note, actions);
+}
+
+function confirmCancelOwnInquiry(inquiryId, version, inquiryNumber) {
+  const body = `<section class="profile-detail-group"><p class="profile-inquiry-confirm">${escapeProfileHtml(pc.cancelInquiryConfirm)}</p></section>`;
+  const actions = `<button class="btn btn-secondary" type="button" data-close-business-dialog>${pc.close}</button><button class="btn btn-danger" type="button" data-confirm-cancel-inquiry="${escapeProfileHtml(inquiryId)}" data-inquiry-version="${Number(version || 0)}">${pc.confirmCancel}</button>`;
+  openProfileBusinessDialog(inquiryNumber, pc.cancelInquiry, body, actions);
+}
+
+async function cancelOwnInquiry(button) {
+  const inquiryId = button.dataset.confirmCancelInquiry;
+  button.disabled = true;
+  try {
+    await profileRequest(`/customer/me/inquiries/${encodeURIComponent(inquiryId)}/cancel`, {
+      method: "POST", body: JSON.stringify({ version: Number(button.dataset.inquiryVersion || 0) })
+    });
+    document.getElementById("profile-business-dialog").close();
+    setFormStatus("profile-inquiries-status", pc.inquiryCancelled, "success");
+    await loadProfileInquiries();
+  } finally {
+    if (button.isConnected) button.disabled = false;
+  }
+}
+
 async function openOwnQuote(quoteId) {
   const quote = await profileRequest(`/customer/me/quotes/${encodeURIComponent(quoteId)}`);
   const rows = (quote.items || []).map((item) => `<div class="profile-detail-row"><span>${escapeProfileHtml([item.code, item.name].filter(Boolean).join(" ") || "--")}<small>${pc.quantity}: ${Number(item.quantity || 1)}</small></span><strong>${profileMoney(Number(item.quantity || 1) * Number(item.price || 0), quote.currency)}</strong></div>`).join("");
@@ -292,19 +430,33 @@ async function downloadOwnQuote(quoteId) {
 async function handleProfileBusinessAction(event) {
   const copyButton = event.target.closest("[data-copy-share]");
   if (copyButton) {
-    try { await navigator.clipboard.writeText(copyButton.dataset.copyShare); copyButton.textContent = pc.copied; }
+    try { await copyProfileText(copyButton.dataset.copyShare, copyButton, "profile-shares-status", pc.copied); }
     catch (error) { setFormStatus("profile-shares-status", error.message || pc.requestFailed, "error"); }
     return;
   }
+  const copyInquiryButton = event.target.closest("[data-copy-inquiry]");
+  if (copyInquiryButton) {
+    try { await copyProfileText(copyInquiryButton.dataset.copyInquiry, copyInquiryButton, "profile-inquiries-status", pc.inquiryCopied); }
+    catch (error) { setFormStatus("profile-inquiries-status", error.message || pc.requestFailed, "error"); }
+    return;
+  }
   const shareButton = event.target.closest("[data-open-share]");
+  const inquiryButton = event.target.closest("[data-open-inquiry]");
   const quoteButton = event.target.closest("[data-open-quote]");
   const downloadButton = event.target.closest("[data-download-quote]");
+  const cancelButton = event.target.closest("[data-cancel-inquiry]");
+  const confirmCancelButton = event.target.closest("[data-confirm-cancel-inquiry]");
+  const closeButton = event.target.closest("[data-close-business-dialog]");
   try {
     if (shareButton) await openOwnShare(shareButton.dataset.openShare);
+    if (inquiryButton) await openOwnInquiry(inquiryButton.dataset.openInquiry);
     if (quoteButton) await openOwnQuote(quoteButton.dataset.openQuote);
     if (downloadButton) await downloadOwnQuote(downloadButton.dataset.downloadQuote);
+    if (cancelButton) confirmCancelOwnInquiry(cancelButton.dataset.cancelInquiry, cancelButton.dataset.inquiryVersion, cancelButton.dataset.inquiryNumber);
+    if (confirmCancelButton) await cancelOwnInquiry(confirmCancelButton);
+    if (closeButton) document.getElementById("profile-business-dialog").close();
   } catch (error) {
-    const statusId = shareButton ? "profile-shares-status" : "profile-quotes-status";
+    const statusId = shareButton ? "profile-shares-status" : inquiryButton || cancelButton || confirmCancelButton ? "profile-inquiries-status" : "profile-quotes-status";
     setFormStatus(statusId, error.message || pc.requestFailed, "error");
   }
 }
@@ -338,6 +490,7 @@ async function initProfilePage() {
   renderProfileUser();
   showProfilePanel(location.hash.slice(1));
   loadProfileShares().catch(() => {});
+  loadProfileInquiries().catch(() => {});
   loadProfileQuotes().catch(() => {});
   document.querySelectorAll("[data-account-panel]").forEach((button) => button.addEventListener("click", () => showProfilePanel(button.dataset.accountPanel)));
   document.getElementById("profile-details-form").addEventListener("submit", saveProfileDetails);
@@ -348,7 +501,10 @@ async function initProfilePage() {
   document.getElementById("profile-sign-out").addEventListener("click", signOutProfile);
   document.getElementById("profile-shares-prev").addEventListener("click", () => { if (profileSharePage > 1) loadProfileShares(profileSharePage - 1); });
   document.getElementById("profile-shares-next").addEventListener("click", () => { if (profileSharePage * PROFILE_SHARE_PAGE_SIZE < profileShareTotal) loadProfileShares(profileSharePage + 1); });
+  document.getElementById("profile-inquiries-prev").addEventListener("click", () => { if (profileInquiryPage > 1) loadProfileInquiries(profileInquiryPage - 1); });
+  document.getElementById("profile-inquiries-next").addEventListener("click", () => { if (profileInquiryPage * PROFILE_INQUIRY_PAGE_SIZE < profileInquiryTotal) loadProfileInquiries(profileInquiryPage + 1); });
   document.getElementById("profile-shares-list").addEventListener("click", handleProfileBusinessAction);
+  document.getElementById("profile-inquiries-list").addEventListener("click", handleProfileBusinessAction);
   document.getElementById("profile-quotes-list").addEventListener("click", handleProfileBusinessAction);
   document.getElementById("profile-business-dialog-actions").addEventListener("click", handleProfileBusinessAction);
   document.getElementById("profile-business-dialog-close").addEventListener("click", () => document.getElementById("profile-business-dialog").close());

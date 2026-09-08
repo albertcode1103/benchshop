@@ -673,6 +673,7 @@ def get_product_editor(product_id: str) -> Optional[Dict[str, Any]]:
                 (product_id,),
             ).fetchall()
         )
+        images = _dicts(db.execute("SELECT id, image_path, image_width, image_height, alt_zh, alt_en, sort_order FROM product_images WHERE product_id = ? ORDER BY sort_order, id", (product_id,)).fetchall())
         optional_ids = [
             row[0]
             for row in db.execute(
@@ -729,6 +730,7 @@ def get_product_editor(product_id: str) -> Optional[Dict[str, Any]]:
     result["optional_config_ids"] = optional_ids
     result["optional_config_overrides"] = optional_overrides
     result["specifications"] = specifications
+    result["images"] = images
     return result
 
 
@@ -783,6 +785,7 @@ def save_product_editor(
     translation_status: str = "machine_draft",
     colors: Optional[Sequence[Dict[str, Any]]] = None,
     specifications: Optional[Sequence[Dict[str, Any]]] = None,
+    images: Optional[Sequence[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     if not model.strip() or not product_name_zh.strip() or not product_name_en.strip():
         raise CatalogValidationError("CATALOG_REQUIRED_FIELD", "product")
@@ -992,21 +995,27 @@ def save_product_editor(
             db.execute("DELETE FROM product_specifications WHERE product_id = ?", (product_id,))
             for spec in normalized_specifications:
                 db.execute(
-                    """
-                    INSERT INTO product_specifications
-                        (id, product_id, label, label_en, value, value_en, sort_order)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        spec["id"],
-                        product_id,
-                        spec["label"],
-                        spec["label_en"],
-                        spec["value"],
-                        spec["value_en"],
-                        spec["sort_order"],
-                    ),
+                    """INSERT INTO product_specifications
+                       (id, product_id, label, label_en, value, value_en, sort_order)
+                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                    (spec["id"], product_id, spec["label"], spec["label_en"], spec["value"], spec["value_en"], spec["sort_order"]),
                 )
+
+        if images is not None:
+            normalized_images = []
+            for image_index, image in enumerate(images):
+                path = str(image.get("image_path") or "").strip()
+                if not path:
+                    continue
+                if not validate_media_reference(path):
+                    raise CatalogValidationError("CATALOG_IMAGE_PATH_INVALID", "images")
+                width = int(image.get("image_width") or 0) or None
+                height = int(image.get("image_height") or 0) or None
+                if (width is None) != (height is None) or (width is not None and (width <= 0 or height <= 0)):
+                    raise CatalogValidationError("PRODUCT_IMAGE_SIZE_INVALID", "images")
+                normalized_images.append((str(image.get("id") or uuid.uuid4().hex), product_id, path, width, height, str(image.get("alt_zh") or "").strip(), str(image.get("alt_en") or "").strip(), image_index))
+            db.execute("DELETE FROM product_images WHERE product_id = ?", (product_id,))
+            db.executemany("INSERT INTO product_images (id, product_id, image_path, image_width, image_height, alt_zh, alt_en, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", normalized_images)
 
         existing_group_ids = {
             row[0]

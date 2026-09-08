@@ -80,6 +80,31 @@
     `).join("") || '<div class="editor-empty">暂未填写参数，点击“添加参数”创建项目。</div>';
   }
 
+  function captureProductImages() {
+    if (!state.editingProduct) return;
+    const current = new Map((state.editingProduct.images || []).map((item) => [item.id, item]));
+    state.editingProduct.images = $$("[data-product-image]", $("#product-images-editor")).map((row, index) => ({
+      ...(current.get(row.dataset.productImage) || {}),
+      id: row.dataset.productImage,
+      image_path: $('[data-product-image-field="image_path"]', row).value,
+      image_width: Number($('[data-product-image-field="image_width"]', row).value) || null,
+      image_height: Number($('[data-product-image-field="image_height"]', row).value) || null,
+      alt_zh: $('[data-product-image-field="alt_zh"]', row).value.trim(),
+      alt_en: $('[data-product-image-field="alt_en"]', row).value.trim(),
+      sort_order: index
+    }));
+  }
+
+  function renderProductImages() {
+    const images = state.editingProduct?.images || [];
+    $("#product-images-editor").innerHTML = images.map((item, index) => `<article class="product-image-row" data-product-image="${escapeHtml(item.id)}">
+      <input type="hidden" data-product-image-field="image_path" value="${escapeHtml(item.image_path || "")}"><input type="hidden" data-product-image-field="image_width" value="${escapeHtml(item.image_width || "")}"><input type="hidden" data-product-image-field="image_height" value="${escapeHtml(item.image_height || "")}">
+      <button type="button" class="product-image-thumbnail" data-preview-product-image aria-label="预览设备图片"><img src="${escapeHtml(catalogAssetUrl(item.image_path))}" alt="${escapeHtml(item.alt_zh || "设备图片")}"></button>
+      <div class="product-image-copy"><label><span>中文说明</span><input data-product-image-field="alt_zh" value="${escapeHtml(item.alt_zh || "")}" placeholder="例如：设备正面"></label><label><span>英文说明</span><input data-product-image-field="alt_en" value="${escapeHtml(item.alt_en || "")}" placeholder="e.g. Front view"></label></div>
+      <div class="row-actions"><button type="button" class="icon-button" data-move-product-image="${index}" data-direction="-1" aria-label="图片上移" ${index ? "" : "disabled"}>↑</button><button type="button" class="icon-button" data-move-product-image="${index}" data-direction="1" aria-label="图片下移" ${index === images.length - 1 ? "disabled" : ""}>↓</button><button type="button" class="button button-quiet" data-remove-product-image="${index}">删除</button></div>
+    </article>`).join("") || '<div class="editor-empty">暂未上传设备图片。</div>';
+  }
+
   window.colorEditorRow = function colorEditorRowV2(color = {}) {
     const id = color.id || color.code || temporaryId("color");
     const displayColor = color.display_color || "#111827";
@@ -88,11 +113,12 @@
       ? `<img src="${escapeHtml(source)}" alt="颜色图片缩略图" width="152" height="92">`
       : "<span>暂无图片</span>";
     return `<div class="color-editor-row" data-color-id="${escapeHtml(id)}" data-translation-status="${escapeHtml(color.translation_status || "machine_draft")}">
-      <label class="color-name-field language-value-field"><span>颜色名称</span><input data-color-field="name_zh" data-content-lang="zh" value="${escapeHtml(color.name_zh || color.label || "")}" placeholder="例如：绿色"><input data-color-field="name_en" data-content-lang="en" value="${escapeHtml(color.name_en || color.label_en || "")}" placeholder="e.g. Green" hidden></label>
-      <label class="color-value-field"><span>文字颜色</span><span class="color-value-control"><select data-color-field="display_color" aria-label="选择前端显示的文字颜色" title="${escapeHtml(displayColor)}">${textColorOptions(displayColor)}</select></span></label>
+      <div class="color-editor-fields">
+        <label class="color-name-field language-value-field"><span>颜色名称</span><input data-color-field="name_zh" data-content-lang="zh" value="${escapeHtml(color.name_zh || color.label || "")}" placeholder="例如：绿色"><input data-color-field="name_en" data-content-lang="en" value="${escapeHtml(color.name_en || color.label_en || "")}" placeholder="e.g. Green" hidden></label>
+        <label class="color-value-field"><span>文字颜色</span><span class="color-value-control"><select data-color-field="display_color" aria-label="选择前端显示的文字颜色" title="${escapeHtml(displayColor)}">${textColorOptions(displayColor)}</select></span></label>
+      </div>
       <label class="color-image-field"><span>颜色图片</span><div class="color-image-control"><input data-color-field="image_path" type="hidden" value="${escapeHtml(color.image_path || "")}"><input data-color-field="image_width" type="hidden" value="${escapeHtml(color.image_width || "")}"><input data-color-field="image_height" type="hidden" value="${escapeHtml(color.image_height || "")}"><div class="color-image-preview" data-color-image-preview>${preview}</div><button class="button button-secondary" type="button" data-pick-image>上传图片</button><input type="file" accept="image/png,image/jpeg,image/webp" data-image-file hidden></div></label>
-      <div class="color-state-controls"><label class="compact-check"><input data-color-field="enabled" type="checkbox" ${color.enabled !== false ? "checked" : ""}><span>启用</span></label><label class="compact-check"><input data-color-field="is_default" type="radio" name="default-color" ${color.is_default ? "checked" : ""}><span>默认</span></label></div>
-      <button class="icon-button" data-remove-color type="button" aria-label="删除颜色">✕</button>
+      <div class="color-action-rail"><div class="color-state-controls"><label class="compact-check"><input data-color-field="enabled" type="checkbox" ${color.enabled !== false ? "checked" : ""}><span>启用</span></label><label class="compact-check"><input data-color-field="is_default" type="radio" name="default-color" ${color.is_default ? "checked" : ""}><span>默认</span></label></div><button class="button button-quiet color-remove-button" data-remove-color type="button" aria-label="删除颜色">删除</button></div>
     </div>`;
   };
 
@@ -315,6 +341,7 @@
     state.editingProduct.translation_status = form.elements.translation_status.value;
     state.editingProduct.enabled = form.elements.enabled.checked;
     state.editingProduct.colors = window.collectColors();
+    captureProductImages();
     captureSpecifications();
     captureBaseOptions();
     capturePriceVariants();
@@ -407,6 +434,7 @@
       state.editingProduct.base_option_groups ||= [];
       state.editingProduct.price_variants ||= [];
       state.editingProduct.specifications ||= [];
+      state.editingProduct.images ||= [];
       state.collapsedBaseGroups = new Set();
       const form = $("#product-form");
       form.elements.product_id.value = product.id;
@@ -424,6 +452,7 @@
       status.className = `badge ${product.enabled ? "good" : "off"}`;
       window.renderColorEditor(product.colors || []);
       renderSpecifications();
+      renderProductImages();
       renderBaseOptions();
       renderPriceVariants();
       state.mappingEditor = {
@@ -499,6 +528,7 @@
           enabled: product.enabled,
           colors,
           specifications: product.specifications || [],
+          images: product.images || [],
           base_option_groups: product.base_option_groups.map((group) => ({
             id: group.id,
             option_type: group.option_type,
@@ -1056,6 +1086,36 @@
       return;
     }
     if (event.target.closest("#add-color-button")) setTimeout(showProductLanguageFields, 0);
+    if (event.target.closest("#add-product-image-button")) { $("#product-image-file")?.click(); return; }
+    const previewProductImage = event.target.closest("[data-preview-product-image]");
+    if (previewProductImage) {
+      const row = previewProductImage.closest("[data-product-image]");
+      const source = catalogAssetUrl($('[data-product-image-field="image_path"]', row).value);
+      const preview = document.createElement("dialog");
+      preview.className = "product-image-preview-dialog";
+      preview.innerHTML = `<div><button class="icon-button" type="button" aria-label="关闭">×</button><img src="${escapeHtml(source)}" alt="设备图片预览"></div>`;
+      document.body.appendChild(preview);
+      $("button", preview).addEventListener("click", () => preview.close());
+      preview.addEventListener("close", () => preview.remove(), { once: true });
+      preview.showModal();
+      return;
+    }
+    const removeProductImage = event.target.closest("[data-remove-product-image]");
+    if (removeProductImage && state.editingProduct) {
+      captureProductImages();
+      state.editingProduct.images.splice(Number(removeProductImage.dataset.removeProductImage), 1);
+      renderProductImages();
+      return;
+    }
+    const moveProductImage = event.target.closest("[data-move-product-image]");
+    if (moveProductImage && state.editingProduct) {
+      captureProductImages();
+      const from = Number(moveProductImage.dataset.moveProductImage);
+      const to = from + Number(moveProductImage.dataset.direction);
+      if (to >= 0 && to < state.editingProduct.images.length) [state.editingProduct.images[from], state.editingProduct.images[to]] = [state.editingProduct.images[to], state.editingProduct.images[from]];
+      renderProductImages();
+      return;
+    }
     if (event.target.closest("#add-specification-button") && state.editingProduct) {
       state.editingProduct.specifications.push({ id: temporaryId("spec"), label: "", label_en: "", value: "", value_en: "", sort_order: state.editingProduct.specifications.length });
       renderSpecifications();
@@ -1137,6 +1197,21 @@
   });
 
   document.addEventListener("change", (event) => {
+    if (event.target.matches("#product-image-file") && state.editingProduct) {
+      const files = Array.from(event.target.files || []);
+      event.target.value = "";
+      (async () => {
+        for (const file of files) {
+          if (file.size > 8 * 1024 * 1024) { showToast(`${file.name} 超过 8 MB`, "error"); continue; }
+          try {
+            const result = await api(`/api/v1/admin/media?filename=${encodeURIComponent(file.name)}`, { method: "POST", headers: { "Content-Type": file.type || "application/octet-stream" }, body: file, timeout: 30000 });
+            state.editingProduct.images.push({ id: temporaryId("product-image"), image_path: result.path, image_width: result.width || null, image_height: result.height || null, alt_zh: "", alt_en: "", sort_order: state.editingProduct.images.length });
+            renderProductImages();
+          } catch (failure) { showToast(failure.message || `${file.name} 上传失败`, "error"); }
+        }
+      })();
+      return;
+    }
     const free = event.target.closest("[data-base-free]");
     if (free) {
       const row = free.closest("[data-base-option]");

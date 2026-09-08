@@ -4,15 +4,19 @@ const API_BASE = typeof window.BOTEN_API_BASE === "string"
   : (window.location.port === "8001" ? "" : `${window.location.protocol}//${window.location.hostname || "127.0.0.1"}:8001`);
 const TOKEN_KEY = "boten_admin_token";
 const CUSTOMER_TOKEN_KEY = "boten_user_token";
+const SIDEBAR_COLLAPSED_KEY = "boten_admin_sidebar_collapsed";
 
 function getStoredCollapsedCategories() { try { const value = JSON.parse(localStorage.getItem("boten-admin-collapsed-categories") || "[]"); return Array.isArray(value) ? value : []; } catch (_) { return []; } }
-const state = { user: null, products: [], users: [], userTotal: 0, userPage: 1, userPageSize: 20, userQuery: "", userRoleFilter: "all", userStatusFilter: "all", userArchivedFilter: false, shares: [], shareTotal: 0, sharePage: 1, sharePageSize: 20, shareQuery: "", shareStatus: "all", shareProduct: "", shareCreatedFrom: "", shareCreatedTo: "", shareActiveTotal: 0, shareViewTotal: 0, inquiries: [], inquiryTotal: 0, inquiryPage: 1, inquiryPageSize: 20, inquiryQuery: "", inquiryStatus: "all", quoteStatus: "all", quotes: [], audits: [], countries: [], editingProduct: null, mappingEditor: null, catalogLanguage: localStorage.getItem("boten-admin-language") || "zh", configCatalog: [], collapsedCategories: new Set(getStoredCollapsedCategories()) };
+const state = { user: null, products: [], users: [], userTotal: 0, userPage: 1, userPageSize: 20, userQuery: "", userRoleFilter: "all", userStatusFilter: "all", userArchivedFilter: false, shares: [], shareTotal: 0, sharePage: 1, sharePageSize: 20, shareQuery: "", shareStatus: "all", shareProduct: "", shareCreatedFrom: "", shareCreatedTo: "", shareActiveTotal: 0, shareViewTotal: 0, inquiries: [], inquiryTotal: 0, inquiryPage: 1, inquiryPageSize: 20, inquiryQuery: "", inquiryStatus: "all", quoteQuery: "", quoteStatus: "all", quotes: [], audits: [], countries: [], editingProduct: null, mappingEditor: null, catalogLanguage: localStorage.getItem("boten-admin-language") || "zh", configCatalog: [], collapsedCategories: new Set(getStoredCollapsedCategories()) };
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
 let shareDrawerElement = null;
 let shareDrawerBackdrop = null;
+let inquiryDrawerElement = null;
+let inquiryDrawerBackdrop = null;
 let shareSearchTimer = null;
 let previousShareFocus = null;
+let previousInquiryFocus = null;
 
 function closeTableActionMenus(except = null) {
   document.querySelectorAll(".table-actions-menu[open]").forEach((menu) => {
@@ -50,7 +54,8 @@ const ACCOUNT_ERROR_TEXT_ZH = {
   ACCOUNT_ROLE_INVALID: "请选择有效角色", ACCOUNT_SELF_DISABLE_FORBIDDEN: "不能停用当前登录账号", ACCOUNT_SELF_ROLE_CHANGE_FORBIDDEN: "不能移除当前登录账号的管理员角色",
   ACCOUNT_SELF_ARCHIVE_FORBIDDEN: "不能归档当前登录账号", ACCOUNT_LAST_ADMIN_REQUIRED: "系统必须至少保留一个可用管理员账号", ACCOUNT_VERSION_CONFLICT: "该账号已被其他管理员修改，请重新加载后再编辑",
   ACCOUNT_ARCHIVED: "该账号已归档", ACCOUNT_NOT_ARCHIVED: "该账号未归档", ACCOUNT_SESSION_EXPIRED: "登录状态已失效，请重新登录", ACCOUNT_PERMISSION_DENIED: "当前账号没有执行此操作的权限", ACCOUNT_CURRENT_PASSWORD_INVALID: "当前密码不正确", ACCOUNT_IDENTIFIER_REQUIRED: "请填写邮箱或手机号", ACCOUNT_CREDENTIALS_INVALID: "邮箱、手机号或密码不正确",
-  ACCOUNT_RATE_LIMITED: "操作过于频繁，请稍后再试", ACCOUNT_VALIDATION_FAILED: "请检查填写内容", SERVER_UNAVAILABLE: "服务器处理失败，请稍后重试"
+  ACCOUNT_RATE_LIMITED: "操作过于频繁，请稍后再试", ACCOUNT_VALIDATION_FAILED: "请检查填写内容", INQUIRY_STATUS_TRANSITION_INVALID: "询价不能回退到所选状态，请刷新后按当前流程继续", QUOTE_SOURCE_ALREADY_EXISTS: "该来源已有你的有效报价，请先打开或归档原报价", SERVER_UNAVAILABLE: "服务器处理失败，请稍后重试"
+  , SHARE_NOT_FOUND: "分享码不存在，请核对后重试", SHARE_EXPIRED: "分享码已过期，请联系客户重新生成", SHARE_CLOSED: "分享已被关闭，请联系客户重新启用或生成新分享"
 };
 const ACCOUNT_ERROR_TEXT_EN = {
   ACCOUNT_NOT_FOUND: "The account no longer exists", ACCOUNT_EMAIL_INVALID: "Enter a valid email address", ACCOUNT_EMAIL_DUPLICATE: "This email is already used by another account",
@@ -60,7 +65,8 @@ const ACCOUNT_ERROR_TEXT_EN = {
   ACCOUNT_ROLE_INVALID: "Select a supported account role", ACCOUNT_SELF_DISABLE_FORBIDDEN: "You cannot disable your current account", ACCOUNT_SELF_ROLE_CHANGE_FORBIDDEN: "You cannot remove your own administrator access",
   ACCOUNT_SELF_ARCHIVE_FORBIDDEN: "You cannot archive your current account", ACCOUNT_LAST_ADMIN_REQUIRED: "At least one enabled administrator account is required", ACCOUNT_VERSION_CONFLICT: "This account was changed by another administrator. Reload it and try again",
   ACCOUNT_ARCHIVED: "This account is archived", ACCOUNT_NOT_ARCHIVED: "This account is not archived", ACCOUNT_SESSION_EXPIRED: "Your session has expired. Sign in again", ACCOUNT_PERMISSION_DENIED: "You do not have permission to perform this action", ACCOUNT_CURRENT_PASSWORD_INVALID: "The current password is incorrect", ACCOUNT_IDENTIFIER_REQUIRED: "Enter an email address or phone number", ACCOUNT_CREDENTIALS_INVALID: "The email, phone number, or password is incorrect",
-  ACCOUNT_RATE_LIMITED: "Too many requests. Try again later", ACCOUNT_VALIDATION_FAILED: "Check the entered information", SERVER_UNAVAILABLE: "The server could not complete the request. Try again later"
+  ACCOUNT_RATE_LIMITED: "Too many requests. Try again later", ACCOUNT_VALIDATION_FAILED: "Check the entered information", INQUIRY_STATUS_TRANSITION_INVALID: "The inquiry cannot move back to that status. Refresh it and continue", QUOTE_SOURCE_ALREADY_EXISTS: "You already have an active quote for this source. Open or archive it first", SERVER_UNAVAILABLE: "The server could not complete the request. Try again later"
+  , SHARE_NOT_FOUND: "The share code was not found. Check it and try again", SHARE_EXPIRED: "The share code expired. Ask the customer to create a new one", SHARE_CLOSED: "The share was closed. Ask the customer to reopen it or create a new one"
 };
 function accountErrorText(code) { return (document.documentElement.lang || "zh-CN").toLowerCase().startsWith("en") ? ACCOUNT_ERROR_TEXT_EN[code] : ACCOUNT_ERROR_TEXT_ZH[code]; }
 
@@ -224,7 +230,14 @@ function formatDate(value) {
 function formatDateTime(value) {
   if (!value) return "—";
   const date = new Date(String(value).includes("T") ? value : `${value.replace(" ", "T")}Z`);
-  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString("zh-CN", { hour12: false });
+  return Number.isNaN(date.getTime()) ? String(value) : new Intl.DateTimeFormat("zh-CN", {
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
+  }).format(date);
+}
+
+function formatNumber(value, options = {}) {
+  return new Intl.NumberFormat("zh-CN", options).format(Number(value || 0));
 }
 
 function roleLabel(role) {
@@ -295,7 +308,7 @@ async function enterAdmin() {
   $("#admin-avatar").textContent = (state.user.display_name || state.user.email || "A").charAt(0).toUpperCase();
   const isAdmin = state.user.role === "admin";
   $$('[data-admin-only]').forEach((element) => { element.hidden = !isAdmin; });
-  $(".sidebar-brand span").textContent = isAdmin ? "管理后台" : "业务员工作台";
+  $(".sidebar-brand-label").textContent = "工作台";
   await loadData();
   const requestedView = window.location.hash.slice(1);
   const catalogViews = ["config-catalog", "tool-catalog", "accessory-catalog"];
@@ -338,6 +351,7 @@ function syncBusinessFilterUrl() {
     inquiryQuery: state.inquiryQuery,
     inquiryStatus: state.inquiryStatus,
     inquiryPage: state.inquiryPage > 1 ? String(state.inquiryPage) : "",
+    quoteQuery: state.quoteQuery,
     quoteStatus: state.quoteStatus,
   };
   Object.entries(values).forEach(([key, value]) => value && value !== "all" ? url.searchParams.set(key, value) : url.searchParams.delete(key));
@@ -352,12 +366,20 @@ function restoreBusinessFilterState() {
   state.inquiryQuery = query.get("inquiryQuery") || "";
   state.inquiryStatus = ["new", "assigned", "contacted", "quoted", "closed", "cancelled"].includes(query.get("inquiryStatus")) ? query.get("inquiryStatus") : "all";
   state.inquiryPage = Math.max(1, Number(query.get("inquiryPage") || 1) || 1);
+  state.quoteQuery = query.get("quoteQuery") || "";
   state.quoteStatus = ["draft", "sent", "archived"].includes(query.get("quoteStatus")) ? query.get("quoteStatus") : "all";
   if ($("#share-query")) $("#share-query").value = state.shareQuery;
   if ($("#share-status-filter")) $("#share-status-filter").value = state.shareStatus;
   if ($("#inquiry-query")) $("#inquiry-query").value = state.inquiryQuery;
   if ($("#inquiry-status-filter")) $("#inquiry-status-filter").value = state.inquiryStatus;
+  if ($("#quote-query")) $("#quote-query").value = state.quoteQuery;
   if ($("#quote-status-filter")) $("#quote-status-filter").value = state.quoteStatus;
+}
+
+function quoteListPath() {
+  const query = new URLSearchParams({ status: state.quoteStatus });
+  if (state.quoteQuery) query.set("query", state.quoteQuery);
+  return `/api/v1/quotes?${query}`;
 }
 
 async function loadUsers() {
@@ -432,7 +454,7 @@ async function loadData() {
   const requests = {
     shares: api(shareListPath()),
     inquiries: api(inquiryListPath()),
-    quotes: api(`/api/v1/quotes?status=${encodeURIComponent(state.quoteStatus)}`),
+    quotes: api(quoteListPath()),
     products: api("/api/v1/admin/products"),
     configCatalog: api("/api/v1/admin/catalog-tree"),
     countries: api("/api/v1/auth/countries?lang=zh")
@@ -486,7 +508,7 @@ async function loadData() {
   }, 0);
 
   const errorTargets = {
-    shares: ["#shares-table", 7], inquiries: ["#inquiries-table", 7], quotes: ["#quotes-table", 5], products: ["#products-table", 4],
+    shares: ["#shares-table", 8], inquiries: ["#inquiries-table", 8], quotes: ["#quotes-table", 5], products: ["#products-table", 4],
     configCatalog: ["#config-catalog-list", 0], users: ["#users-table", 5], audits: ["#audit-table", 5]
   };
   failures.forEach(({ key, error }) => {
@@ -514,10 +536,10 @@ function renderAll() {
 
 function renderDashboard() {
   $("#dashboard-products").innerHTML = state.products.slice(0, 5).map((product) => `
-    <div class="mini-row"><div><strong>${escapeHtml(product.name)}</strong><span>${escapeHtml(product.title_name)}</span></div><div class="model-mark">${escapeHtml(product.id.toUpperCase())}</div></div>
+    <div class="mini-row"><div><strong translate="no">${escapeHtml(product.name)}</strong><span>${escapeHtml(product.title_name)}</span></div><div class="model-mark" translate="no">${escapeHtml(product.id.toUpperCase())}</div></div>
   `).join("") || '<div class="empty">暂无产品数据</div>';
   $("#dashboard-shares").innerHTML = state.shares.slice(0, 5).map((share) => `
-    <div class="mini-row"><div><strong>${escapeHtml(share.code)}</strong><span>${escapeHtml(share.name)}</span></div><span class="badge ${share.active ? "good" : "off"}">${share.active ? "有效" : "已关闭"}</span></div>
+    <div class="mini-row"><div><strong translate="no">${escapeHtml(share.code)}</strong><span>${escapeHtml(share.name)}</span></div><span class="badge ${share.active ? "good" : "off"}">${share.active ? "有效" : "已关闭"}</span></div>
   `).join("") || '<div class="empty">暂无分享记录</div>';
 }
 
@@ -526,13 +548,13 @@ function renderProducts() {
   const priceLabel = $("[data-view-panel=\"products\"] thead th:nth-child(3)");
   if (priceLabel) priceLabel.textContent = english ? "价格 / USD" : "价格 / 人民币";
   $("#products-table").innerHTML = state.products.map((product) => `
-    <tr><td><strong>${escapeHtml(english ? (product.name_en || product.name) : product.name)}</strong></td><td>${escapeHtml(english ? (product.title_name_en || product.title_name) : product.title_name)}</td><td>${english ? "$" + Number(product.price_usd || 0).toLocaleString("en-US") : "¥" + Number(product.base_price || 0).toLocaleString("zh-CN")}</td><td><span class="badge ${product.enabled ? "good" : "off"}">${product.enabled ? "已启用" : "已下架"}</span></td><td class="align-right"><button class="table-action" data-edit-product="${product.id}">编辑</button></td></tr>
+    <tr><td><strong translate="no">${escapeHtml(english ? (product.name_en || product.name) : product.name)}</strong></td><td>${escapeHtml(english ? (product.title_name_en || product.title_name) : product.title_name)}</td><td>${english ? "$" + formatNumber(product.price_usd) : "¥" + formatNumber(product.base_price)}</td><td><span class="badge ${product.enabled ? "good" : "off"}">${product.enabled ? "已启用" : "已下架"}</span></td><td class="align-right"><button class="table-action" data-edit-product="${product.id}">编辑</button></td></tr>
   `).join("") || '<tr><td colspan="5" class="empty">暂无产品数据</td></tr>';
 }
 
 function renderConfigCatalog(categories) {
   const target = $("#config-catalog-list"); if (!target) return;
-  target.innerHTML = categories.map((category) => `<section class="config-catalog-group"><header><div class="catalog-collapse-target" data-collapse-category="${escapeHtml(category.id)}" role="button" tabindex="0" aria-expanded="true"><h3>${escapeHtml(category.name)}</h3><p>${escapeHtml(category.description || "")}</p></div><div><span>${category.options.length} 项</span><button class="text-button" data-add-option="${escapeHtml(category.id)}">添加配置</button><details class="catalog-more"><summary>更多</summary><div><button class="text-button" data-edit-category='${escapeHtml(JSON.stringify(category))}'>编辑分类</button></div></details></div></header><div class="config-catalog-table"><table><thead><tr><th>编号</th><th>名称</th><th>图片</th><th>参考价格</th><th>状态</th><th></th></tr></thead><tbody>${category.options.map((option) => `<tr><td><strong>${escapeHtml(option.code)}</strong></td><td>${escapeHtml(option.name)}<br><small>${escapeHtml(option.description || "")}</small></td><td class="config-image-cell">${renderCatalogThumbnail(option)}</td><td>¥${Number(option.price || 0).toLocaleString("zh-CN")}</td><td><span class="badge ${option.enabled ? "good" : "off"}">${option.enabled ? "启用" : "停用"}</span></td><td class="align-right"><button class="table-action" data-edit-option='${escapeHtml(JSON.stringify(option))}'>编辑</button></td></tr>`).join("")}</tbody></table></div></section>`).join("") || '<div class="empty">暂无配置目录</div>';
+  target.innerHTML = categories.map((category) => `<section class="config-catalog-group"><header><div class="catalog-collapse-target" data-collapse-category="${escapeHtml(category.id)}" role="button" tabindex="0" aria-expanded="true"><h3>${escapeHtml(category.name)}</h3><p>${escapeHtml(category.description || "")}</p></div><div><span>${category.options.length} 项</span><button class="text-button" data-add-option="${escapeHtml(category.id)}">添加配置</button><details class="catalog-more"><summary>更多</summary><div><button class="text-button" data-edit-category='${escapeHtml(JSON.stringify(category))}'>编辑分类</button></div></details></div></header><div class="config-catalog-table"><table><thead><tr><th>编号</th><th>名称</th><th>图片</th><th>参考价格</th><th>状态</th><th></th></tr></thead><tbody>${category.options.map((option) => `<tr><td><strong translate="no">${escapeHtml(option.code)}</strong></td><td>${escapeHtml(option.name)}<br><small>${escapeHtml(option.description || "")}</small></td><td class="config-image-cell">${renderCatalogThumbnail(option)}</td><td>¥${formatNumber(option.price)}</td><td><span class="badge ${option.enabled ? "good" : "off"}">${option.enabled ? "启用" : "停用"}</span></td><td class="align-right"><button class="table-action" data-edit-option='${escapeHtml(JSON.stringify(option))}'>编辑</button></td></tr>`).join("")}</tbody></table></div></section>`).join("") || '<div class="empty">暂无配置目录</div>';
 }
 
 async function addConfigCategory() { categoryCard(); }
@@ -814,14 +836,14 @@ function renderShares() {
   const isAdmin = state.user?.role === "admin";
   $("#shares-table").innerHTML = state.shares.map((share) => {
     const valid = share.active && new Date(share.expires_at) > new Date();
-    const sender = share.sender_name || share.sender_email || share.sender_phone || "未填写";
-    const contact = share.sender_email || share.sender_phone || "—";
     const canReopen = isAdmin && !share.active && new Date(share.expires_at) > new Date();
-    const actions = valid ? `<span class="table-actions"><button class="table-action" data-lookup-share="${escapeHtml(share.code)}">查看</button><details class="table-actions-menu"><summary aria-label="更多分享操作">更多</summary><div><button class="table-action" data-export-share="${escapeHtml(share.code)}">导出 PDF</button><button class="table-action" data-quote-share="${escapeHtml(share.code)}">报价</button>${isAdmin ? `<button class="table-action danger" data-close-share="${share.id}">关闭</button>` : ""}</div></details></span>` : canReopen ? `<button class="table-action" data-open-share="${share.id}">重新启用</button>` : "—";
+    const quoteLabel = share.own_latest_quote_id ? "查看我的报价" : Number(share.quote_count || 0) ? "再次报价" : "报价";
+    const actions = valid ? `<span class="table-actions"><button class="table-action" data-lookup-share="${escapeHtml(share.code)}">查看</button><details class="table-actions-menu"><summary aria-label="更多分享操作">更多</summary><div><button class="table-action" data-export-share="${escapeHtml(share.code)}">导出 PDF</button><button class="table-action" data-quote-share="${escapeHtml(share.code)}">${quoteLabel}</button>${isAdmin ? `<button class="table-action danger" data-close-share="${share.id}">关闭</button>` : ""}</div></details></span>` : canReopen ? `<button class="table-action" data-open-share="${share.id}">重新启用</button>` : "—";
     const itemCountLabel = renderShareItemSummary(share);
     const statusText = !share.active ? "已关闭" : valid ? "有效" : "已过期";
-    return `<tr><td><button class="share-code-button" data-lookup-share="${escapeHtml(share.code)}" ${valid ? "" : "disabled"}>${escapeHtml(share.code)}</button><br><small>${escapeHtml(formatDateTime(share.created_at))}</small></td><td>${escapeHtml(share.name)}<br><small>${escapeHtml(itemCountLabel)}</small></td><td><strong>${escapeHtml(sender)}</strong><br><small>${escapeHtml(contact)}</small></td><td>${share.view_count} 次<br><small>${share.last_viewed_at ? escapeHtml(formatDateTime(share.last_viewed_at)) : "尚未查看"}</small></td><td>${formatDate(share.expires_at)}</td><td><span class="badge ${valid ? "good" : "off"}">${statusText}</span></td><td class="align-right">${actions}</td></tr>`;
-  }).join("") || '<tr><td colspan="7" class="empty">暂无分享记录</td></tr>';
+    const activity = `${formatNumber(share.view_count)} 次访问${share.last_viewed_at ? ` · 最近 ${escapeHtml(formatDate(share.last_viewed_at))}` : ""}`;
+    return `<tr><td><button class="share-code-button" translate="no" data-lookup-share="${escapeHtml(share.code)}" ${valid ? "" : "disabled"}>${escapeHtml(share.code)}</button><small class="business-cell-meta">${escapeHtml(formatDateTime(share.created_at))}</small></td><td>${renderCustomerLines(share.sender_name, share.sender_email, share.sender_phone)}</td><td>${itemCountLabel}</td><td><span class="badge ${valid ? "good" : "off"}">${statusText}</span><small class="business-cell-meta">有效期至 ${escapeHtml(formatDate(share.expires_at))}</small><small class="business-cell-meta">${activity}</small></td><td>${renderQuoteSourceStatus(share)}</td><td class="align-right">${actions}</td></tr>`;
+  }).join("") || '<tr><td colspan="6" class="empty">暂无分享记录</td></tr>';
   const pages = Math.max(1, Math.ceil(state.shareTotal / state.sharePageSize));
   if ($("#share-page-summary")) $("#share-page-summary").textContent = `共 ${state.shareTotal} 条 · 第 ${state.sharePage}/${pages} 页`;
   if ($("#share-page-prev")) $("#share-page-prev").disabled = state.sharePage <= 1;
@@ -833,10 +855,24 @@ function renderShareItemSummary(share) {
   const counts = hasTypedCounts
     ? { device: Number(share.device_count || 0), tool: Number(share.tool_quantity || 0), accessory: Number(share.accessory_quantity || 0) }
     : { device: Number(share.item_count || 0), tool: 0, accessory: 0 };
-  return [[counts.device, "台设备"], [counts.tool, "件工具"], [counts.accessory, "件附件"]]
+  return renderCommerceCountLines(counts);
+}
+
+function renderCommerceCountLines(counts) {
+  const lines = [[Number(counts.device || 0), "台设备"], [Number(counts.tool || 0), "件工具"], [Number(counts.accessory || 0), "件附件"]]
     .filter(([count]) => count > 0)
-    .map(([count, label]) => `${count} ${label}`)
-    .join(" · ") || "未包含有效项目";
+    .map(([count, label]) => `<div>${escapeHtml(formatNumber(count))}${label}</div>`)
+    .join("");
+  return lines ? `<div class="business-content-counts">${lines}</div>` : '<span class="business-cell-empty">未包含有效项目</span>';
+}
+
+function renderCustomerLines(name, email, phone) {
+  const lines = [name, email, phone]
+    .map((value) => String(value || "").trim())
+    .filter(Boolean)
+    .map((value, index) => `<span${index === 0 ? ' class="customer-name"' : ""}>${escapeHtml(value)}</span>`)
+    .join("");
+  return lines ? `<span class="business-customer-lines">${lines}</span>` : '<span class="business-cell-empty">未填写</span>';
 }
 
 function renderQuotes() {
@@ -844,19 +880,23 @@ function renderQuotes() {
   target.innerHTML = state.quotes.map((quote) => {
     const symbol = quote.currency === "USD" ? "$" : "¥";
     const status = quote.lifecycle_status || "draft";
-    const delivery = Number(quote.delivery_count || 0) ? `<br><small>已发送给 ${escapeHtml(quote.recipient_summary || `${quote.delivery_count} 个账号`)}</small>` : '<br><small>尚未发送给客户</small>';
+    const delivery = Number(quote.delivery_count || 0) ? `已发送给 ${escapeHtml(quote.recipient_summary || `${quote.delivery_count} 个账号`)}` : "尚未发送";
     const number = quote.quote_number || quote.id.slice(0, 8);
-    const source = quote.source_inquiry_id ? "来源：客户询价" : quote.source_share_id ? "来源：分享配置" : "来源：直接创建";
+    const source = quote.source_type === "inquiry" || quote.source_inquiry_id
+      ? `来源：客户询价${quote.source_code ? ` · ${quote.source_code}` : ""}`
+      : quote.source_type === "share" || quote.source_share_id
+        ? `来源：分享配置${quote.source_code ? ` · ${quote.source_code}` : ""}`
+        : "来源：直接创建";
     const primary = status === "archived" ? `<button class="table-action" data-restore-quote="${escapeHtml(quote.id)}">恢复</button>` : `<button class="table-action" data-edit-quote="${escapeHtml(quote.id)}">编辑</button>`;
     const destructive = status === "draft" ? `<button class="table-action danger" data-delete-quote="${escapeHtml(quote.id)}">删除</button>` : `<button class="table-action danger" data-archive-quote="${escapeHtml(quote.id)}">归档</button>`;
     const exportAction = status === "archived" ? "" : `<button class="table-action" data-export-quote="${escapeHtml(quote.id)}">导出 PDF</button>`;
     const actions = `<span class="table-actions">${primary}<details class="table-actions-menu"><summary aria-label="更多报价操作">更多</summary><div>${exportAction}<button class="table-action" data-quote-history="${escapeHtml(quote.id)}">版本与发送历史</button>${status === "archived" ? "" : destructive}</div></details></span>`;
-    return `<tr><td><strong>${escapeHtml(quote.title)}</strong><br><small>${escapeHtml(number)} · V${Number(quote.version || 1)} · ${escapeHtml(source)}</small>${delivery}</td><td><span class="badge ${status === "archived" ? "off" : status === "sent" ? "good" : ""}">${escapeHtml(quoteLifecycleLabel(status))}</span></td><td>${escapeHtml(quote.display_name || quote.email || quote.phone || "—")}</td><td>${symbol}${Number(quote.total_price || 0).toLocaleString("zh-CN")}</td><td>${formatDate(quote.updated_at)}</td><td class="align-right">${actions}</td></tr>`;
+    return `<tr><td><strong class="business-cell-title">${escapeHtml(quote.title)}</strong><small class="business-cell-meta"><span translate="no">${escapeHtml(number)}</span> · V${formatNumber(quote.version || 1)}</small><small class="business-cell-meta">${escapeHtml(source)}</small></td><td>${renderCustomerLines(quote.customer_name, quote.customer_email, quote.customer_phone)}</td><td><span class="badge ${status === "archived" ? "off" : status === "sent" ? "good" : ""}">${escapeHtml(quoteLifecycleLabel(status))}</span><small class="business-cell-meta">${delivery}</small></td><td>${escapeHtml(quote.display_name || quote.email || quote.phone || "—")}<small class="business-cell-meta">更新于 ${escapeHtml(formatDate(quote.updated_at))}</small></td><td class="business-number-cell">${symbol}${formatNumber(quote.total_price, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td><td class="align-right">${actions}</td></tr>`;
   }).join("") || '<tr><td colspan="6" class="empty">暂无报价单</td></tr>';
 }
 
 async function loadQuotes() {
-  const result = await api(`/api/v1/quotes?status=${encodeURIComponent(state.quoteStatus)}`);
+  const result = await api(quoteListPath());
   state.quotes = result.items || [];
   renderQuotes();
   syncBusinessFilterUrl();
@@ -870,10 +910,23 @@ function inquiryStatusLabel(status) {
   return { new: "新询价", assigned: "已分配", contacted: "已联系", quoted: "已转报价", closed: "已完成", cancelled: "客户已取消" }[status] || status || "—";
 }
 
+function renderQuoteSourceStatus(item) {
+  const count = Number(item.quote_count || 0);
+  if (!count) return item.historical_quote_count ? '<span class="badge off">历史报价已归档</span>' : '<span class="badge">未报价</span>';
+  const people = (item.quoted_by || []).map((person) => person.display_name).filter(Boolean).join("、") || "—";
+  return `<span class="badge good">已报价 · ${count} 份</span><br><small>${escapeHtml(people)}</small>`;
+}
+
 function renderInquirySummary(item) {
-  const labels = { device_config: "设备", tool: "工具", accessory: "附件" };
-  const summary = item.item_summary || [];
-  return summary.map((part) => `${labels[part.item_type] || part.item_type} ${Number(part.item_count || 0)} 项`).join(" · ") || `${Number(item.item_count || 0)} 项`;
+  const counts = { device: 0, tool: 0, accessory: 0 };
+  (item.item_summary || []).forEach((part) => {
+    const amount = part.item_type === "device_config" ? Number(part.item_count || 0) : Number(part.quantity || 0);
+    if (part.item_type === "device_config") counts.device += amount;
+    else if (part.item_type === "tool") counts.tool += amount;
+    else if (part.item_type === "accessory") counts.accessory += amount;
+  });
+  if (!Object.values(counts).some((count) => count > 0) && Number(item.item_count || 0) > 0) counts.device = Number(item.item_count);
+  return renderCommerceCountLines(counts);
 }
 
 function commerceItemType(item) {
@@ -911,23 +964,41 @@ function aggregateCommerceItems(items = []) {
   return groups;
 }
 
+function inquirySourceSummary(item) {
+  const codes = Array.from(new Set((item.source_codes || item.sources?.map((source) => source.source_share_code) || []).filter(Boolean)));
+  const parts = [];
+  if (codes.length) parts.push(`分享 ${codes.join("、")}`);
+  if (Number(item.manual_item_count || 0)) parts.push(`含 ${Number(item.manual_item_count)} 项手动内容`);
+  if (!parts.length) parts.push(item.source_type === "cart" ? "购物车手动选择" : "当前选配");
+  return parts.join(" · ");
+}
+
+function inquiryAvailabilityLabel(status) {
+  return { active: "当前可用", inactive: "已停用，保留历史", missing: "目录已删除，保留历史", snapshot_only: "选配规则已变化，使用历史快照" }[status] || "使用历史快照";
+}
+
+function inquiryTimingSummary(item) {
+  const moments = [
+    ["接手", item.assigned_at], ["联系", item.contacted_at],
+    ["首报", item.first_quoted_at || item.quoted_at], ["更新报价", item.latest_quoted_at],
+    ["关闭", item.closed_at]
+  ].filter((entry) => entry[1]);
+  return moments.length ? `<small class="inquiry-list-timeline">${moments.map(([label, value]) => `${escapeHtml(label)} ${escapeHtml(formatDateTime(value))}`).join(" · ")}</small>` : "";
+}
+
 function renderInquiries() {
   const target = $("#inquiries-table");
   if (!target) return;
   target.innerHTML = state.inquiries.map((item) => {
-    const isMine = item.assigned_to && item.assigned_to === state.user?.id;
     const canTake = !item.assigned_to && item.status === "new";
     const stateClass = item.status === "new" ? "good" : item.status === "cancelled" ? "off" : "";
-    const canManageQuote = isMine || state.user?.role === "admin";
-    const quoteAction = item.converted_quote_id && canManageQuote
-      ? ` <button class="table-action" data-open-inquiry-quote="${escapeHtml(item.converted_quote_id)}">查看报价</button>`
-      : item.status !== "cancelled" && canManageQuote
-        ? ` <button class="table-action" data-quote-inquiry="${escapeHtml(item.id)}">转报价</button>`
-        : "";
-    const actions = `<button class="table-action" data-view-inquiry="${escapeHtml(item.id)}">查看</button>${canTake ? ` <button class="table-action" data-take-inquiry="${escapeHtml(item.id)}">接手</button>` : ""}${quoteAction}`;
-    const customer = item.customer_name_snapshot || item.customer_display_name || "未填写";
-    const contact = item.customer_email_snapshot || item.customer_phone_snapshot || "—";
-    return `<tr><td><strong>${escapeHtml(item.inquiry_number)}</strong><br><small>${escapeHtml(item.source_type === "cart" ? "购物车" : "当前选配")}</small></td><td><strong>${escapeHtml(customer)}</strong><br><small>${escapeHtml(contact)}</small></td><td>${escapeHtml(renderInquirySummary(item))}<br><small>${escapeHtml(item.message || "无补充说明")}</small></td><td><span class="badge ${stateClass}">${escapeHtml(inquiryStatusLabel(item.status))}</span></td><td>${escapeHtml(item.assignee_name || (item.assigned_to ? "已分配" : "待分配"))}</td><td>${escapeHtml(formatDateTime(item.created_at))}</td><td class="align-right">${actions}</td></tr>`;
+    const quoteAction = item.status !== "cancelled"
+      ? item.own_latest_quote_id
+        ? `<button class="table-action" data-open-inquiry-quote="${escapeHtml(item.own_latest_quote_id)}">查看我的报价</button>`
+        : `<button class="table-action" data-quote-inquiry="${escapeHtml(item.id)}">${Number(item.quote_count || 0) ? "再次报价" : "转报价"}</button>`
+      : "";
+    const actions = `<span class="table-actions"><button class="table-action" data-view-inquiry="${escapeHtml(item.id)}">查看</button>${canTake ? `<button class="table-action" data-take-inquiry="${escapeHtml(item.id)}">接手</button>` : ""}<details class="table-actions-menu"><summary aria-label="更多询价操作">更多</summary><div><button class="table-action" data-export-inquiry="${escapeHtml(item.id)}" data-inquiry-number="${escapeHtml(item.inquiry_number)}">导出 PDF</button>${quoteAction}</div></details></span>`;
+    return `<tr><td><strong translate="no">${escapeHtml(item.inquiry_number)}</strong><small class="business-cell-meta">${escapeHtml(inquirySourceSummary(item))}</small></td><td>${renderCustomerLines(item.customer_name_snapshot || item.customer_display_name, item.customer_email_snapshot || item.customer_email_current, item.customer_phone_snapshot || item.customer_phone_current)}</td><td>${renderInquirySummary(item)}</td><td><span class="badge ${stateClass}">${escapeHtml(inquiryStatusLabel(item.status))}</span></td><td>${renderQuoteSourceStatus(item)}</td><td>${escapeHtml(formatDateTime(item.created_at))}</td><td class="align-right">${actions}</td></tr>`;
   }).join("") || '<tr><td colspan="7" class="empty">暂无询价记录</td></tr>';
   const pages = Math.max(1, Math.ceil(state.inquiryTotal / state.inquiryPageSize));
   if ($("#inquiry-page-summary")) $("#inquiry-page-summary").textContent = `共 ${state.inquiryTotal} 条 · 第 ${state.inquiryPage}/${pages} 页`;
@@ -944,50 +1015,175 @@ async function takeInquiry(button) {
       showToast("询价已分配给当前账号");
       await loadInquiries();
     });
-  } catch (failure) { showToast(failure.message, "error"); }
+  } catch (failure) {
+    if (failure.code === "INQUIRY_STATUS_CONFLICT") {
+      await loadInquiries();
+      showToast("询价状态已更新，请重新操作", "error");
+    } else showToast(failure.message, "error");
+  }
 }
 
 async function viewInquiry(inquiryId) {
+  ensureInquiryDrawer();
+  openInquiryDrawer();
+  const body = $("[data-inquiry-drawer-body]", inquiryDrawerElement);
+  const title = $("[data-inquiry-drawer-title]", inquiryDrawerElement);
+  const footer = $("[data-inquiry-drawer-footer]", inquiryDrawerElement);
+  title.textContent = "询价详情";
+  body.innerHTML = '<div class="share-result-loading">正在加载询价详情…</div>';
+  footer.innerHTML = '<button class="button button-secondary" type="button" data-inquiry-drawer-close>关闭</button>';
   try {
     const inquiry = await api(`/api/v1/staff/inquiries/${encodeURIComponent(inquiryId)}?lang=${state.catalogLanguage === "en" ? "en" : "zh"}`);
-    const dialog = document.createElement("dialog");
-    dialog.className = "product-dialog inquiry-detail-dialog";
     const inquiryGroups = aggregateCommerceItems(inquiry.items || []);
-    let deviceNumber = 0;
-    const renderInquiryGroup = (label, entries, type) => entries.length ? `<li class="commerce-group-heading"><strong>${label}</strong><small>${type === "device_config" ? `${entries.length} 台` : `${entries.reduce((sum, item) => sum + Number(item.quantity || 1), 0)} 件`}</small></li>${entries.map((item) => {
-      const snapshot = item.snapshot || {};
-      const name = snapshot.name || snapshot.product?.title_name || item.display_name || "未命名项目";
-      const code = snapshot.code || snapshot.product?.name || "";
-      const prefix = type === "device_config" ? `设备 ${++deviceNumber}` : code;
-      return `<li><span><strong>${escapeHtml(name)}</strong><small>${escapeHtml(prefix || code)}</small></span><b>× ${Number(item.quantity || 1)}</b></li>`;
-    }).join("")}` : "";
-    const rows = renderInquiryGroup("设备", inquiryGroups.devices, "device_config")
-      + renderInquiryGroup("维修工具", inquiryGroups.tools, "tool")
-      + renderInquiryGroup("设备附件", inquiryGroups.accessories, "accessory");
-    dialog.innerHTML = `<form method="dialog" class="dialog-card inquiry-detail-card"><header><div><span class="eyebrow">CUSTOMER INQUIRY</span><h2>${escapeHtml(inquiry.inquiry_number)}</h2></div><button class="icon-button" value="close" aria-label="关闭">×</button></header><div class="inquiry-detail-body"><dl><div><dt>客户</dt><dd>${escapeHtml(inquiry.customer_name_snapshot || inquiry.customer_display_name || "—")}</dd></div><div><dt>联系方式</dt><dd>${escapeHtml(inquiry.customer_email_snapshot || inquiry.customer_phone_snapshot || "—")}</dd></div><div><dt>状态</dt><dd>${escapeHtml(inquiryStatusLabel(inquiry.status))}</dd></div></dl>${inquiry.message ? `<p class="inquiry-detail-message">${escapeHtml(inquiry.message)}</p>` : ""}<h3>询价内容</h3><ul class="inquiry-detail-items">${rows}</ul></div><footer><button class="button button-secondary" value="close">关闭</button></footer></form>`;
-    document.body.appendChild(dialog);
-    dialog.addEventListener("close", () => dialog.remove(), { once: true });
-    dialog.showModal();
-  } catch (failure) { showToast(failure.message, "error"); }
+    const isConfiguredValue = (value) => {
+      const normalized = String(value || "").trim().toLocaleLowerCase();
+      return Boolean(normalized) && !new Set(["未配置", "未选择", "无", "none", "not configured", "not selected", "n/a", "—", "-"]).has(normalized);
+    };
+    const devices = inquiryGroups.devices.map((entry, index) => {
+      const snapshot = entry.snapshot || {};
+      const categories = snapshot.categories || [];
+      const singleValue = (id) => categories.find((category) => category.id === id)?.options?.map((option) => option.name).filter(isConfiguredValue).join(" / ") || "";
+      const basics = [
+        ["型号", snapshot.product?.name || ""], ["名称", snapshot.product?.title_name || ""],
+        ["颜色", snapshot.color?.label || snapshot.color?.code || ""], ["电机", singleValue("motor")],
+        ["电源", singleValue("voltage")], ["通道", singleValue("channel")]
+      ].filter(([, value]) => isConfiguredValue(value)).map(([label, value]) => `<div><span>${label}</span><strong>${escapeHtml(value)}</strong></div>`).join("");
+      const optionGroups = categories.filter((category) => !["motor", "voltage", "channel"].includes(category.id) && (category.options || []).length).map((category) => `<section class="share-detail-group"><header><span>${escapeHtml(category.name)}</span><small>${category.options.length} 项</small></header><ul>${category.options.map((option) => `<li><strong>${escapeHtml([option.code, option.name].filter(Boolean).join(" · ") || "未命名配置")}</strong>${plainDescription(option.description) ? `<span>${escapeHtml(plainDescription(option.description))}</span>` : ""}</li>`).join("")}</ul></section>`).join("");
+      const availability = String(entry.availability || "snapshot_only");
+      const availabilityNote = availability === "active" ? "" : `<em class="inquiry-availability ${escapeHtml(availability)}">${escapeHtml(inquiryAvailabilityLabel(availability))}</em>`;
+      return `<article class="share-device-block inquiry-device-block"><h4>设备 ${index + 1} · ${escapeHtml(snapshot.product?.name || entry.display_name || "未填写")}${availabilityNote}</h4><section class="share-detail-group share-device-basics"><header><span>设备信息</span><small>型号与基本配置</small></header><div class="share-basic-list">${basics}</div></section><div class="share-detail-groups">${optionGroups || '<div class="empty">该设备未选择其他选配项目</div>'}</div></article>`;
+    }).join("");
+    const catalogSections = [[inquiryGroups.tools, "维修工具"], [inquiryGroups.accessories, "设备附件"]].map(([entries, label]) => {
+      if (!entries.length) return "";
+      const total = entries.reduce((sum, item) => sum + Number(item.quantity || 1), 0);
+      const rows = entries.map((entry) => {
+        const snapshot = entry.snapshot || {};
+        const availability = String(entry.availability || "snapshot_only");
+        const availabilityNote = availability === "active" ? "" : `<em class="inquiry-availability ${escapeHtml(availability)}">${escapeHtml(inquiryAvailabilityLabel(availability))}</em>`;
+        return `<li><strong>${escapeHtml([snapshot.code, snapshot.name || entry.display_name].filter(Boolean).join(" · ") || "未命名项目")}${availabilityNote}</strong><span>数量：${formatNumber(entry.quantity || snapshot.quantity || 1)}</span></li>`;
+      }).join("");
+      return `<article class="share-device-block share-catalog-block"><section class="share-detail-group"><header><span>${label}</span><small>共 ${formatNumber(total)} 件</small></header><ul>${rows}</ul></section></article>`;
+    }).join("");
+    const sources = (inquiry.sources || []).length
+      ? inquiry.sources.map((source) => `<span class="inquiry-source-chip" translate="no">${escapeHtml(source.source_share_code || source.source_share_id || "历史分享")}</span>`).join("")
+      : '<span class="inquiry-source-empty">无分享来源</span>';
+    const quotedBy = (inquiry.quoted_by || []).map((person) => person.display_name).filter(Boolean).join("、");
+    const timeline = [
+      ["创建", inquiry.created_at], ["首次接手", inquiry.assigned_at], ["首次联系", inquiry.contacted_at], ["首次报价", inquiry.first_quoted_at || inquiry.quoted_at],
+      ["最近报价", inquiry.latest_quoted_at], ["关闭", inquiry.closed_at]
+    ].filter((entry) => entry[1]).map(([label, value]) => `<li><span>${label}</span><time>${escapeHtml(formatDateTime(value))}</time></li>`).join("");
+    const quoteLinks = (inquiry.quote_links || []).map((quote) => `<button class="button button-secondary" type="button" data-open-inquiry-quote="${escapeHtml(quote.id)}">打开${quote.own ? "我的" : escapeHtml(quote.display_name || "关联")}报价</button>`).join("");
+    title.innerHTML = `询价记录 <span translate="no">${escapeHtml(inquiry.inquiry_number)}</span>`;
+    const inquiryCounts = { device: inquiryGroups.devices.length, tool: inquiryGroups.tools.reduce((sum, item) => sum + Number(item.quantity || 1), 0), accessory: inquiryGroups.accessories.reduce((sum, item) => sum + Number(item.quantity || 1), 0) };
+    const summary = [[inquiryCounts.device, "台设备"], [inquiryCounts.tool, "件工具"], [inquiryCounts.accessory, "件附件"]].filter(([count]) => count > 0).map(([count, label]) => `${formatNumber(count)} ${label}`).join(" · ") || "未包含有效项目";
+    const customer = renderCustomerLines(inquiry.customer_name_snapshot || inquiry.customer_display_name, inquiry.customer_email_snapshot || inquiry.customer_email_current, inquiry.customer_phone_snapshot || inquiry.customer_phone_current);
+    const processing = `<strong>${escapeHtml(inquiryStatusLabel(inquiry.status))}</strong>${inquiry.assignee_name ? `<small>负责人：${escapeHtml(inquiry.assignee_name)}</small>` : ""}${quotedBy ? `<small>报价人：${escapeHtml(quotedBy)}</small>` : '<small>尚未报价</small>'}`;
+    body.innerHTML = `<div class="inquiry-share-layout"><header class="share-result-header"><div><h3>${summary}</h3></div><span class="badge ${inquiry.status === "new" ? "good" : ""}">${escapeHtml(inquiryStatusLabel(inquiry.status))}</span></header><div class="share-device-summary"><div><span>询价客户</span>${customer}</div><div><span>处理状态</span>${processing}</div></div>${inquiry.message ? `<section class="inquiry-message-module"><span>客户备注</span><p>${escapeHtml(inquiry.message)}</p></section>` : ""}<section class="inquiry-source-section share-detail-group"><header><span>关联分享码</span><small>${(inquiry.sources || []).length} 项</small></header><div class="inquiry-source-chips">${sources}</div></section>${devices}${catalogSections}${timeline ? `<section class="inquiry-timeline-section share-detail-group"><header><span>处理时间线</span><small>业务跟进记录</small></header><ol class="inquiry-timeline">${timeline}</ol></section>` : ""}</div>`;
+    footer.innerHTML = `<div class="inquiry-linked-quotes">${quoteLinks}</div><button class="button button-secondary" type="button" data-inquiry-drawer-close>关闭</button>`;
+  } catch (failure) {
+    if (failure.code === "INQUIRY_STATUS_CONFLICT") {
+      await loadInquiries();
+      body.innerHTML = '<div class="share-result-loading share-result-error">询价状态已更新，请关闭后重新打开。</div>';
+    } else body.innerHTML = `<div class="share-result-loading share-result-error">${escapeHtml(failure.message)}</div>`;
+  }
+}
+
+function ensureInquiryDrawer() {
+  if (inquiryDrawerElement && inquiryDrawerBackdrop) return;
+  inquiryDrawerBackdrop = document.createElement("div");
+  inquiryDrawerBackdrop.className = "share-drawer-backdrop inquiry-drawer-backdrop";
+  inquiryDrawerElement = document.createElement("aside");
+  inquiryDrawerElement.className = "share-drawer inquiry-drawer";
+  inquiryDrawerElement.setAttribute("role", "dialog");
+  inquiryDrawerElement.setAttribute("aria-modal", "true");
+  inquiryDrawerElement.setAttribute("aria-labelledby", "inquiry-drawer-title");
+  inquiryDrawerElement.setAttribute("aria-hidden", "true");
+  inquiryDrawerElement.innerHTML = `<header class="share-drawer-header"><div><span class="eyebrow">CUSTOMER INQUIRY</span><h2 id="inquiry-drawer-title" data-inquiry-drawer-title>询价详情</h2></div><button class="icon-button" type="button" data-inquiry-drawer-close aria-label="关闭">×</button></header><div class="share-drawer-body" data-inquiry-drawer-body></div><footer class="share-drawer-footer" data-inquiry-drawer-footer><button class="button button-secondary" type="button" data-inquiry-drawer-close>关闭</button></footer>`;
+  document.body.append(inquiryDrawerBackdrop, inquiryDrawerElement);
+  inquiryDrawerBackdrop.addEventListener("click", closeInquiryDrawer);
+  inquiryDrawerElement.addEventListener("click", (event) => { if (event.target.closest("[data-inquiry-drawer-close]")) closeInquiryDrawer(); });
+  inquiryDrawerElement.addEventListener("keydown", (event) => {
+    if (!inquiryDrawerElement.classList.contains("open") || document.querySelector("dialog[open]")) return;
+    if (event.key === "Escape") { event.preventDefault(); closeInquiryDrawer(); return; }
+    if (event.key !== "Tab") return;
+    const focusable = $$('button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])', inquiryDrawerElement).filter((item) => !item.hidden);
+    if (!focusable.length) return;
+    const first = focusable[0]; const last = focusable.at(-1);
+    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+  });
+}
+
+function openInquiryDrawer() {
+  ensureInquiryDrawer();
+  closeShareDrawer();
+  previousInquiryFocus = document.activeElement;
+  inquiryDrawerBackdrop.classList.add("open");
+  inquiryDrawerElement.classList.add("open");
+  inquiryDrawerElement.setAttribute("aria-hidden", "false");
+  document.body.classList.add("share-drawer-open");
+  requestAnimationFrame(() => $("[data-inquiry-drawer-close]", inquiryDrawerElement)?.focus());
+}
+
+function closeInquiryDrawer() {
+  if (!inquiryDrawerElement) return;
+  inquiryDrawerBackdrop.classList.remove("open");
+  inquiryDrawerElement.classList.remove("open");
+  inquiryDrawerElement.setAttribute("aria-hidden", "true");
+  document.body.classList.remove("share-drawer-open");
+  if (previousInquiryFocus?.isConnected) previousInquiryFocus.focus();
+  previousInquiryFocus = null;
 }
 
 async function quoteInquiry(button) {
   const inquiry = state.inquiries.find((item) => item.id === button.dataset.quoteInquiry);
   if (!inquiry) return;
+  if (Number(inquiry.quote_count || 0)) {
+    const confirmed = await confirmAction(
+      "该询价已有报价",
+      `已有 ${Number(inquiry.quote_count)} 份有效报价。是否继续创建属于你的报价单？`,
+      "继续报价"
+    );
+    if (!confirmed) return;
+  }
   try {
     await runButtonAction(button, "创建中…", async () => {
-      const result = await api(`/api/v1/staff/inquiries/${encodeURIComponent(inquiry.id)}/convert-to-quote`, { method: "POST", body: JSON.stringify({ version: inquiry.version, currency: "CNY" }) });
+      const result = await api(`/api/v1/staff/inquiries/${encodeURIComponent(inquiry.id)}/convert-to-quote`, { method: "POST", body: JSON.stringify({ version: inquiry.version, currency: "CNY", idempotency_key: crypto.randomUUID?.() || `${Date.now()}-inquiry-quote` }) });
       await loadData();
-      openQuoteEditor({ quoteId: result.quote.id, quoteVersion: result.quote.version, sourceInquiryId: result.quote.source_inquiry_id || inquiry.id, title: result.quote.title, items: result.quote.items, currency: result.quote.currency || "CNY", customerName: result.quote.customer_name || "", customerEmail: result.quote.customer_email || "", language: result.quote.language || "zh", recipientUserId: inquiry.created_by || "", recipientLabel: inquiry.customer_name_snapshot || inquiry.customer_display_name || "客户账号" });
-      showToast("报价草稿已创建，请填写价格后保存或发送");
+      openQuoteEditor({ quoteId: result.quote.id, quoteVersion: result.quote.version, sourceInquiryId: result.quote.source_inquiry_id || inquiry.id, sourceType: "inquiry", sourceDocumentVersion: result.quote.source_document_version || inquiry.document_version || 1, sourceDocumentId: inquiry.id, sourceCode: inquiry.inquiry_number, title: result.quote.title, items: result.quote.items, currency: result.quote.currency || "CNY", customerName: result.quote.customer_name || inquiry.customer_name_snapshot || inquiry.customer_display_name || "", customerEmail: result.quote.customer_email || inquiry.customer_email_snapshot || inquiry.customer_email_current || "", customerPhone: inquiry.customer_phone_snapshot || inquiry.customer_phone_current || "", language: result.quote.language || "zh", recipientUserId: inquiry.created_by || "", recipientLabel: inquiry.customer_name_snapshot || inquiry.customer_display_name || "客户账号" });
+      showToast(result.reused ? "已打开你的现有报价" : "报价草稿已创建，请填写价格后保存或发送");
     });
-  } catch (failure) { showToast(failure.message, "error"); }
+  } catch (failure) {
+    if (failure.code === "INQUIRY_STATUS_CONFLICT") {
+      await loadInquiries();
+      showToast("询价状态已更新，请重新操作", "error");
+    } else showToast(failure.message, "error");
+  }
+}
+
+function quoteCustomerContext(quote = {}) {
+  const inquiry = state.inquiries.find((item) =>
+    item.id === quote.source_inquiry_id
+    || item.id === quote.source_document_id
+    || item.own_latest_quote_id === quote.id
+  );
+  const recipientUserId = inquiry?.created_by || "";
+  return {
+    customerName: quote.customer_name || inquiry?.customer_name_snapshot || inquiry?.customer_display_name || "",
+    customerEmail: quote.customer_email || inquiry?.customer_email_snapshot || inquiry?.customer_email_current || "",
+    customerPhone: quote.customer_phone || inquiry?.customer_phone_snapshot || inquiry?.customer_phone_current || "",
+    recipientUserId,
+    recipientLabel: inquiry?.customer_name_snapshot || inquiry?.customer_display_name || inquiry?.customer_email_snapshot || (recipientUserId ? "客户账号" : "")
+  };
 }
 
 async function openInquiryQuote(button) {
   try {
     await runButtonAction(button, "打开中…", async () => {
       const quote = await api(`/api/v1/quotes/${encodeURIComponent(button.dataset.openInquiryQuote)}`);
+      const customer = quoteCustomerContext(quote);
+      const sourceDialog = button.closest("dialog");
+      if (sourceDialog?.open) sourceDialog.close();
       openQuoteEditor({
         quoteId: quote.id,
         quoteVersion: quote.version,
@@ -997,10 +1193,42 @@ async function openInquiryQuote(button) {
         currency: quote.currency || "CNY",
         sourceShareId: quote.source_share_id,
         sourceInquiryId: quote.source_inquiry_id,
-        customerName: quote.customer_name || "",
-        customerEmail: quote.customer_email || "",
+        sourceType: quote.source_type,
+        sourceDocumentVersion: quote.source_document_version,
+        sourceDocumentId: quote.source_document_id,
+        sourceCode: quote.source_code,
+        customerName: customer.customerName,
+        customerEmail: customer.customerEmail,
+        customerPhone: customer.customerPhone,
         language: quote.language || "zh",
+        recipientUserId: customer.recipientUserId,
+        recipientLabel: customer.recipientLabel,
       });
+    });
+  } catch (failure) { showToast(failure.message, "error"); }
+}
+
+async function exportInquiryPdf(button) {
+  const inquiryId = button.dataset.exportInquiry;
+  const inquiryNumber = button.dataset.inquiryNumber || inquiryId.slice(0, 8);
+  try {
+    await runButtonAction(button, "导出中…", async () => {
+      const response = await fetch(`${API_BASE}/api/v1/staff/inquiries/${encodeURIComponent(inquiryId)}/pdf?lang=${state.catalogLanguage === "en" ? "en" : "zh"}`, { headers: { Authorization: `Bearer ${sessionStorage.getItem(TOKEN_KEY)}` } });
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.detail || `PDF生成失败（${response.status}）`);
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `inquiry-${inquiryNumber}.pdf`;
+      link.style.display = "none";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      showToast("询价配置 PDF 已开始下载（不含价格）");
     });
   } catch (failure) { showToast(failure.message, "error"); }
 }
@@ -1220,36 +1448,64 @@ async function exportQuote(quote) {
   }
 }
 
-function openQuoteEditor({ quoteId = null, quoteVersion = null, configId = null, title, items, currency = "CNY", sourceShareId = null, sourceInquiryId = null, customerName = "", customerEmail = "", language = "zh", recipientUserId = "", recipientLabel = "" }) {
+function openQuoteEditor({ quoteId = null, quoteVersion = null, configId = null, title, items, currency = "CNY", sourceShareId = null, sourceInquiryId = null, sourceType = "direct", sourceDocumentVersion = null, sourceDocumentId = null, sourceCode = "", customerName = "", customerEmail = "", customerPhone = "", language = "zh", recipientUserId = "", recipientLabel = "" }) {
   const opener = document.activeElement;
-  const normalizedItems = canonicalCommerceItems(items || []).map((item) => ({
-    ...item,
-    quantity: toPositiveInteger(item.quantity),
-    price: Math.max(0, toFiniteNumber(item.price))
-  }));
+  let currentDeviceKey = null;
+  let deviceSequence = 0;
+  const normalizedItems = canonicalCommerceItems(items || []).map((item, index) => {
+    const kind = item.kind || (commerceItemType(item) === "tool" ? "tool" : commerceItemType(item) === "accessory" ? "accessory" : "option");
+    const lineId = item.line_id || `line-${crypto.randomUUID?.() || `${Date.now()}-${index}`}`;
+    if (kind === "product") {
+      deviceSequence = Number(item.device_sequence || deviceSequence + 1);
+      currentDeviceKey = item.device_key || `device-${deviceSequence}-${lineId.slice(-8)}`;
+    }
+    return {
+      ...item,
+      kind,
+      line_id: lineId,
+      device_key: kind === "product" ? currentDeviceKey : item.device_key,
+      parent_device_key: ["option", "surcharge"].includes(kind) ? (item.parent_device_key || currentDeviceKey) : null,
+      device_sequence: ["product", "option", "surcharge"].includes(kind) ? Number(item.device_sequence || deviceSequence) : 0,
+      availability: item.availability || "active",
+      quantity: toPositiveInteger(item.quantity),
+      price: Math.max(0, toFiniteNumber(item.quoted_price ?? item.price)),
+      reference_price: Math.max(0, toFiniteNumber(item.reference_price ?? (currency === "USD" ? item.price_usd : item.price_cny) ?? item.price)),
+      price_overridden: Boolean(item.price_overridden)
+    };
+  });
   const dialog = document.createElement("dialog");
   dialog.className = "product-dialog quote-editor-dialog";
   dialog.dataset.dynamic = "true";
   dialog.dataset.warnUnsaved = "true";
   dialog.innerHTML = `<form method="dialog" class="dialog-card quote-editor-card">
+    <input type="hidden" name="quote_items_state" />
     <header><div><span class="eyebrow">QUOTATION</span><h2>${quoteId ? "修改报价" : "创建报价"}</h2></div><button class="icon-button" value="cancel" aria-label="关闭">×</button></header>
     <div class="quote-editor-meta">
-      <label class="quote-title-field"><span>配置名称</span><input name="title" autocomplete="off" placeholder="例如：客户 A · CR1016 配置报价" value="${escapeHtml(title || "")}" required /></label>
-      <div class="quote-currency-row"><label class="quote-currency-field"><span>报价货币</span><select name="currency" aria-label="报价货币"><option value="CNY" ${currency === "CNY" ? "selected" : ""}>CNY · 人民币</option><option value="USD" ${currency === "USD" ? "selected" : ""}>USD · 美元</option></select></label><button class="button button-secondary quote-auto-price" type="button">自动填价</button></div>
-      <div class="quote-customer-row"><label><span>客户名称</span><input name="customer_name" autocomplete="organization" placeholder="填写客户或公司名称" value="${escapeHtml(customerName)}" /></label><label><span>客户邮箱</span><input name="customer_email" type="email" autocomplete="email" spellcheck="false" placeholder="用于报价单页头" value="${escapeHtml(customerEmail)}" /></label></div>
-      <div class="quote-recipient-row"><label><span>接收账号</span><select name="recipient_user_id"><option value="${escapeHtml(recipientUserId)}">${escapeHtml(recipientLabel || (recipientUserId ? "分享创建者" : "请选择客户账号"))}</option></select></label><label><span>搜索客户</span><input name="recipient_query" type="search" autocomplete="off" placeholder="姓名、邮箱或手机号" /></label></div>
+      <div class="quote-primary-row">
+        <label class="quote-title-field"><span>配置名称</span><input name="title" autocomplete="off" placeholder="例如：客户 A · CR1016 配置报价" value="${escapeHtml(title || "")}" required /></label>
+        <div class="quote-currency-row"><label class="quote-currency-field"><span>报价货币</span><select name="currency" aria-label="报价货币"><option value="CNY" ${currency === "CNY" ? "selected" : ""}>CNY · 人民币</option><option value="USD" ${currency === "USD" ? "selected" : ""}>USD · 美元</option></select></label><button class="button button-secondary quote-auto-price" type="button">自动填价</button></div>
+      </div>
+      <div class="quote-customer-summary">
+        <input name="customer_name" type="hidden" value="${escapeHtml(customerName)}" />
+        <input name="customer_email" type="hidden" value="${escapeHtml(customerEmail)}" />
+        <input name="customer_phone" type="hidden" value="${escapeHtml(customerPhone)}" />
+        <select name="recipient_user_id" hidden><option value="${escapeHtml(recipientUserId)}" selected>${escapeHtml(recipientLabel || customerName || customerEmail || "未选择客户")}</option></select>
+        <span class="quote-customer-summary-label">接收客户</span>
+        <div class="quote-customer-summary-value"><strong>${escapeHtml(customerName || recipientLabel || "尚未选择客户")}</strong>${customerEmail ? `<small>${escapeHtml(customerEmail)}</small>` : ""}${customerPhone ? `<small>${escapeHtml(customerPhone)}</small>` : ""}</div>
+        <button class="icon-button quote-customer-search" type="button" aria-label="搜索并更换接收客户" title="搜索客户">⌕</button>
+        <button class="icon-button quote-customer-manual" type="button" aria-label="手动填写客户资料" title="手动填写客户资料">✎</button>
+      </div>
     </div>
     <p class="quote-editor-error" role="alert" hidden></p>
+    <div class="quote-add-toolbar" aria-label="添加报价项目">
+      <label><span>添加类型</span><select name="quote_add_kind"><option value="option">设备可选配置</option><option value="tool">维修工具</option><option value="accessory">设备附件</option></select></label>
+      <label class="quote-add-device-field"><span>所属设备</span><select name="quote_add_device"></select></label>
+      <label class="quote-add-source-field"><span>选择项目</span><select name="quote_add_source"><option value="">正在读取目录…</option></select></label>
+      <button class="button button-secondary quote-add-item" type="button">添加</button>
+    </div>
     <div class="quote-edit-list">
-      <div class="quote-edit-head"><span>产品 / 配置</span><span>数量</span><span>单价</span></div>
-      ${normalizedItems.length ? normalizedItems.map((item, index) => {
-        const context = item.device_label || item.device || item.code || (item.kind === "product" ? "设备" : "可选配置");
-        const type = commerceItemType(item);
-        const previous = normalizedItems[index - 1];
-        const startsGroup = !previous || commerceItemType(previous) !== type || (type === "device_config" && previous.device_label !== item.device_label);
-        const groupLabel = type === "tool" ? "维修工具" : type === "accessory" ? "设备附件" : context;
-        return `${startsGroup ? `<div class="quote-commerce-group-title">${escapeHtml(groupLabel)}</div>` : ""}<div class="quote-edit-row"><div class="quote-item-name"><small>${escapeHtml(context)}</small><strong>${escapeHtml(item.name || "未命名项目")}</strong></div><input class="quote-qty-input" data-q="qty" data-i="${index}" aria-label="数量" type="number" min="1" step="1" value="${item.quantity}"><input class="quote-price-input" data-q="price" data-i="${index}" aria-label="单价" type="number" min="0" step="0.01" value="${item.price}"></div>`;
-      }).join("") : '<div class="quote-edit-empty">暂无可报价项目，请返回分享配置重新选择。</div>'}
+      <div class="quote-edit-head"><span>产品 / 配置</span><span>数量</span><span>单价</span><span>操作</span></div>
+      <div id="quote-edit-rows"></div>
     </div>
     <div class="quote-total-row"><span>合计</span><strong class="quote-total">0</strong></div>
     <footer><button class="button button-quiet" value="cancel">取消</button><button class="button button-secondary" value="save">保存报价</button><button class="button button-secondary" value="saveAndExport">保存并导出 PDF</button><button class="button button-primary" value="saveAndDeliver">保存并发送给客户</button></footer>
@@ -1269,48 +1525,280 @@ function openQuoteEditor({ quoteId = null, quoteVersion = null, configId = null,
   const totalElement = $(".quote-total", dialog);
   const errorElement = $(".quote-editor-error", dialog);
   const setQuoteError = (message = "") => { errorElement.textContent = message; errorElement.hidden = !message; };
+  const updateDeliveryAvailability = () => {
+    const canDeliver = Boolean($("[name=recipient_user_id]", dialog).value);
+    const button = $('button[value="saveAndDeliver"]', dialog);
+    button.disabled = !canDeliver;
+    button.title = canDeliver ? "" : "手动填写的客户未绑定系统账号，仅可保存或导出 PDF";
+  };
+  let referenceCatalog = null;
+  let referenceReconciled = false;
+  const itemStateInput = $("[name=quote_items_state]", dialog);
+  const syncQuoteItemsFromInputs = () => {
+    normalizedItems.forEach((item, index) => {
+      const quantityInput = $(`[data-q="qty"][data-i="${index}"]`, dialog);
+      const priceInput = $(`[data-q="price"][data-i="${index}"]`, dialog);
+      if (quantityInput) item.quantity = toPositiveInteger(quantityInput.value);
+      if (priceInput) {
+        item.price = Math.max(0, toFiniteNumber(priceInput.value));
+        item.quoted_price = item.price;
+        item.price_overridden = Math.abs(item.price - toFiniteNumber(item.reference_price)) >= 0.005;
+      }
+    });
+    itemStateInput.value = JSON.stringify(normalizedItems);
+    return normalizedItems.map((item) => ({ ...item }));
+  };
+  const itemContext = (item) => item.device_label || item.device || item.code || (item.kind === "product" ? "设备" : "可选配置");
+  const isLockedQuoteLine = (item) => item.kind === "product" || item.locked === true || item.configuration_role === "base_device" || item.configuration_role === "base_power" || String(item.source_id || "").startsWith("base-");
+  const quoteDeviceSpecifications = (item) => (item.device_specifications || [])
+    .filter((entry) => entry && (entry.value || entry.label))
+    .map((entry) => `${entry.label || entry.key || "配置"}：${entry.value || "—"}`)
+    .join(" · ");
+  const renderQuoteRows = () => {
+    const rows = $("#quote-edit-rows", dialog);
+    rows.innerHTML = normalizedItems.length ? normalizedItems.map((item, index) => {
+      const context = itemContext(item);
+      const type = commerceItemType(item);
+      const previous = normalizedItems[index - 1];
+      const startsGroup = !previous || commerceItemType(previous) !== type || (type === "device_config" && previous.device_sequence !== item.device_sequence);
+      const groupLabel = type === "tool" ? "维修工具" : type === "accessory" ? "设备附件" : context;
+      const availability = item.availability && item.availability !== "active" ? `<span class="quote-availability-warning">${item.availability === "inactive" ? "已停用" : item.availability === "missing" ? "已缺失" : "仅历史快照"}</span>` : "";
+      const detail = item.kind === "product" ? quoteDeviceSpecifications(item) : "";
+      const itemCode = String(item.code || "").trim();
+      const itemName = String(item.name || "").trim();
+      const lineName = item.kind === "product" ? "设备基础价格" : itemCode && itemName.toLocaleLowerCase().startsWith(itemCode.toLocaleLowerCase()) ? itemName : [itemCode, itemName].filter(Boolean).join(" · ") || "未命名项目";
+      const deleteButton = isLockedQuoteLine(item) ? '<span class="quote-base-lock">基础配置</span>' : `<button class="table-action danger quote-line-delete" type="button" data-delete-quote-line="${index}" aria-label="删除 ${escapeHtml(item.name || "报价项目")}">删除</button>`;
+      return `${startsGroup ? `<div class="quote-commerce-group-title">${escapeHtml(groupLabel)}</div>` : ""}<div class="quote-edit-row"><div class="quote-item-name">${availability ? `<small>${availability}</small>` : ""}<strong>${escapeHtml(lineName)}</strong>${detail ? `<span>${escapeHtml(detail)}</span>` : ""}</div><input class="quote-qty-input" data-q="qty" data-i="${index}" aria-label="数量" type="number" min="1" step="1" value="${item.quantity}"><input class="quote-price-input" data-q="price" data-i="${index}" aria-label="单价" type="number" min="0" step="0.01" value="${item.price}"><span class="quote-line-action">${deleteButton}</span></div>`;
+    }).join("") : '<div class="quote-edit-empty">暂无可报价项目，请添加项目后保存。</div>';
+    itemStateInput.value = JSON.stringify(normalizedItems);
+  };
+  const productLines = () => normalizedItems.filter((item) => item.kind === "product");
+  const updateAddSelectors = () => {
+    const kind = $("[name=quote_add_kind]", dialog).value;
+    const addToolbar = $(".quote-add-toolbar", dialog);
+    const deviceField = $(".quote-add-device-field", dialog);
+    const deviceSelect = $("[name=quote_add_device]", dialog);
+    const sourceSelect = $("[name=quote_add_source]", dialog);
+    const selectedSourceId = sourceSelect.value;
+    const products = productLines();
+    deviceField.hidden = kind !== "option";
+    addToolbar.classList.toggle("has-device", kind === "option");
+    deviceSelect.innerHTML = products.map((item) => `<option value="${escapeHtml(item.device_key)}">${escapeHtml(item.device_label || item.code || item.name || `设备 ${item.device_sequence}`)}</option>`).join("");
+    if (!referenceCatalog) {
+      sourceSelect.innerHTML = '<option value="">正在读取目录…</option>';
+      return;
+    }
+    let candidates = referenceCatalog.options || [];
+    if (kind === "option") {
+      const target = products.find((item) => item.device_key === deviceSelect.value) || products[0];
+      candidates = candidates.filter((item) => item.catalog_type === "optional" && !["motor", "voltage", "channel"].includes(item.category_id) && item.product_ids?.includes(target?.source_id));
+    } else {
+      candidates = candidates.filter((item) => item.catalog_type === (kind === "tool" ? "tools" : "accessories"));
+    }
+    sourceSelect.innerHTML = candidates.length
+      ? `<option value="">请选择</option>${candidates.map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml([item.code, language === "en" ? item.name_en || item.name : item.name].filter(Boolean).join(" · "))}</option>`).join("")}`
+      : '<option value="">暂无可添加项目</option>';
+    if (selectedSourceId && candidates.some((item) => String(item.id) === selectedSourceId)) sourceSelect.value = selectedSourceId;
+  };
+  const ensureReferenceCatalog = async () => {
+    if (!referenceCatalog) referenceCatalog = await api("/api/v1/staff/reference-prices");
+    if (!referenceReconciled) {
+      syncQuoteItemsFromInputs();
+      const productAvailability = referenceCatalog.product_availability || {};
+      const optionAvailability = referenceCatalog.option_availability || {};
+      normalizedItems.forEach((item) => {
+        const sourceId = String(item.source_id || "");
+        if (!sourceId) {
+          item.availability = "snapshot_only";
+          return;
+        }
+        const states = item.kind === "product" ? productAvailability : optionAvailability;
+        item.availability = states[sourceId] || "missing";
+      });
+      referenceReconciled = true;
+      renderQuoteRows();
+    }
+    updateAddSelectors();
+    return referenceCatalog;
+  };
   let recipientSearchTimer = null;
   const loadRecipients = async (query = "") => {
     const result = await api(`/api/v1/staff/customers?query=${encodeURIComponent(query)}`);
-    const select = $("[name=recipient_user_id]", dialog);
-    const selected = select.value || recipientUserId;
-    const records = result.items || [];
-    if (recipientUserId && !records.some((item) => item.id === recipientUserId)) records.unshift({ id: recipientUserId, display_name: recipientLabel || "分享创建者", email: "", phone: "" });
-    select.innerHTML = `<option value="">请选择客户账号</option>${records.map((item) => `<option value="${escapeHtml(item.id)}" ${item.id === selected ? "selected" : ""}>${escapeHtml(item.display_name || item.email || item.phone || item.id)}${item.email ? ` · ${escapeHtml(item.email)}` : ""}</option>`).join("")}`;
+    return result.items || [];
   };
-  const collectQuoteItems = () => normalizedItems.map((item, index) => ({
-    ...item,
-    quantity: toPositiveInteger($(`[data-q="qty"][data-i="${index}"]`, dialog).value),
-    price: Math.max(0, toFiniteNumber($(`[data-q="price"][data-i="${index}"]`, dialog).value))
-  }));
+  const selectRecipient = (customer) => {
+    const name = customer.display_name || customer.name || customer.email || customer.phone || "未命名客户";
+    const select = $("[name=recipient_user_id]", dialog);
+    select.innerHTML = `<option value="${escapeHtml(customer.id)}" selected>${escapeHtml(name)}</option>`;
+    $("[name=customer_name]", dialog).value = name;
+    $("[name=customer_email]", dialog).value = customer.email || "";
+    $("[name=customer_phone]", dialog).value = customer.phone || "";
+    $(".quote-customer-summary", dialog).classList.remove("is-manual");
+    $(".quote-customer-summary-value", dialog).innerHTML = `<strong>${escapeHtml(name)}</strong>${customer.email ? `<small>${escapeHtml(customer.email)}</small>` : ""}${customer.phone ? `<small>${escapeHtml(customer.phone)}</small>` : ""}`;
+    updateDeliveryAvailability();
+  };
+  const openRecipientPicker = async () => {
+    const picker = document.createElement("dialog");
+    picker.className = "share-dialog quote-customer-picker";
+    picker.innerHTML = `<form method="dialog" class="share-dialog-card quote-customer-picker-card"><header><div><span class="eyebrow">CUSTOMER</span><h2>选择接收客户</h2></div><button class="icon-button" value="cancel" aria-label="关闭">×</button></header><label class="quote-customer-picker-search"><span>搜索客户</span><input type="search" autocomplete="off" placeholder="姓名、邮箱或手机号" autofocus /></label><div class="quote-customer-picker-results" aria-live="polite"><div class="empty">正在读取客户…</div></div><footer><button class="button button-secondary" value="cancel">取消</button></footer></form>`;
+    document.body.appendChild(picker);
+    const input = $("input", picker);
+    const results = $(".quote-customer-picker-results", picker);
+    let records = [];
+    const renderResults = () => {
+      results.innerHTML = records.length ? records.map((customer) => `<button type="button" class="quote-customer-result" data-customer-id="${escapeHtml(customer.id)}"><span><strong>${escapeHtml(customer.display_name || customer.email || customer.phone || "未命名客户")}</strong>${customer.email ? `<small>${escapeHtml(customer.email)}</small>` : ""}${customer.phone ? `<small>${escapeHtml(customer.phone)}</small>` : ""}</span><b aria-hidden="true">选择</b></button>`).join("") : '<div class="empty">没有找到匹配客户</div>';
+    };
+    const search = async () => {
+      results.innerHTML = '<div class="empty">正在搜索…</div>';
+      try { records = await loadRecipients(input.value.trim()); renderResults(); }
+      catch (error) { results.innerHTML = `<div class="empty">${escapeHtml(error.message || "客户读取失败")}</div>`; }
+    };
+    input.addEventListener("input", () => { clearTimeout(recipientSearchTimer); recipientSearchTimer = setTimeout(search, 250); });
+    results.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-customer-id]");
+      if (!button) return;
+      const customer = records.find((item) => String(item.id) === button.dataset.customerId);
+      if (!customer) return;
+      selectRecipient(customer);
+      setQuoteError();
+      picker.close();
+    });
+    picker.addEventListener("close", () => picker.remove(), { once: true });
+    picker.showModal();
+    await search();
+  };
+  const openManualCustomerEditor = () => {
+    const editor = document.createElement("dialog");
+    editor.className = "share-dialog quote-customer-picker quote-customer-manual-dialog";
+    editor.innerHTML = `<form method="dialog" class="share-dialog-card quote-customer-picker-card quote-customer-manual-card"><header><div><span class="eyebrow">CUSTOMER</span><h2>手动填写客户资料</h2><p>仅用于保存报价和 PDF，不会发送到账户。</p></div><button class="icon-button" value="cancel" aria-label="关闭">×</button></header><div class="quote-customer-manual-fields"><label><span>客户姓名</span><input name="manual_name" autocomplete="name" value="${escapeHtml($("[name=customer_name]", dialog).value)}" required /></label><label><span>客户邮箱</span><input name="manual_email" type="email" autocomplete="email" value="${escapeHtml($("[name=customer_email]", dialog).value)}" /></label><label><span>客户电话</span><input name="manual_phone" type="tel" autocomplete="tel" value="${escapeHtml($("[name=customer_phone]", dialog).value)}" /></label></div><footer><button class="button button-quiet" value="cancel">取消</button><button class="button button-primary" value="apply">应用资料</button></footer></form>`;
+    document.body.appendChild(editor);
+    editor.addEventListener("close", () => editor.remove(), { once: true });
+    $("form", editor).addEventListener("submit", (event) => {
+      if (event.submitter?.value !== "apply") return;
+      event.preventDefault();
+      const name = $("[name=manual_name]", editor).value.trim();
+      const email = $("[name=manual_email]", editor).value.trim();
+      const phone = $("[name=manual_phone]", editor).value.trim();
+      if (!name) { $("[name=manual_name]", editor).focus(); return; }
+      $("[name=customer_name]", dialog).value = name;
+      $("[name=customer_email]", dialog).value = email;
+      $("[name=customer_phone]", dialog).value = phone;
+      $("[name=recipient_user_id]", dialog).innerHTML = '<option value="" selected>手动填写客户</option>';
+      $(".quote-customer-summary", dialog).classList.add("is-manual");
+      $(".quote-customer-summary-value", dialog).innerHTML = `<strong>${escapeHtml(name)} <em>手动客户</em></strong>${email ? `<small>${escapeHtml(email)}</small>` : ""}${phone ? `<small>${escapeHtml(phone)}</small>` : ""}`;
+      updateDeliveryAvailability();
+      setQuoteError();
+      editor.close();
+    });
+    editor.showModal();
+  };
+  const collectQuoteItems = () => syncQuoteItemsFromInputs();
   const updateTotal = () => {
     const total = collectQuoteItems().reduce((sum, item) => sum + item.price * item.quantity, 0);
     const selectedCurrency = $("[name=currency]", dialog).value;
-    totalElement.textContent = `${selectedCurrency} ${total.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    totalElement.textContent = `${selectedCurrency} ${formatNumber(total, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     return total;
   };
   dialog.addEventListener("input", () => { setQuoteError(); updateTotal(); });
   dialog.addEventListener("change", updateTotal);
-  $("[name=recipient_query]", dialog).addEventListener("input", (event) => {
-    clearTimeout(recipientSearchTimer);
-    recipientSearchTimer = setTimeout(() => loadRecipients(event.target.value.trim()).catch((error) => setQuoteError(error.message)), 300);
+  $("[name=quote_add_kind]", dialog).addEventListener("change", updateAddSelectors);
+  $("[name=quote_add_device]", dialog).addEventListener("change", updateAddSelectors);
+  $(".quote-add-item", dialog).addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    try {
+      await runButtonAction(button, "添加中…", async () => {
+        syncQuoteItemsFromInputs();
+        const kind = $("[name=quote_add_kind]", dialog).value;
+        const selectedSourceId = $("[name=quote_add_source]", dialog).value;
+        const catalog = await ensureReferenceCatalog();
+        const sourceId = selectedSourceId || $("[name=quote_add_source]", dialog).value;
+        const record = (catalog.options || []).find((item) => item.id === sourceId);
+        if (!record) { setQuoteError("请选择需要添加的有效目录项目。"); return; }
+        const expectedCatalogType = kind === "tool" ? "tools" : kind === "accessory" ? "accessories" : "optional";
+        if (record.catalog_type !== expectedCatalogType) { setQuoteError("所选项目与添加类型不一致，请重新选择。"); return; }
+        const selectedCurrency = $("[name=currency]", dialog).value;
+        const referencePrice = Math.max(0, toFiniteNumber(selectedCurrency === "USD" ? record.price_usd : record.price));
+        const existing = normalizedItems.find((item) => item.kind === kind && item.source_id === record.id && (kind !== "option" || item.parent_device_key === $("[name=quote_add_device]", dialog).value));
+        if (existing && ["tool", "accessory"].includes(kind)) {
+          existing.quantity += 1;
+          renderQuoteRows();
+          updateTotal();
+          showToast("该项目已存在，数量已增加 1");
+          return;
+        }
+        if (existing) { setQuoteError("该设备已经包含这个配置。"); return; }
+        const lineId = `line-${crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`}`;
+        const name = language === "en" ? record.name_en || record.name : record.name;
+        const newItem = {
+          kind, line_id: lineId, source_id: record.id, code: record.code || "", name: name || record.code || "未命名项目",
+          quantity: 1, price: referencePrice, quoted_price: referencePrice, reference_price: referencePrice,
+          price_cny: Math.max(0, toFiniteNumber(record.price)), price_usd: Math.max(0, toFiniteNumber(record.price_usd)),
+          price_overridden: false, availability: "active", category_id: record.category_id,
+          category_sort_order: record.category_sort_order, sort_order: record.sort_order,
+        };
+        if (kind === "option") {
+          const parentKey = $("[name=quote_add_device]", dialog).value;
+          const parent = productLines().find((item) => item.device_key === parentKey);
+          if (!parent) { setQuoteError("当前报价没有可关联的设备。"); return; }
+          newItem.parent_device_key = parentKey;
+          newItem.device_sequence = parent.device_sequence;
+          newItem.device_label = parent.device_label || parent.code || parent.name;
+          const lastInGroup = normalizedItems.reduce((position, item, index) => item.device_sequence === parent.device_sequence && ["product", "option", "surcharge"].includes(item.kind) ? index : position, -1);
+          normalizedItems.splice(lastInGroup + 1, 0, newItem);
+        } else {
+          newItem.device_label = kind === "tool" ? "维修工具" : "设备附件";
+          normalizedItems.push(newItem);
+          const ordered = canonicalCommerceItems(normalizedItems);
+          normalizedItems.splice(0, normalizedItems.length, ...ordered);
+        }
+        renderQuoteRows();
+        updateAddSelectors();
+        updateTotal();
+        showToast("项目已添加，保存报价后生效");
+      });
+    } catch (error) { setQuoteError(error.message || "添加项目失败"); }
   });
+  $("#quote-edit-rows", dialog).addEventListener("click", async (event) => {
+    const button = event.target.closest("[data-delete-quote-line]");
+    if (!button) return;
+    syncQuoteItemsFromInputs();
+    const index = Number(button.dataset.deleteQuoteLine);
+    const item = normalizedItems[index];
+    if (!item || isLockedQuoteLine(item)) return;
+    if (!await confirmAction("删除报价项目", `确定从当前报价中删除“${item.name || item.code || "该项目"}”吗？`, "确认删除")) return;
+    normalizedItems.splice(index, 1);
+    renderQuoteRows();
+    updateAddSelectors();
+    updateTotal();
+  });
+  $("#quote-edit-rows", dialog).addEventListener("wheel", (event) => {
+    if (!event.target.matches(".quote-price-input")) return;
+    event.preventDefault();
+    const list = $(".quote-edit-list", dialog);
+    list.scrollTop += event.deltaY;
+    list.scrollLeft += event.deltaX;
+  }, { passive: false });
+  $(".quote-customer-search", dialog).addEventListener("click", () => openRecipientPicker().catch((error) => setQuoteError(error.message)));
+  $(".quote-customer-manual", dialog).addEventListener("click", openManualCustomerEditor);
   $(".quote-auto-price", dialog).addEventListener("click", async (event) => {
     const button = event.currentTarget;
     const originalText = button.textContent;
     button.disabled = true;
     button.textContent = "读取中…";
     try {
-      const prices = await api("/api/v1/staff/reference-prices");
+      const prices = await ensureReferenceCatalog();
       const selectedCurrency = $("[name=currency]", dialog).value;
       const normalizeCode = (value) => String(value || "").replace(/[^a-z0-9]/gi, "").toUpperCase();
       const productMap = new Map((prices.products || []).flatMap((product) => [[normalizeCode(product.id), product], [normalizeCode(product.name), product]]));
       const optionMap = new Map((prices.options || []).flatMap((option) => [[normalizeCode(option.id), option], [normalizeCode(option.code), option]]));
       let matched = 0;
       normalizedItems.forEach((item, index) => {
+        if (item.price_overridden) return;
         const hasSnapshotPrice = Object.prototype.hasOwnProperty.call(item, "price_cny") || Object.prototype.hasOwnProperty.call(item, "price_usd");
         const snapshotPrice = selectedCurrency === "USD" ? toFiniteNumber(item.price_usd) : toFiniteNumber(item.price_cny);
         if (hasSnapshotPrice) {
+          item.reference_price = Math.max(0, snapshotPrice);
+          item.price_overridden = false;
           $(`[data-q="price"][data-i="${index}"]`, dialog).value = Math.max(0, snapshotPrice);
           if (snapshotPrice > 0) matched += 1;
           return;
@@ -1323,6 +1811,8 @@ function openQuoteEditor({ quoteId = null, quoteVersion = null, configId = null,
         if (!record) return;
         const price = selectedCurrency === "USD" ? toFiniteNumber(record.price_usd) : toFiniteNumber(record.base_price ?? record.price ?? 0);
         if (price <= 0) return;
+        item.reference_price = price;
+        item.price_overridden = false;
         $(`[data-q="price"][data-i="${index}"]`, dialog).value = price;
         matched += 1;
       });
@@ -1342,14 +1832,14 @@ function openQuoteEditor({ quoteId = null, quoteVersion = null, configId = null,
     if (!finalItems.length) { setQuoteError("没有可保存的报价项目，请返回分享配置重新选择。"); return; }
     if (action === "saveAndDeliver") {
       const recipientSelect = $("[name=recipient_user_id]", dialog);
-      if (!recipientSelect.value) { setQuoteError("请选择接收报价的客户账号。"); recipientSelect.focus(); return; }
+      if (!recipientSelect.value) { setQuoteError("请选择接收报价的客户账号。"); $(".quote-customer-search", dialog).focus(); return; }
       const recipient = recipientSelect.selectedOptions[0]?.textContent?.trim() || "所选客户";
       const email = $("[name=customer_email]", dialog).value.trim() || "未填写报价页头邮箱";
       const confirmed = await confirmAction("确认发送报价", `接收账号：${recipient}；客户邮箱：${email}；当前版本：${quoteVersion || "新报价"}。保存后将发送最新版本。`, "确认发送");
       if (!confirmed) return;
     }
     try { await runButtonAction(event.submitter, "正在保存…", async () => {
-      const savedQuote = await api("/api/v1/quotes", { method: "POST", body: JSON.stringify({ quote_id: quoteId, version: quoteId ? quoteVersion : null, config_id: configId, title: quoteTitle, items: finalItems, total_price: total, currency: $("[name=currency]", dialog).value, source_share_id: sourceShareId, source_inquiry_id: sourceInquiryId, customer_name: $("[name=customer_name]", dialog).value.trim(), customer_email: $("[name=customer_email]", dialog).value.trim(), language }) });
+      const savedQuote = await api("/api/v1/quotes", { method: "POST", body: JSON.stringify({ quote_id: quoteId, version: quoteId ? quoteVersion : null, config_id: configId, title: quoteTitle, items: finalItems, total_price: total, currency: $("[name=currency]", dialog).value, source_share_id: sourceShareId, source_inquiry_id: sourceInquiryId, source_type: sourceType, source_document_version: sourceDocumentVersion, source_document_id: sourceDocumentId, source_code: sourceCode, customer_name: $("[name=customer_name]", dialog).value.trim(), customer_email: $("[name=customer_email]", dialog).value.trim(), customer_phone: $("[name=customer_phone]", dialog).value.trim(), language }) });
       const exported = action === "saveAndExport" ? await exportQuote(savedQuote) : false;
       if (action === "saveAndExport" && !exported) {
         quoteId = savedQuote.id; quoteVersion = savedQuote.version;
@@ -1369,14 +1859,19 @@ function openQuoteEditor({ quoteId = null, quoteVersion = null, configId = null,
       await loadData();
     }); } catch (error) { setQuoteError(error.message || "保存报价失败，请检查填写内容后重试。"); }
   });
+  renderQuoteRows();
+  updateAddSelectors();
   updateTotal();
-  loadRecipients().catch((error) => setQuoteError(error.message));
+  updateDeliveryAvailability();
+  ensureReferenceCatalog().catch((error) => setQuoteError(`目录读取失败：${error.message}。历史项目仍可修改和保存。`));
+  quoteForm.dataset.initialSnapshot = JSON.stringify(Object.fromEntries(new FormData(quoteForm)));
   dialog.showModal();
   requestAnimationFrame(() => $("[name=title]", dialog)?.focus());
 }
 
 async function editQuote(quote) {
-  openQuoteEditor({ quoteId: quote.id, quoteVersion: quote.version, configId: quote.config_id, title: quote.title, items: quote.items, currency: quote.currency || "CNY", sourceShareId: quote.source_share_id, sourceInquiryId: quote.source_inquiry_id, customerName: quote.customer_name, customerEmail: quote.customer_email, language: quote.language || "zh" });
+  const customer = quoteCustomerContext(quote);
+  openQuoteEditor({ quoteId: quote.id, quoteVersion: quote.version, configId: quote.config_id, title: quote.title, items: quote.items, currency: quote.currency || "CNY", sourceShareId: quote.source_share_id, sourceInquiryId: quote.source_inquiry_id, sourceType: quote.source_type, sourceDocumentVersion: quote.source_document_version, sourceDocumentId: quote.source_document_id, sourceCode: quote.source_code, customerName: customer.customerName, customerEmail: customer.customerEmail, customerPhone: customer.customerPhone, language: quote.language || "zh", recipientUserId: customer.recipientUserId, recipientLabel: customer.recipientLabel });
 }
 
 function plainDescription(value) {
@@ -1392,9 +1887,13 @@ function renderShareDetail(share) {
     const snapshot = shareItem.snapshot || {};
     const categoryList = snapshot.categories || [];
     const baseCategoryIds = new Set(["motor", "voltage", "channel"]);
+    const isConfiguredValue = (value) => {
+      const normalized = String(value || "").trim().toLocaleLowerCase();
+      return Boolean(normalized) && !new Set(["未配置", "未选择", "无", "none", "not configured", "not selected", "n/a", "—", "-"]).has(normalized);
+    };
     const singleValue = (id) => {
       const category = categoryList.find((item) => item.id === id);
-      return category?.options?.[0]?.name || "未选择";
+      return category?.options?.map((option) => String(option.name || "").trim()).filter(isConfiguredValue).join(" / ") || "";
     };
     const categories = categoryList.filter((category) => !baseCategoryIds.has(category.id)).map((category) => {
       const options = (category.options || []).map((option) => {
@@ -1404,13 +1903,13 @@ function renderShareDetail(share) {
       return `<section class="share-detail-group"><header><span>${escapeHtml(category.name)}</span><small>${category.options.length} 项</small></header><ul>${options}</ul></section>`;
     }).join("");
     const basics = [
-      ["型号", snapshot.product?.name || "未填写"],
-      ["名称", snapshot.product?.title_name || "未填写"],
-      ["颜色", snapshot.color?.label || snapshot.color?.code || "未选择"],
+      ["型号", snapshot.product?.name || ""],
+      ["名称", snapshot.product?.title_name || ""],
+      ["颜色", snapshot.color?.label || snapshot.color?.code || ""],
       ["电机", singleValue("motor")],
       ["电源", singleValue("voltage")],
-      ["通道", categoryList.some((item) => item.id === "channel") ? singleValue("channel") : "未配置"]
-    ].map(([label, value]) => `<div><span>${label}</span><strong>${escapeHtml(value)}</strong></div>`).join("");
+      ["通道", singleValue("channel")]
+    ].filter(([, value]) => isConfiguredValue(value)).map(([label, value]) => `<div><span>${label}</span><strong>${escapeHtml(value)}</strong></div>`).join("");
     return `<article class="share-device-block"><h4>设备 ${index + 1} · ${escapeHtml(snapshot.product?.name || "未填写")}</h4><section class="share-detail-group share-device-basics"><header><span>设备信息</span><small>型号与基本配置</small></header><div class="share-basic-list">${basics}</div></section><div class="share-detail-groups">${categories || '<div class="empty">该设备未选择其他选配项目</div>'}</div></article>`;
   }).join("");
   const catalogSections = [["tool", "维修工具"], ["accessory", "设备附件"]].map(([type, label]) => {
@@ -1422,15 +1921,21 @@ function renderShareDetail(share) {
     }).join("");
     return `<article class="share-device-block share-catalog-block"><section class="share-detail-group"><header><span>${label}</span><small>${entries.length} 项</small></header><ul>${rows}</ul></section></article>`;
   }).join("");
-  const sender = share.sender_name || "未填写姓名";
-  const contact = share.sender_email || share.sender_phone || "未填写联系方式";
+  const senderDetails = renderCustomerLines(share.sender_name, share.sender_email, share.sender_phone);
+  const quoteCount = Number(share.quote_count || 0);
+  const quotePeople = (share.quoted_by || []).map((person) => person.display_name).filter(Boolean).join("、");
+  const quoteState = quoteCount
+    ? `<strong>已报价 · ${formatNumber(quoteCount)} 份</strong>${quotePeople ? `<small>${escapeHtml(quotePeople)}</small>` : ""}`
+    : share.historical_quote_count
+      ? '<strong>历史报价已归档</strong>'
+      : '<strong>未报价</strong>';
   const summaryParts = [];
   if (deviceItems.length) summaryParts.push(`${deviceItems.length} 台设备`);
     const toolCount = shareItems.filter((item) => item.item_type === "tool").reduce((sum, item) => sum + Number(item.quantity || 1), 0);
     const accessoryCount = shareItems.filter((item) => item.item_type === "accessory").reduce((sum, item) => sum + Number(item.quantity || 1), 0);
     if (toolCount) summaryParts.push(`${toolCount} 件工具`);
     if (accessoryCount) summaryParts.push(`${accessoryCount} 件附件`);
-  return `<header class="share-result-header"><div><span class="eyebrow">CONFIGURATION ${escapeHtml(share.code)}</span><h3>${escapeHtml(summaryParts.join(" · ") || "分享配置")}</h3></div><span class="badge good">有效至 ${formatDate(share.expires_at)}</span></header><div class="share-device-summary"><div><span>发送用户</span><strong>${escapeHtml(sender)}</strong><small>${escapeHtml(contact)}</small></div></div>${devices}${catalogSections}`;
+  return `<header class="share-result-header"><div><h3>${escapeHtml(summaryParts.join(" · ") || "分享配置")}</h3></div><span class="badge good">有效至 ${formatDate(share.expires_at)}</span></header><div class="share-device-summary"><div><span>发送用户</span>${senderDetails}</div><div><span>报价状态</span>${quoteState}</div></div>${devices}${catalogSections}`;
 }
 
 function ensureShareDrawer() {
@@ -1443,7 +1948,7 @@ function ensureShareDrawer() {
   shareDrawerElement.setAttribute("aria-modal", "true");
   shareDrawerElement.setAttribute("aria-label", "分享配置详情");
   shareDrawerElement.setAttribute("aria-hidden", "true");
-  shareDrawerElement.innerHTML = `<header class="share-drawer-header"><div><span class="eyebrow">SHARE PREVIEW</span><h2>分享详情</h2></div><button class="icon-button" type="button" data-share-drawer-close aria-label="关闭">×</button></header><div class="share-drawer-body" data-share-drawer-body></div><footer class="share-drawer-footer"><button class="button button-secondary" type="button" data-share-export disabled>导出 PDF</button><button class="button button-primary" type="button" data-share-quote disabled>报价</button></footer>`;
+  shareDrawerElement.innerHTML = `<header class="share-drawer-header"><div><span class="eyebrow">SHARE PREVIEW</span><h2 data-share-drawer-title>分享记录</h2></div><button class="icon-button" type="button" data-share-drawer-close aria-label="关闭">×</button></header><div class="share-drawer-body" data-share-drawer-body></div><footer class="share-drawer-footer"><button class="button button-secondary" type="button" data-share-export disabled>导出 PDF</button><button class="button button-primary" type="button" data-share-quote disabled>报价</button></footer>`;
   document.body.append(shareDrawerBackdrop, shareDrawerElement);
   shareDrawerBackdrop.addEventListener("click", closeShareDrawer);
   shareDrawerElement.querySelector("[data-share-drawer-close]").addEventListener("click", closeShareDrawer);
@@ -1464,9 +1969,11 @@ function ensureShareDrawer() {
 function setShareDrawerContent(code, content) {
   ensureShareDrawer();
   const body = $("[data-share-drawer-body]", shareDrawerElement);
+  const title = $("[data-share-drawer-title]", shareDrawerElement);
   const exportButton = $("[data-share-export]", shareDrawerElement);
   const quoteButton = $("[data-share-quote]", shareDrawerElement);
   body.innerHTML = content;
+  title.innerHTML = code ? `分享记录 <span translate="no">${escapeHtml(code)}</span>` : "分享记录";
   [exportButton, quoteButton].forEach((button) => { button.dataset.code = code || ""; button.disabled = !code; });
 }
 
@@ -1534,6 +2041,22 @@ async function exportSharePdf(code) {
 }
 
 async function quoteShare(code) {
+  const summary = state.shares.find((item) => item.code === code);
+  if (summary?.own_latest_quote_id) {
+    try {
+      const quote = await api(`/api/v1/quotes/${encodeURIComponent(summary.own_latest_quote_id)}`);
+      editQuote(quote);
+    } catch (failure) { showToast(failure.message, "error"); }
+    return;
+  }
+  if (Number(summary?.quote_count || 0)) {
+    const confirmed = await confirmAction(
+      "该分享已有报价",
+      `已有 ${Number(summary.quote_count)} 份有效报价。是否继续创建属于你的报价单？`,
+      "继续报价"
+    );
+    if (!confirmed) return;
+  }
   try {
     const share = await api(`/api/v1/staff/shares/${code}/preview?lang=${state.catalogLanguage === "en" ? "en" : "zh"}`);
     const shareItems = share.items?.length ? share.items : [{ snapshot: share.snapshot }];
@@ -1557,7 +2080,14 @@ async function quoteShare(code) {
       const deviceLabel = `设备 ${deviceIndex} · ${product.name || product.id || "—"}`;
       const baseCny = toFiniteNumber(cnyPricing.base_price ?? product.base_price);
       const baseUsd = toFiniteNumber(usdPricing.base_price ?? product.price_usd);
-      items.push({ kind: "product", source_id: product.id, name: product.title_name || product.name || "设备", device_label: deviceLabel, code: product.name || product.id, price: baseCny, price_cny: baseCny, price_usd: baseUsd, quantity: 1 });
+      const deviceSpecifications = [];
+      const color = snapshot.color || {};
+      if (color.label || color.code) deviceSpecifications.push({ key: "color", label: state.catalogLanguage === "en" ? "Appearance" : "外观颜色", value: color.label || color.code });
+      (snapshot.categories || []).filter((category) => ["motor", "channel", "voltage", "power"].includes(category.id)).forEach((category) => {
+        const value = (category.options || []).map((option) => option.name || option.code).filter(Boolean).join(" / ");
+        if (value) deviceSpecifications.push({ key: category.id, label: category.name || category.id, value });
+      });
+      items.push({ kind: "product", source_id: product.id, name: product.title_name || product.name || "设备", device_label: deviceLabel, code: product.name || product.id, price: baseCny, price_cny: baseCny, price_usd: baseUsd, reference_price: baseCny, quantity: 1, locked: true, configuration_role: "base_device", device_specifications: deviceSpecifications });
 
       const priceLines = (value) => new Map(((value || {}).lines || []).map((line) => [line.source_id, toFiniteNumber(line.amount)]));
       const cnyLines = priceLines(cnyPricing);
@@ -1566,10 +2096,11 @@ async function quoteShare(code) {
         if (["motor", "voltage", "channel"].includes(category.id) && category.id !== "voltage") return;
         const priceCny = cnyLines.has(option.id) ? cnyLines.get(option.id) : toFiniteNumber(option.price_cny ?? option.price);
         const priceUsd = usdLines.has(option.id) ? usdLines.get(option.id) : toFiniteNumber(option.price_usd);
-        items.push({ kind: category.id === "voltage" ? "surcharge" : "option", source_id: option.id, name: option.name, device_label: deviceLabel, code: option.code || "", price: priceCny, price_cny: priceCny, price_usd: priceUsd, quantity: 1 });
+        const isPower = ["voltage", "power"].includes(category.id) || option.base_option_type === "power";
+        items.push({ kind: isPower ? "surcharge" : "option", source_id: option.id, name: option.name, device_label: deviceLabel, code: option.code || "", price: priceCny, price_cny: priceCny, price_usd: priceUsd, reference_price: priceCny, quantity: 1, locked: isPower, configuration_role: isPower ? "base_power" : "optional", category_id: category.id });
       }));
     });
-    openQuoteEditor({ configId: share.config_id, title: `分享配置 ${code}`, items, currency: "CNY", sourceShareId: share.id, customerName: share.customer_name || share.sender_name || "", customerEmail: share.customer_email || share.sender_email || "", language: state.catalogLanguage === "en" ? "en" : "zh", recipientUserId: share.created_by || "", recipientLabel: share.sender_name || share.customer_name || share.sender_email || "分享创建者" });
+    openQuoteEditor({ configId: share.config_id, title: `分享配置 ${code}`, items, currency: "CNY", sourceShareId: share.id, sourceType: "share", sourceDocumentVersion: share.document_version || 1, sourceDocumentId: share.id, sourceCode: share.code || code, customerName: share.customer_name || share.sender_name || "", customerEmail: share.customer_email || share.sender_email || "", customerPhone: share.customer_phone || share.sender_phone || "", language: state.catalogLanguage === "en" ? "en" : "zh", recipientUserId: share.created_by || "", recipientLabel: share.sender_name || share.customer_name || share.sender_email || "分享创建者" });
   } catch (failure) { showToast(failure.message); }
 }
 
@@ -1580,6 +2111,19 @@ async function logout() {
 
 function openSidebar() { $("#sidebar").classList.add("open"); $("#sidebar-backdrop").hidden = false; }
 function closeSidebar() { $("#sidebar").classList.remove("open"); $("#sidebar-backdrop").hidden = true; }
+function setSidebarCollapsed(collapsed, persist = true) {
+  const app = $("#admin-app");
+  const toggle = $("#sidebar-collapse-toggle");
+  const isCollapsed = Boolean(collapsed);
+  app?.classList.toggle("sidebar-collapsed", isCollapsed);
+  if (toggle) {
+    const label = isCollapsed ? "展开侧边栏" : "折叠侧边栏";
+    toggle.setAttribute("aria-expanded", String(!isCollapsed));
+    toggle.setAttribute("aria-label", label);
+    toggle.title = label;
+  }
+  if (persist) localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(isCollapsed));
+}
 function setCategoryCollapsed(group, collapsed) {
   if (!group) return;
   const content = $(".catalog-group-content", group);
@@ -1606,6 +2150,7 @@ function restoreCollapsedCategories() {
 function bindEvents() {
   $("#login-form").addEventListener("submit", login);
   $("#logout-button").addEventListener("click", logout);
+  $("#sidebar-collapse-toggle")?.addEventListener("click", () => setSidebarCollapsed(!$("#admin-app").classList.contains("sidebar-collapsed")));
   $$(".nav-item").forEach((item) => item.addEventListener("click", () => switchView(item.dataset.view)));
   $$('[data-go]').forEach((item) => item.addEventListener("click", () => switchView(item.dataset.go)));
   if ($("#primary-action")) $("#primary-action").addEventListener("click", () => openUserEditor());
@@ -1687,9 +2232,11 @@ function bindEvents() {
   $("#inquiry-status-filter")?.addEventListener("change", () => { state.inquiryStatus = $("#inquiry-status-filter").value; state.inquiryPage = 1; loadInquiries().catch((failure) => showToast(failure.message, "error")); });
   $("#inquiry-page-prev")?.addEventListener("click", () => { if (state.inquiryPage > 1) { state.inquiryPage -= 1; loadInquiries().catch((failure) => showToast(failure.message, "error")); } });
   $("#inquiry-page-next")?.addEventListener("click", () => { if (state.inquiryPage * state.inquiryPageSize < state.inquiryTotal) { state.inquiryPage += 1; loadInquiries().catch((failure) => showToast(failure.message, "error")); } });
-  $("#quote-filter-form")?.addEventListener("submit", (event) => { event.preventDefault(); state.quoteStatus = $("#quote-status-filter").value; loadQuotes().catch((failure) => showToast(failure.message, "error")); });
+  let quoteSearchTimer;
+  $("#quote-filter-form")?.addEventListener("submit", (event) => { event.preventDefault(); clearTimeout(quoteSearchTimer); state.quoteQuery = $("#quote-query").value.trim(); state.quoteStatus = $("#quote-status-filter").value; loadQuotes().catch((failure) => showToast(failure.message, "error")); });
+  $("#quote-query")?.addEventListener("input", () => { clearTimeout(quoteSearchTimer); quoteSearchTimer = setTimeout(() => { state.quoteQuery = $("#quote-query").value.trim(); loadQuotes().catch((failure) => showToast(failure.message, "error")); }, 350); });
   $("#quote-status-filter")?.addEventListener("change", () => { state.quoteStatus = $("#quote-status-filter").value; loadQuotes().catch((failure) => showToast(failure.message, "error")); });
-  $("#quote-filter-reset")?.addEventListener("click", () => { $("#quote-filter-form").reset(); state.quoteStatus = "all"; loadQuotes().catch((failure) => showToast(failure.message, "error")); });
+  $("#quote-filter-reset")?.addEventListener("click", () => { clearTimeout(quoteSearchTimer); $("#quote-filter-form").reset(); state.quoteQuery = ""; state.quoteStatus = "all"; loadQuotes().catch((failure) => showToast(failure.message, "error")); });
   $("#refresh-audit")?.addEventListener("click", loadData);
   addLanguageToggles(); addProductButton(); addCatalogLanguageSwitches();
   $("#menu-button").addEventListener("click", openSidebar);
@@ -1732,6 +2279,7 @@ function bindEvents() {
     const exportButton = event.target.closest("[data-export-share]"); if (exportButton) exportSharePdf(exportButton.dataset.exportShare);
     const quoteActionButton = event.target.closest("[data-quote-share]"); if (quoteActionButton) quoteShare(quoteActionButton.dataset.quoteShare);
     const viewInquiryButton = event.target.closest("[data-view-inquiry]"); if (viewInquiryButton) viewInquiry(viewInquiryButton.dataset.viewInquiry);
+    const exportInquiryButton = event.target.closest("[data-export-inquiry]"); if (exportInquiryButton) exportInquiryPdf(exportInquiryButton);
     const takeInquiryButton = event.target.closest("[data-take-inquiry]"); if (takeInquiryButton) takeInquiry(takeInquiryButton);
     const quoteInquiryButton = event.target.closest("[data-quote-inquiry]"); if (quoteInquiryButton) quoteInquiry(quoteInquiryButton);
     const openInquiryQuoteButton = event.target.closest("[data-open-inquiry-quote]"); if (openInquiryQuoteButton) openInquiryQuote(openInquiryQuoteButton);
@@ -1837,6 +2385,7 @@ async function saveConfigOption(event) {
 }
 
 document.addEventListener("DOMContentLoaded", async () => {
+  setSidebarCollapsed(localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "true", false);
   restoreUserFilterState(); restoreBusinessFilterState(); bindEvents(); await checkApi(); await restoreSession();
 });
 document.addEventListener("click", (event) => {

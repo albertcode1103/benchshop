@@ -11,6 +11,25 @@ from .database import get_connection
 CATALOG_CART_TYPES = ("tools", "accessories")
 
 
+def _merge_source_traces(rows: List[Any]) -> List[Dict[str, Any]]:
+    merged: Dict[str, Dict[str, Any]] = {}
+    for row in rows:
+        try:
+            traces = json.loads(row["source_trace_json"] or "[]")
+        except (TypeError, ValueError, json.JSONDecodeError):
+            traces = []
+        for trace in traces if isinstance(traces, list) else []:
+            if not isinstance(trace, dict):
+                continue
+            key = str(trace.get("source_key") or "{}:{}".format(trace.get("source_document_version") or 1, trace.get("source_share_id") or trace.get("source_share_code") or ""))
+            if not key.strip(":"):
+                continue
+            if key not in merged:
+                merged[key] = dict(trace, source_key=key, imported_quantity=0)
+            merged[key]["imported_quantity"] = int(merged[key].get("imported_quantity") or 0) + max(1, int(trace.get("imported_quantity") or 1))
+    return list(merged.values())
+
+
 def list_public_catalog_items(catalog_type: str, language: str = "zh") -> List[Dict[str, Any]]:
     if catalog_type not in CATALOG_CART_TYPES:
         raise CatalogValidationError("CATALOG_TYPE_INVALID", "catalog_type")
@@ -74,6 +93,10 @@ def _decode(row: Any, language: str = "zh") -> Optional[Dict[str, Any]]:
         return None
     item = dict(row)
     snapshot = json.loads(item.pop("snapshot_json"))
+    try:
+        item["source_trace"] = json.loads(item.pop("source_trace_json", "[]") or "[]")
+    except (TypeError, ValueError, json.JSONDecodeError):
+        item["source_trace"] = []
     selected_language = "en" if language == "en" else "zh"
     item["snapshot"] = snapshot
     item["code"] = snapshot.get("code", "")
@@ -99,7 +122,7 @@ def get_saved_catalog_item(item_id: str, user_id: str, language: str = "zh") -> 
         row = db.execute(
             """
             SELECT sci.id, sci.option_id, sci.catalog_type, sci.quantity,
-                   sci.snapshot_json, sci.version, sci.created_at, sci.updated_at,
+                   sci.snapshot_json, sci.source_trace_json, sci.version, sci.created_at, sci.updated_at,
                    c.sort_order AS catalog_category_sort_order,
                    o.sort_order AS catalog_sort_order
             FROM saved_catalog_items sci
@@ -117,7 +140,7 @@ def list_saved_catalog_items(user_id: str, language: str = "zh") -> List[Dict[st
         rows = db.execute(
             """
             SELECT sci.id, sci.option_id, sci.catalog_type, sci.quantity,
-                   sci.snapshot_json, sci.version, sci.created_at, sci.updated_at,
+                   sci.snapshot_json, sci.source_trace_json, sci.version, sci.created_at, sci.updated_at,
                    c.sort_order AS catalog_category_sort_order,
                    o.sort_order AS catalog_sort_order
             FROM saved_catalog_items sci
@@ -178,7 +201,7 @@ def set_saved_catalog_option_quantity(
     with get_connection() as db:
         rows = db.execute(
             """
-            SELECT id FROM saved_catalog_items
+            SELECT id, source_trace_json FROM saved_catalog_items
             WHERE user_id = ? AND option_id = ? AND archived_at IS NULL
             ORDER BY created_at ASC, id ASC
             """,
@@ -200,11 +223,11 @@ def set_saved_catalog_option_quantity(
             db.execute(
                 """
                 UPDATE saved_catalog_items
-                SET quantity = ?, version = version + 1,
+                SET quantity = ?, source_trace_json = ?, version = version + 1,
                     updated_at = CURRENT_TIMESTAMP
                 WHERE id = ? AND user_id = ? AND archived_at IS NULL
                 """,
-                (quantity, primary_id, user_id),
+                (quantity, json.dumps(_merge_source_traces(rows), ensure_ascii=False), primary_id, user_id),
             )
             for duplicate in rows[1:]:
                 db.execute(

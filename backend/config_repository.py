@@ -237,6 +237,10 @@ def _decode(row: Any, lang: Optional[str] = None) -> Optional[Dict[str, Any]]:
         return None
     item = dict(row)
     item["snapshot"] = json.loads(item.pop("snapshot_json"))
+    try:
+        item["source_trace"] = json.loads(item.pop("source_trace_json", "[]") or "[]")
+    except (TypeError, ValueError, json.JSONDecodeError):
+        item["source_trace"] = []
     if lang in ("zh", "en"):
         item["snapshot"] = _refresh_snapshot(deepcopy(item["snapshot"]), lang)
     return item

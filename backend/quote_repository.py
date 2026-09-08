@@ -2,18 +2,29 @@
 
 import json
 import math
+import sqlite3
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence
 
 from .database import get_connection
 from .security import to_iso, utc_now
 
 
-def _normalize_quote_items(items: Any) -> List[Dict[str, Any]]:
+def _normalize_quote_items(items: Any, currency: str = "CNY") -> List[Dict[str, Any]]:
     if not isinstance(items, list) or not items:
         raise ValueError("报价单至少需要一条项目")
     normalized: List[Dict[str, Any]] = []
+    current_device_key: Optional[str] = None
+    current_device_sequence = 0
+    allowed_kinds = {"product", "option", "surcharge", "tool", "accessory"}
+    allowed_availability = {"active", "inactive", "missing", "snapshot_only"}
+    def safe_non_negative_int(value: Any, fallback: int = 0) -> int:
+        try:
+            return max(0, int(value))
+        except (TypeError, ValueError):
+            return fallback
+
     for index, item in enumerate(items, start=1):
         if not isinstance(item, dict):
             raise ValueError("第 {} 条报价项目格式不正确".format(index))
@@ -27,9 +38,61 @@ def _normalize_quote_items(items: Any) -> List[Dict[str, Any]]:
         if not math.isfinite(price) or price < 0:
             raise ValueError("第 {} 条报价单价必须为非负数字".format(index))
         normalized_item = dict(item)
+        kind = str(normalized_item.get("kind") or "option").strip().lower()
+        if kind not in allowed_kinds:
+            raise ValueError("第 {} 条报价项目类型不正确".format(index))
+        line_id = _optional_text(normalized_item.get("line_id"), 100) or uuid.uuid4().hex
+        availability = str(normalized_item.get("availability") or "active").strip().lower()
+        if availability not in allowed_availability:
+            availability = "snapshot_only"
+        if kind == "product":
+            current_device_sequence += 1
+            current_device_sequence = max(1, safe_non_negative_int(normalized_item.get("device_sequence"), current_device_sequence))
+            current_device_key = _optional_text(normalized_item.get("device_key"), 100) or "device-{}-{}".format(current_device_sequence, line_id[:8])
+            normalized_item["device_key"] = current_device_key
+            normalized_item["parent_device_key"] = None
+            normalized_item["device_sequence"] = current_device_sequence
+        elif kind in ("option", "surcharge"):
+            parent_key = _optional_text(normalized_item.get("parent_device_key"), 100) or current_device_key
+            normalized_item["parent_device_key"] = parent_key
+            normalized_item["device_sequence"] = safe_non_negative_int(normalized_item.get("device_sequence"), current_device_sequence)
+        else:
+            normalized_item["parent_device_key"] = None
+            normalized_item["device_sequence"] = 0
+        reference_price = normalized_item.get("reference_price")
+        if reference_price is None:
+            reference_price = normalized_item.get("price_usd" if currency == "USD" else "price_cny", price)
+        try:
+            clean_reference_price = float(reference_price or 0)
+        except (TypeError, ValueError):
+            clean_reference_price = 0
+        if not math.isfinite(clean_reference_price) or clean_reference_price < 0:
+            clean_reference_price = 0
+        normalized_item["kind"] = kind
+        normalized_item["line_id"] = line_id
+        normalized_item["availability"] = availability
         normalized_item["quantity"] = quantity
         normalized_item["price"] = round(price, 2)
+        normalized_item["quoted_price"] = round(price, 2)
+        normalized_item["reference_price"] = round(clean_reference_price, 2)
+        normalized_item["price_overridden"] = bool(normalized_item.get("price_overridden")) or abs(price - clean_reference_price) >= 0.005
         normalized.append(normalized_item)
+    device_sequences: Dict[str, int] = {}
+    for item in normalized:
+        if item.get("kind") != "product":
+            continue
+        device_key = str(item.get("device_key") or "")
+        if device_key in device_sequences:
+            raise ValueError("报价设备标识重复")
+        device_sequences[device_key] = int(item.get("device_sequence") or 0)
+    for index, item in enumerate(normalized, start=1):
+        if item.get("kind") not in ("option", "surcharge"):
+            continue
+        parent_key = item.get("parent_device_key")
+        if parent_key and parent_key not in device_sequences:
+            raise ValueError("第 {} 条配置找不到所属设备".format(index))
+        if parent_key:
+            item["device_sequence"] = device_sequences[parent_key]
     return _canonical_quote_items(normalized)
 
 
@@ -53,9 +116,10 @@ def _canonical_quote_items(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     ranks = {"device_config": 0, "tool": 1, "accessory": 2}
     indexed.sort(key=lambda pair: (
         ranks[item_type(pair[1])],
-        pair[0] if item_type(pair[1]) == "device_config" else safe_order(pair[1].get("category_sort_order", pair[1].get("catalog_category_sort_order"))),
-        pair[0] if item_type(pair[1]) == "device_config" else safe_order(pair[1].get("sort_order", pair[1].get("catalog_sort_order"))),
-        "" if item_type(pair[1]) == "device_config" else str(pair[1].get("code") or ""),
+        safe_order(pair[1].get("device_sequence")) if item_type(pair[1]) == "device_config" else safe_order(pair[1].get("category_sort_order", pair[1].get("catalog_category_sort_order"))),
+        0 if pair[1].get("kind") == "product" else 1 if item_type(pair[1]) == "device_config" else safe_order(pair[1].get("sort_order", pair[1].get("catalog_sort_order"))),
+        safe_order(pair[1].get("category_sort_order")) if item_type(pair[1]) == "device_config" else str(pair[1].get("code") or ""),
+        safe_order(pair[1].get("sort_order")) if item_type(pair[1]) == "device_config" else pair[0],
         pair[0],
     ))
     return [item for _, item in indexed]
@@ -143,27 +207,41 @@ def save_quote(
     currency: str = "CNY",
     source_share_id: Optional[str] = None,
     source_inquiry_id: Optional[str] = None,
+    source_type: str = "direct",
+    source_document_version: Optional[int] = None,
+    source_document_id: Optional[str] = None,
+    source_code: str = "",
     customer_name: str = "",
     customer_email: str = "",
+    customer_phone: str = "",
     language: str = "zh",
     allow_any_owner: bool = False,
     expected_version: Optional[int] = None,
 ) -> Dict[str, Any]:
-    normalized_items = _normalize_quote_items(items)
+    if currency not in ("CNY", "USD"):
+        raise ValueError("报价货币仅支持人民币或美元")
+    normalized_items = _normalize_quote_items(items, currency)
     try:
         requested_total = float(total_price)
     except (TypeError, ValueError):
         raise ValueError("报价总价格式不正确")
     if not math.isfinite(requested_total) or requested_total < 0:
         raise ValueError("报价总价格式不正确")
-    if currency not in ("CNY", "USD"):
-        raise ValueError("报价货币仅支持人民币或美元")
-
     calculated_total = round(sum(item["quantity"] * item["price"] for item in normalized_items), 2)
     selected_language = "en" if language == "en" else "zh"
     clean_config_id = _optional_text(config_id, 100) or None
     clean_source_share_id = _optional_text(source_share_id, 100) or None
     clean_source_inquiry_id = _optional_text(source_inquiry_id, 100) or None
+    clean_source_type = str(source_type or "direct").strip().lower()
+    if clean_source_type not in ("direct", "share", "inquiry"):
+        raise ValueError("Quote source invalid")
+    clean_source_document_id = _optional_text(source_document_id, 100) or None
+    if clean_source_type == "inquiry":
+        clean_source_document_id = clean_source_document_id or clean_source_inquiry_id
+    elif clean_source_type == "share":
+        clean_source_document_id = clean_source_document_id or clean_source_share_id
+    elif clean_source_document_id:
+        raise ValueError("Quote source invalid")
     clean_title = _optional_text(title, 200) or ("Quotation" if selected_language == "en" else "配置报价单")
 
     with get_connection() as db:
@@ -184,7 +262,10 @@ def save_quote(
                 clean_source_inquiry_id = None
 
         if quote_id:
-            new_row = db.execute("SELECT user_id, lifecycle_status, version FROM commerce_quotes WHERE id = ?", (quote_id,)).fetchone()
+            new_row = db.execute(
+                "SELECT user_id, lifecycle_status, version, quote_number FROM commerce_quotes WHERE id = ?",
+                (quote_id,),
+            ).fetchone()
             if new_row is not None:
                 if not allow_any_owner and new_row["user_id"] != user_id:
                     raise ValueError("Quote access denied")
@@ -192,30 +273,43 @@ def save_quote(
                     raise ValueError("Quote archived")
                 if expected_version is None or int(new_row["version"] or 1) != int(expected_version):
                     raise ValueError("Quote version conflict")
-                cursor = db.execute(
-                    """
-                    UPDATE commerce_quotes
-                    SET config_id = ?, source_share_id = ?, source_inquiry_id = ?, title = ?,
-                        customer_name = ?, customer_email = ?, language = ?,
-                        items_json = ?, total_price = ?, currency = ?,
-                        version = version + 1, updated_at = CURRENT_TIMESTAMP
-                    WHERE id = ? AND version = ?
-                    """,
-                    (
-                        clean_config_id,
-                        clean_source_share_id,
-                        clean_source_inquiry_id,
-                        clean_title,
-                        _optional_text(customer_name, 200),
-                        _optional_text(customer_email, 320),
-                        selected_language,
-                        json.dumps(normalized_items, ensure_ascii=False, allow_nan=False),
-                        calculated_total,
-                        currency,
-                        quote_id,
-                        expected_version,
-                    ),
-                )
+                quote_number = new_row["quote_number"] or _allocate_quote_number(db)
+                try:
+                    cursor = db.execute(
+                        """
+                        UPDATE commerce_quotes
+                        SET quote_number = ?, config_id = ?, source_share_id = ?, source_inquiry_id = ?,
+                            source_type = ?, source_document_version = ?, source_document_id = ?, source_code = ?, title = ?,
+                            customer_name = ?, customer_email = ?, customer_phone = ?, language = ?,
+                            items_json = ?, total_price = ?, currency = ?,
+                            version = version + 1, updated_at = CURRENT_TIMESTAMP
+                        WHERE id = ? AND version = ?
+                        """,
+                        (
+                            quote_number,
+                            clean_config_id,
+                            clean_source_share_id,
+                            clean_source_inquiry_id,
+                            clean_source_type,
+                            source_document_version,
+                            clean_source_document_id,
+                            _optional_text(source_code, 100),
+                            clean_title,
+                            _optional_text(customer_name, 200),
+                            _optional_text(customer_email, 320),
+                            _optional_text(customer_phone, 80),
+                            selected_language,
+                            json.dumps(normalized_items, ensure_ascii=False, allow_nan=False),
+                            calculated_total,
+                            currency,
+                            quote_id,
+                            expected_version,
+                        ),
+                    )
+                except sqlite3.IntegrityError as error:
+                    if clean_source_type in ("share", "inquiry") and clean_source_document_id:
+                        raise ValueError("Quote source already exists") from error
+                    raise
                 if not cursor.rowcount:
                     raise ValueError("Quote version conflict")
                 row = db.execute("SELECT * FROM commerce_quotes WHERE id = ?", (quote_id,)).fetchone()
@@ -248,29 +342,43 @@ def save_quote(
             return _decode(row, document_version=1)
 
         new_quote_id = uuid.uuid4().hex
-        db.execute(
-            """
-            INSERT INTO commerce_quotes
-                (id, config_id, source_share_id, source_inquiry_id, user_id, title,
-                 customer_name, customer_email, language, items_json,
-                 total_price, currency)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                new_quote_id,
-                clean_config_id,
-                clean_source_share_id,
-                clean_source_inquiry_id,
-                user_id,
-                clean_title,
-                _optional_text(customer_name, 200),
-                _optional_text(customer_email, 320),
-                selected_language,
-                json.dumps(normalized_items, ensure_ascii=False, allow_nan=False),
-                calculated_total,
-                currency,
-            ),
-        )
+        quote_number = _allocate_quote_number(db)
+        try:
+            db.execute(
+                """
+                INSERT INTO commerce_quotes
+                    (id, quote_number, config_id, source_share_id, source_inquiry_id,
+                     source_type, source_document_version, source_document_id, source_code,
+                     user_id, title,
+                     customer_name, customer_email, customer_phone, language, items_json,
+                     total_price, currency)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    new_quote_id,
+                    quote_number,
+                    clean_config_id,
+                    clean_source_share_id,
+                    clean_source_inquiry_id,
+                    clean_source_type,
+                    source_document_version,
+                    clean_source_document_id,
+                    _optional_text(source_code, 100),
+                    user_id,
+                    clean_title,
+                    _optional_text(customer_name, 200),
+                    _optional_text(customer_email, 320),
+                    _optional_text(customer_phone, 80),
+                    selected_language,
+                    json.dumps(normalized_items, ensure_ascii=False, allow_nan=False),
+                    calculated_total,
+                    currency,
+                ),
+            )
+        except sqlite3.IntegrityError as error:
+            if clean_source_type in ("share", "inquiry") and clean_source_document_id:
+                raise ValueError("Quote source already exists") from error
+            raise
         row = db.execute("SELECT * FROM commerce_quotes WHERE id = ?", (new_quote_id,)).fetchone()
     return _decode(row, document_version=2)
 
@@ -279,11 +387,27 @@ def _decode(row, document_version: int = 2):
     if not row:
         return None
     result = dict(row)
-    result["items"] = json.loads(result.pop("items_json"))
+    raw_items = json.loads(result.pop("items_json"))
+    hydrated_items = []
+    for index, item in enumerate(raw_items, start=1):
+        hydrated = dict(item) if isinstance(item, dict) else {"name": str(item)}
+        hydrated.setdefault("line_id", "legacy-{}-{}".format(str(result.get("id") or "quote")[:8], index))
+        hydrated_items.append(hydrated)
+    try:
+        result["items"] = _normalize_quote_items(hydrated_items, result.get("currency") or "CNY")
+    except ValueError:
+        # A malformed historical snapshot remains inspectable; validation is
+        # deliberately enforced only if staff choose to save it again.
+        result["items"] = hydrated_items
     result.setdefault("source_share_id", None)
     result.setdefault("source_inquiry_id", None)
+    result.setdefault("source_type", "direct")
+    result.setdefault("source_document_version", None)
+    result.setdefault("source_document_id", None)
+    result.setdefault("source_code", "")
     result.setdefault("customer_name", "")
     result.setdefault("customer_email", "")
+    result.setdefault("customer_phone", "")
     result.setdefault("language", "zh")
     result["document_version"] = document_version
     return result
@@ -293,13 +417,19 @@ def list_quotes(
     user_id: Optional[str] = None,
     status_filter: str = "all",
     include_archived: bool = True,
+    query: str = "",
 ) -> List[Dict[str, Any]]:
     restriction = "WHERE q.user_id = ?" if user_id else ""
     params = (user_id,) if user_id else ()
     with get_connection() as db:
         new_rows = db.execute(
             """
-            SELECT q.*, u.display_name, u.email, u.phone
+            SELECT q.*, u.display_name, u.email, u.phone,
+                   COALESCE(NULLIF(q.customer_phone, ''),
+                       (SELECT i.customer_phone_snapshot FROM customer_inquiries i WHERE i.id = q.source_inquiry_id),
+                       (SELECT customer.phone FROM commerce_shares s JOIN users customer ON customer.id = s.created_by WHERE s.id = q.source_share_id),
+                       ''
+                   ) AS resolved_customer_phone
             FROM commerce_quotes q JOIN users u ON u.id = q.user_id
             {} ORDER BY q.updated_at DESC
             """.format(restriction),
@@ -307,7 +437,7 @@ def list_quotes(
         ).fetchall()
         legacy_rows = db.execute(
             """
-            SELECT q.*, u.display_name, u.email, u.phone
+            SELECT q.*, u.display_name, u.email, u.phone, '' AS customer_phone
             FROM quotes q JOIN users u ON u.id = q.user_id
             {} ORDER BY q.updated_at DESC
             """.format(restriction),
@@ -327,23 +457,119 @@ def list_quotes(
     results = [_decode(row, 2) for row in new_rows] + [_decode(row, 1) for row in legacy_rows]
     for item in results:
         item.setdefault("lifecycle_status", "draft")
+        if not item.get("customer_phone"):
+            item["customer_phone"] = item.pop("resolved_customer_phone", "")
         item.update(delivery_map.get(item["id"], {"delivery_count": 0, "recipient_summary": ""}))
     if not include_archived:
         results = [item for item in results if item["lifecycle_status"] != "archived"]
     if status_filter != "all":
         results = [item for item in results if item["lifecycle_status"] == status_filter]
+    search = str(query or "").strip().casefold()
+    if search:
+        searchable_fields = (
+            "quote_number", "title", "customer_name", "customer_email", "customer_phone",
+            "source_code", "display_name", "email", "phone", "recipient_summary",
+        )
+        results = [item for item in results if any(search in str(item.get(field) or "").casefold() for field in searchable_fields)]
     return sorted(results, key=lambda item: str(item.get("updated_at") or ""), reverse=True)
 
 
 def get_quote(quote_id: str, user_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
-    owner_clause = "AND user_id = ?" if user_id else ""
+    owner_clause = "AND q.user_id = ?" if user_id else ""
     params = (quote_id, user_id) if user_id else (quote_id,)
     with get_connection() as db:
-        row = db.execute("SELECT * FROM commerce_quotes WHERE id = ? {}".format(owner_clause), params).fetchone()
+        row = db.execute(
+            """
+            SELECT q.*, u.display_name, u.email, u.phone
+            FROM commerce_quotes q LEFT JOIN users u ON u.id = q.user_id
+            WHERE q.id = ? {}
+            """.format(owner_clause),
+            params,
+        ).fetchone()
         if row is not None:
-            return _decode(row, 2)
-        row = db.execute("SELECT * FROM quotes WHERE id = ? {}".format(owner_clause), params).fetchone()
-    return _decode(row, 1)
+            result = _decode(row, 2)
+        else:
+            row = db.execute(
+                """
+                SELECT q.*, u.display_name, u.email, u.phone
+                FROM quotes q LEFT JOIN users u ON u.id = q.user_id
+                WHERE q.id = ? {}
+                """.format(owner_clause),
+                params,
+            ).fetchone()
+            result = _decode(row, 1)
+    if result is not None:
+        result["quoted_by"] = {
+            "display_name": result.get("display_name") or "",
+            "email": result.get("email") or "",
+            "phone": result.get("phone") or "",
+        }
+    return result
+
+
+def find_active_quote_for_source(source_type: str, source_document_id: str, user_id: str) -> Optional[Dict[str, Any]]:
+    if source_type not in ("share", "inquiry") or not source_document_id or not user_id:
+        return None
+    with get_connection() as db:
+        row = db.execute(
+            """
+            SELECT * FROM commerce_quotes
+            WHERE source_type = ? AND source_document_id = ? AND user_id = ?
+              AND lifecycle_status != 'archived'
+            ORDER BY updated_at DESC, id DESC LIMIT 1
+            """,
+            (source_type, source_document_id, user_id),
+        ).fetchone()
+    return _decode(row, 2)
+
+
+def quote_source_summaries(source_type: str, source_ids: Sequence[str], current_user_id: str) -> Dict[str, Dict[str, Any]]:
+    clean_ids = list(dict.fromkeys(str(value) for value in source_ids if value))
+    if source_type not in ("share", "inquiry") or not clean_ids:
+        return {}
+    placeholders = ",".join("?" for _ in clean_ids)
+    with get_connection() as db:
+        rows = db.execute(
+            """
+            SELECT q.id, q.source_document_id, q.user_id, q.lifecycle_status, q.updated_at,
+                   COALESCE(NULLIF(u.display_name, ''), u.email, u.phone, q.user_id) AS quoted_by_name
+            FROM commerce_quotes q
+            JOIN users u ON u.id = q.user_id
+            WHERE q.source_type = ? AND q.source_document_id IN ({})
+            ORDER BY q.updated_at DESC, q.id DESC
+            """.format(placeholders),
+            (source_type, *clean_ids),
+        ).fetchall()
+    summaries: Dict[str, Dict[str, Any]] = {
+        source_id: {"quote_count": 0, "historical_quote_count": 0, "quoted_by": [], "quote_links": [], "own_quote_count": 0, "own_latest_quote_id": None, "latest_quote_at": None}
+        for source_id in clean_ids
+    }
+    seen_people: Dict[str, set] = {source_id: set() for source_id in clean_ids}
+    for row in rows:
+        source_id = row["source_document_id"]
+        summary = summaries[source_id]
+        if summary["latest_quote_at"] is None:
+            summary["latest_quote_at"] = row["updated_at"]
+        if row["lifecycle_status"] == "archived":
+            summary["historical_quote_count"] += 1
+            continue
+        summary["quote_count"] += 1
+        summary["quote_links"].append({
+            "id": row["id"],
+            "user_id": row["user_id"],
+            "display_name": row["quoted_by_name"],
+            "lifecycle_status": row["lifecycle_status"],
+            "updated_at": row["updated_at"],
+            "own": row["user_id"] == current_user_id,
+        })
+        if row["user_id"] not in seen_people[source_id]:
+            seen_people[source_id].add(row["user_id"])
+            summary["quoted_by"].append({"id": row["user_id"], "display_name": row["quoted_by_name"]})
+        if row["user_id"] == current_user_id:
+            summary["own_quote_count"] += 1
+            if summary["own_latest_quote_id"] is None:
+                summary["own_latest_quote_id"] = row["id"]
+    return summaries
 
 
 def _share_owner(db, share_id: Optional[str]) -> Optional[str]:
@@ -534,15 +760,18 @@ def restore_quote(
             "SELECT 1 FROM quote_deliveries WHERE quote_id = ? LIMIT 1", (quote_id,)
         ).fetchone()
         restored_status = "sent" if delivered else "draft"
-        db.execute(
-            """
-            UPDATE commerce_quotes
-            SET lifecycle_status = ?, archived_at = NULL, archived_by = NULL,
-                version = version + 1, updated_at = CURRENT_TIMESTAMP
-            WHERE id = ?
-            """,
-            (restored_status, quote_id),
-        )
+        try:
+            db.execute(
+                """
+                UPDATE commerce_quotes
+                SET lifecycle_status = ?, archived_at = NULL, archived_by = NULL,
+                    version = version + 1, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (restored_status, quote_id),
+            )
+        except sqlite3.IntegrityError as error:
+            raise ValueError("Quote source already exists") from error
         saved = db.execute("SELECT * FROM commerce_quotes WHERE id = ?", (quote_id,)).fetchone()
     return _decode(saved, document_version=2)
 
@@ -701,8 +930,70 @@ def delete_quote(quote_id: str, user_id: Optional[str] = None) -> bool:
     return cursor.rowcount > 0
 
 
-def list_reference_prices() -> Dict[str, List[Dict[str, Any]]]:
+def list_reference_prices() -> Dict[str, Any]:
     with get_connection() as db:
-        products = db.execute("SELECT id, name, base_price, price_usd FROM products WHERE enabled = 1").fetchall()
-        options = db.execute("SELECT id, code, name, price, price_usd FROM options WHERE enabled = 1").fetchall()
-    return {"products": [dict(row) for row in products], "options": [dict(row) for row in options]}
+        products = db.execute(
+            "SELECT id, name, title_name, name_en, title_name_en, base_price, price_usd, sort_order FROM products WHERE enabled = 1 ORDER BY sort_order, id"
+        ).fetchall()
+        product_states = db.execute("SELECT id, enabled FROM products").fetchall()
+        options = db.execute(
+            """
+            SELECT o.id, o.code, o.name, o.name_en, o.price, o.price_usd,
+                   o.sort_order, c.id AS category_id, c.name AS category_name,
+                   c.name_en AS category_name_en, c.catalog_type,
+                   c.sort_order AS category_sort_order,
+                   GROUP_CONCAT(DISTINCT po.product_id) AS product_ids
+            FROM options o
+            JOIN categories c ON c.id = o.category_id
+            LEFT JOIN product_options po ON po.option_id = o.id AND po.enabled = 1
+            WHERE o.enabled = 1 AND o.deleted_at IS NULL AND c.enabled = 1
+            GROUP BY o.id, o.code, o.name, o.name_en, o.price, o.price_usd,
+                     o.sort_order, c.id, c.name, c.name_en, c.catalog_type, c.sort_order
+            ORDER BY CASE c.catalog_type WHEN 'optional' THEN 0 WHEN 'tools' THEN 1 WHEN 'accessories' THEN 2 ELSE 3 END,
+                     c.sort_order, o.sort_order, o.id
+            """
+        ).fetchall()
+        option_states = db.execute(
+            """
+            SELECT o.id, o.enabled, o.deleted_at, c.enabled AS category_enabled
+            FROM options o
+            LEFT JOIN categories c ON c.id = o.category_id
+            """
+        ).fetchall()
+        base_option_states = db.execute(
+            """
+            SELECT o.id, o.enabled, g.enabled AS group_enabled, p.enabled AS product_enabled
+            FROM product_base_options o
+            JOIN product_base_option_groups g ON g.id = o.group_id
+            JOIN products p ON p.id = g.product_id
+            """
+        ).fetchall()
+    option_results = []
+    for row in options:
+        item = dict(row)
+        item["product_ids"] = [value for value in str(item.get("product_ids") or "").split(",") if value]
+        item["availability"] = "active"
+        option_results.append(item)
+    product_availability = {
+        str(row["id"]): "active" if row["enabled"] else "inactive"
+        for row in product_states
+    }
+    option_availability = {}
+    for row in option_states:
+        if row["deleted_at"]:
+            status = "missing"
+        elif row["enabled"] and row["category_enabled"]:
+            status = "active"
+        else:
+            status = "inactive"
+        option_availability[str(row["id"])] = status
+    for row in base_option_states:
+        option_availability[str(row["id"])] = (
+            "active" if row["enabled"] and row["group_enabled"] and row["product_enabled"] else "inactive"
+        )
+    return {
+        "products": [dict(row) for row in products],
+        "options": option_results,
+        "product_availability": product_availability,
+        "option_availability": option_availability,
+    }

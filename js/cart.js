@@ -577,8 +577,9 @@ function inquirySummary(sourceType) {
   const { model, payload } = currentConfigPayload();
   const snapshot = state.getSnapshot();
   const groups = buildSummaryGroups(model, snapshot);
+  const deviceHeading = [model.name, model.title_name].map((value) => String(value || "").trim()).filter(Boolean).join(" · ");
   return [
-    `${model.name || "--"} · ${model.title_name || ""}`,
+    deviceHeading || "--",
     ...groups.map((group) => `${group.category}: ${Array.isArray(group.value) ? group.value.join("、") : group.value}`),
   ].filter(Boolean).map((value) => String(value));
 }
@@ -607,10 +608,12 @@ function openInquiryDialog(sourceType) {
       <div><span class="auth-kicker">${isCart ? "CART INQUIRY" : "CONFIGURATION INQUIRY"}</span><h2 id="inquiry-dialog-title">${cartText("inquiryTitle", "联系销售获取报价", "Contact Sales for a Quote")}</h2></div>
       <button class="btn btn-text btn-sm" type="submit" value="cancel" aria-label="${cartText("close", "关闭", "Close")}">✕</button>
     </header>
-    <p class="cart-confirm-message">${cartText("inquiryConfirmCopy", "请确认需要提交给销售人员的内容。提交后，销售人员将基于此配置与您联系。", "Review the content for sales. After submission, a sales representative will contact you about this request.")}</p>
-    <ul class="inquiry-summary-list">${summary.map((line) => `<li>${escapeCartHtml(line)}</li>`).join("")}</ul>
-    <label class="inquiry-message-field"><span>${cartText("inquiryMessage", "补充说明（选填）", "Additional notes (optional)")}</span><textarea name="message" maxlength="1000" rows="3" placeholder="${cartText("inquiryMessageHint", "例如：请通过邮箱联系我", "For example: please contact me by email")}"></textarea></label>
-    <p class="cart-operation-status inquiry-dialog-status" role="alert" tabindex="-1" hidden></p>
+    <div class="inquiry-dialog-content">
+      <p class="cart-confirm-message">${cartText("inquiryConfirmCopy", "请确认需要提交给销售人员的内容。提交后，销售人员将基于此配置与您联系。", "Review the content for sales. After submission, a sales representative will contact you about this request.")}</p>
+      <ul class="inquiry-summary-list">${summary.map((line) => `<li>${escapeCartHtml(line)}</li>`).join("")}</ul>
+      <label class="inquiry-message-field"><span>${cartText("inquiryMessage", "补充说明（选填）", "Additional notes (optional)")}</span><textarea name="message" maxlength="1000" rows="3" placeholder="${cartText("inquiryMessageHint", "例如：请通过邮箱联系我", "For example: please contact me by email")}"></textarea></label>
+      <p class="cart-operation-status inquiry-dialog-status" role="alert" tabindex="-1" hidden></p>
+    </div>
     <footer class="cart-confirm-actions"><button class="btn btn-secondary" type="submit" value="cancel">${cartText("cancelAction", "取消", "Cancel")}</button><button class="btn btn-primary" type="submit" value="submit">${cartText("submitInquiry", "提交询价", "Submit Inquiry")}</button></footer>
   </form>`;
   document.body.appendChild(dialog);
@@ -631,12 +634,32 @@ function openInquiryDialog(sourceType) {
         ? { lang: cartLanguage(), message, idempotency_key: idempotencyKey }
         : { ...currentPayload, message, idempotency_key: idempotencyKey };
       const inquiry = await authRequest(endpoint, { method: "POST", body: JSON.stringify(body) });
-      status.textContent = `${cartText("inquirySubmitted", "询价已提交，销售人员将与您联系。询价编号：", "Inquiry submitted. Sales will contact you. Inquiry number: ")}${inquiry.inquiry_number}`;
+      const inquiryNumber = String(inquiry.inquiry_number || "");
+      status.innerHTML = `${escapeCartHtml(cartText("inquirySubmitted", "询价已提交，销售人员将与您联系。询价编号：", "Inquiry submitted. Sales will contact you. Inquiry number: "))}<strong translate="no">${escapeCartHtml(inquiryNumber)}</strong>`;
       status.classList.remove("error");
       status.hidden = false;
-      submit.hidden = true;
-      dialog.querySelector('[value="cancel"]').textContent = cartText("close", "关闭", "Close");
-      dialog.querySelector('[value="cancel"]').focus();
+      dialog.querySelector(".cart-confirm-message").hidden = true;
+      dialog.querySelector(".inquiry-summary-list").hidden = true;
+      dialog.querySelector(".inquiry-message-field").hidden = true;
+      const footer = dialog.querySelector(".cart-confirm-actions");
+      footer.innerHTML = `<button class="btn btn-secondary" type="button" data-copy-inquiry-number>${cartText("copyInquiryNumber", "复制询价编号", "Copy inquiry number")}</button><a class="btn btn-primary" href="./account/#my-inquiries">${cartText("viewMyInquiries", "查看我的询价", "View My Inquiries")}</a><button class="btn btn-secondary" type="submit" value="cancel">${cartText("close", "关闭", "Close")}</button>`;
+      footer.querySelector("[data-copy-inquiry-number]").addEventListener("click", async (copyButton) => {
+        const button = copyButton.currentTarget;
+        try {
+          await navigator.clipboard.writeText(inquiryNumber);
+        } catch (_) {
+          const field = document.createElement("textarea");
+          field.value = inquiryNumber;
+          field.setAttribute("readonly", "");
+          Object.assign(field.style, { position: "fixed", width: "1px", height: "1px", opacity: "0" });
+          document.body.appendChild(field);
+          field.select();
+          document.execCommand("copy");
+          field.remove();
+        }
+        button.textContent = cartText("inquiryNumberCopied", "询价编号已复制", "Inquiry number copied");
+      });
+      footer.querySelector("[data-copy-inquiry-number]").focus();
     } catch (error) {
       status.textContent = `${cartText("inquiryFailed", "询价提交失败", "Inquiry submission failed")}: ${error.message}`;
       status.classList.add("error");

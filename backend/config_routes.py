@@ -21,8 +21,9 @@ from .quote_repository import (
     save_quote, list_quotes, get_quote, delete_quote, list_reference_prices,
     deliver_quote, withdraw_quote_delivery, list_customer_quotes, get_customer_quote,
     archive_quote, restore_quote, quote_history,
+    find_active_quote_for_source, quote_source_summaries,
 )
-from .pdf_service import commerce_bundle_pdf, configuration_bundle_pdf, configuration_pdf, quote_pdf as render_quote_pdf
+from .pdf_service import commerce_bundle_pdf, configuration_bundle_pdf, configuration_pdf, quote_pdf as render_quote_pdf, temporary_configuration_code
 from .audit_repository import write_audit
 from .account_errors import AccountError
 from .catalog_refactor_repository import CatalogValidationError
@@ -45,6 +46,7 @@ from .commerce_repository import (
     list_customer_shares,
     load_cart_documents,
     search_all_shares,
+    share_lookup_status,
 )
 from .customer_payload import without_prices
 from .user_repository import list_users
@@ -101,8 +103,13 @@ class QuoteRequest(BaseModel):
     currency: str = "CNY"
     source_share_id: Optional[str] = None
     source_inquiry_id: Optional[str] = None
+    source_type: Optional[str] = Field(default=None, pattern="^(direct|share|inquiry)$")
+    source_document_version: Optional[int] = Field(default=None, ge=1)
+    source_document_id: Optional[str] = Field(default=None, max_length=100)
+    source_code: Optional[str] = Field(default=None, max_length=100)
     customer_name: str = ""
     customer_email: str = ""
+    customer_phone: str = ""
     language: str = "zh"
     version: Optional[int] = Field(default=None, ge=1)
 
@@ -179,6 +186,9 @@ class InquiryQuoteRequest(BaseModel):
     version: int = Field(ge=1)
     currency: str = Field(default="CNY", max_length=3)
     title: str = Field(default="", max_length=200)
+    # Kept optional for older admin bundles.  Source uniqueness supplies the
+    # authoritative replay guard even when a legacy client sends no key.
+    idempotency_key: Optional[str] = Field(default=None, min_length=8, max_length=80)
 
 
 def registered_user(user=Depends(current_user)):
@@ -337,7 +347,10 @@ def share_cart(payload: CartBatchRequest, user=Depends(registered_user)):
 def export_cart_pdf(payload: CartBatchRequest, user=Depends(registered_user)):
     try:
         entries = load_cart_documents(_cart_refs(payload), user["id"], payload.lang)
-        content = commerce_bundle_pdf(entries, user, "en" if payload.lang == "en" else "zh")
+        content = commerce_bundle_pdf(
+            entries, user, "en" if payload.lang == "en" else "zh",
+            document_code=temporary_configuration_code(),
+        )
     except CatalogValidationError as error:
         raise _catalog_cart_error(error)
     except Exception:
@@ -357,7 +370,11 @@ def archive_cart(payload: CartBatchRequest, user=Depends(registered_user)):
 
 def _raise_inquiry_error(error: InquiryError) -> None:
     code = str(error)
-    status_code = 409 if code in ("INQUIRY_DUPLICATE_REQUEST", "INQUIRY_STATUS_CONFLICT", "INQUIRY_ALREADY_CANCELLED", "INQUIRY_QUOTE_ALREADY_EXISTS") else 404 if code == "INQUIRY_NOT_FOUND" else 403 if code == "INQUIRY_ACCESS_DENIED" else 422
+    status_code = 409 if code in (
+        "INQUIRY_DUPLICATE_REQUEST", "INQUIRY_STATUS_CONFLICT", "INQUIRY_STATUS_TRANSITION_INVALID",
+        "INQUIRY_ALREADY_CANCELLED", "INQUIRY_QUOTE_ALREADY_EXISTS", "INQUIRY_PRODUCT_INACTIVE",
+        "INQUIRY_COLOR_UNAVAILABLE", "INQUIRY_OPTION_UNAVAILABLE", "INQUIRY_CART_ITEM_UNAVAILABLE",
+    ) else 404 if code in ("INQUIRY_NOT_FOUND", "INQUIRY_PRODUCT_NOT_FOUND") else 403 if code == "INQUIRY_ACCESS_DENIED" else 422
     raise AccountError(code if code.startswith("INQUIRY_") else "ACCOUNT_VALIDATION_FAILED", status_code=status_code)
 
 
@@ -423,7 +440,14 @@ def staff_inquiries(
     user=Depends(staff_user),
 ):
     try:
-        return list_staff_inquiries(user["id"], user["role"], page, page_size, query, status, lang)
+        result = list_staff_inquiries(user["id"], user["role"], page, page_size, query, status, lang)
+        summaries = quote_source_summaries("inquiry", [item["id"] for item in result["items"]], user["id"])
+        for item in result["items"]:
+            summary = summaries.get(item["id"], {})
+            if user["role"] != "admin":
+                summary["quote_links"] = [link for link in summary.get("quote_links") or [] if link.get("own")]
+            item.update(summary)
+        return result
     except InquiryError as error:
         _raise_inquiry_error(error)
 
@@ -433,7 +457,51 @@ def staff_inquiry(inquiry_id: str, lang: str = "zh", user=Depends(staff_user)):
     result = get_staff_inquiry(inquiry_id, user["id"], user["role"], lang)
     if result is None:
         raise AccountError("INQUIRY_NOT_FOUND", status_code=404)
+    summary = quote_source_summaries("inquiry", [inquiry_id], user["id"]).get(inquiry_id, {})
+    if user["role"] != "admin":
+        summary["quote_links"] = [link for link in summary.get("quote_links") or [] if link.get("own")]
+    result.update(summary)
     return result
+
+
+@router.get("/staff/inquiries/{inquiry_id}/pdf")
+def staff_inquiry_pdf(inquiry_id: str, lang: str = "zh", user=Depends(staff_user)):
+    language = "en" if lang == "en" else "zh"
+    result = get_staff_inquiry(inquiry_id, user["id"], user["role"], language)
+    if result is None:
+        raise AccountError("INQUIRY_NOT_FOUND", status_code=404)
+    entries = [
+        {
+            "item_type": item.get("item_type", "device_config"),
+            "source_id": item.get("source_id"),
+            "quantity": item.get("quantity", 1),
+            "display_name": item.get("display_name", ""),
+            "snapshot": item.get("snapshot") or {},
+        }
+        for item in result.get("items") or []
+    ]
+    customer = {
+        "display_name": result.get("customer_name_snapshot") or result.get("customer_display_name") or "",
+        "email": result.get("customer_email_snapshot") or result.get("customer_email_current") or "",
+        "phone": result.get("customer_phone_snapshot") or result.get("customer_phone_current") or "",
+    }
+    status_labels = {
+        "zh": {"new": "新询价", "assigned": "已分配", "contacted": "已联系", "quoted": "已转报价", "closed": "已完成", "cancelled": "客户已取消"},
+        "en": {"new": "New", "assigned": "Assigned", "contacted": "Contacted", "quoted": "Quoted", "closed": "Closed", "cancelled": "Cancelled"},
+    }
+    content = commerce_bundle_pdf(
+        entries,
+        customer,
+        language,
+        include_prices=False,
+        document_kind="inquiry",
+        document_code=result.get("inquiry_number") or inquiry_id[:8],
+        note=result.get("message") or "",
+        status=status_labels[language].get(result.get("status"), result.get("status") or ""),
+        created_at=result.get("created_at") or "",
+    )
+    write_audit(user["id"], "inquiry_pdf_export", "customer_inquiries", inquiry_id, {"item_count": len(entries)})
+    return _pdf_response(content, "inquiry-{}.pdf".format(result.get("inquiry_number") or inquiry_id[:8]))
 
 
 @router.patch("/staff/inquiries/{inquiry_id}")
@@ -454,19 +522,19 @@ def convert_inquiry_to_quote(inquiry_id: str, payload: InquiryQuoteRequest, resp
     inquiry = get_staff_inquiry(inquiry_id, user["id"], user["role"], language)
     if inquiry is None:
         raise AccountError("INQUIRY_NOT_FOUND", status_code=404)
-    if inquiry.get("converted_quote_id"):
-        quote = get_quote(inquiry["converted_quote_id"], None if user["role"] == "admin" else user["id"])
-        if quote is None:
-            raise AccountError("QUOTE_NOT_FOUND", status_code=404)
+    existing = find_active_quote_for_source("inquiry", inquiry_id, user["id"])
+    if existing is not None:
         inquiry["replayed"] = True
         response.status_code = status.HTTP_200_OK
-        return {"inquiry": inquiry, "quote": quote, "replayed": True}
+        return {"inquiry": inquiry, "quote": existing, "replayed": True, "reused": True}
     try:
-        items = inquiry_quote_items(inquiry)
+        items = inquiry_quote_items(inquiry, payload.currency)
         title = payload.title.strip() or ("Inquiry {}".format(inquiry["inquiry_number"]) if language == "en" else "询价 {}".format(inquiry["inquiry_number"]))
         quote = save_quote(
             None, user["id"], title, items, 0, currency=payload.currency,
             source_inquiry_id=inquiry_id,
+            source_type="inquiry", source_document_version=1,
+            source_document_id=inquiry_id, source_code=inquiry["inquiry_number"],
             customer_name=inquiry.get("customer_name_snapshot") or inquiry.get("customer_display_name") or "",
             customer_email=inquiry.get("customer_email_snapshot") or "",
             language=language, allow_any_owner=user["role"] == "admin",
@@ -474,17 +542,15 @@ def convert_inquiry_to_quote(inquiry_id: str, payload: InquiryQuoteRequest, resp
         result = mark_inquiry_quoted(inquiry_id, user["id"], user["role"], quote["id"], payload.version)
     except InquiryError as error:
         _raise_inquiry_error(error)
-    except ValueError:
+    except ValueError as error:
+        if str(error) == "Quote source already exists":
+            existing = find_active_quote_for_source("inquiry", inquiry_id, user["id"])
+            if existing is not None:
+                response.status_code = status.HTTP_200_OK
+                return {"inquiry": inquiry, "quote": existing, "replayed": True, "reused": True}
         raise AccountError("INQUIRY_SNAPSHOT_INVALID", status_code=422)
     if result is None:
         raise AccountError("INQUIRY_NOT_FOUND", status_code=404)
-    if result.get("replayed") and result.get("converted_quote_id") != quote["id"]:
-        delete_quote(quote["id"], None if user["role"] == "admin" else user["id"])
-        quote = get_quote(result["converted_quote_id"], None if user["role"] == "admin" else user["id"])
-        if quote is None:
-            raise AccountError("QUOTE_NOT_FOUND", status_code=404)
-        response.status_code = status.HTTP_200_OK
-        return {"inquiry": result, "quote": quote, "replayed": True}
     write_audit(user["id"], "inquiry_convert_quote", "customer_inquiries", inquiry_id, {"quote_id": quote["id"], "inquiry_number": inquiry["inquiry_number"]})
     return {"inquiry": result, "quote": quote, "replayed": False}
 
@@ -536,7 +602,9 @@ def customer_share(code: str, request: Request, lang: str = "zh", user=Depends(r
     enforce("customer-share:{}:{}".format(client, user["id"]), limit=20, window_seconds=900)
     result = customer_share_preview(code, "en" if lang == "en" else "zh")
     if result is None:
-        raise AccountError("SHARE_NOT_FOUND", field="code", status_code=404)
+        code_by_state = {"closed": "SHARE_CLOSED", "expired": "SHARE_EXPIRED"}
+        error_code = code_by_state.get(share_lookup_status(code), "SHARE_NOT_FOUND")
+        raise AccountError(error_code, field="code", status_code=410 if error_code != "SHARE_NOT_FOUND" else 404)
     return without_prices(result)
 
 
@@ -549,7 +617,7 @@ def import_customer_share(code: str, payload: ShareImportRequest, request: Reque
     try:
         result = import_share_to_cart(code, user["id"], payload.idempotency_key, payload.lang)
     except CatalogValidationError as error:
-        status_code = 404 if error.code == "SHARE_NOT_FOUND" else 409 if error.code == "SHARE_NO_AVAILABLE_ITEMS" else 422
+        status_code = 404 if error.code == "SHARE_NOT_FOUND" else 410 if error.code in ("SHARE_EXPIRED", "SHARE_CLOSED") else 409 if error.code == "SHARE_NO_AVAILABLE_ITEMS" else 422
         raise AccountError(error.code, field=error.field or None, status_code=status_code, params=error.params)
     write_audit(
         user["id"],
@@ -596,8 +664,15 @@ def current_config_pdf(payload: SaveConfigRequest, user=Depends(current_user)):
         snapshot = build_snapshot(payload.product_id, payload.color, payload.selections, payload.lang)
     except ValueError as error:
         raise AccountError("CONFIG_SELECTION_INVALID", status_code=422)
-    title = payload.name.strip() or ("Configuration List" if payload.lang == "en" else "设备配置清单")
-    return _pdf_response(configuration_pdf(snapshot, title), "configuration-current.pdf")
+    return _pdf_response(
+        configuration_pdf(
+            snapshot,
+            customer=user or {},
+            lang="en" if payload.lang == "en" else "zh",
+            document_code=temporary_configuration_code(),
+        ),
+        "configuration-current.pdf",
+    )
 
 
 def _batch_configs(config_ids: List[str], user_id: str, lang: str):
@@ -616,7 +691,10 @@ def _batch_configs(config_ids: List[str], user_id: str, lang: str):
 def merged_config_pdf(payload: ConfigBatchRequest, user=Depends(registered_user)):
     configs = _batch_configs(payload.config_ids, user["id"], payload.lang)
     try:
-        content = configuration_bundle_pdf(configs, user, "en" if payload.lang == "en" else "zh")
+        content = configuration_bundle_pdf(
+            configs, user, "en" if payload.lang == "en" else "zh",
+            document_code=temporary_configuration_code(),
+        )
     except Exception:
         raise AccountError("PDF_GENERATION_FAILED", status_code=500)
     write_audit(user["id"], "configuration_pdf_export", "saved_configs", "batch", {"item_count": len(configs)})
@@ -660,7 +738,12 @@ def saved_config_pdf(config_id: str, lang: str = "zh", user=Depends(registered_u
     result = get_saved_config(config_id, user["id"], selected_lang)
     if result is None:
         raise AccountError("SAVED_CONFIG_NOT_FOUND", status_code=404)
-    content = configuration_pdf(result["snapshot"], result["name"], "配置编号 / Config: {}".format(config_id[:8]))
+    content = configuration_pdf(
+        result["snapshot"],
+        customer=user,
+        lang=selected_lang,
+        document_code=temporary_configuration_code(),
+    )
     return _pdf_response(content, "configuration-{}.pdf".format(config_id[:8]))
 
 
@@ -686,7 +769,11 @@ def staff_shares(
     page: int = 1, page_size: int = 20, query: str = "", status: str = "all",
     product_id: str = "", created_from: str = "", created_to: str = "", user=Depends(staff_user),
 ):
-    return search_all_shares(page, page_size, query, status, product_id, created_from, created_to)
+    result = search_all_shares(page, page_size, query, status, product_id, created_from, created_to)
+    summaries = quote_source_summaries("share", [item["id"] for item in result["items"]], user["id"])
+    for item in result["items"]:
+        item.update(summaries.get(item["id"], {}))
+    return result
 
 
 @router.get("/staff/shares/{code}/preview")
@@ -694,11 +781,13 @@ def preview_share(code: str, lang: str = "zh", user=Depends(staff_user)):
     result = get_any_share(code, "en" if lang == "en" else "zh", increment_view=False)
     if result is None:
         raise HTTPException(status_code=404, detail="Share code not found or expired")
+    result.update(quote_source_summaries("share", [result["id"]], user["id"]).get(result["id"], {}))
     return result
 
 @router.get("/quotes")
 def quotes(
     status_filter: str = Query("all", alias="status", pattern="^(all|draft|sent|archived)$"),
+    query: str = Query("", max_length=200),
     include_archived: bool = True,
     user=Depends(staff_user),
 ):
@@ -707,6 +796,7 @@ def quotes(
             None if user["role"] == "admin" else user["id"],
             status_filter=status_filter,
             include_archived=include_archived,
+            query=query,
         )
     }
 
@@ -726,21 +816,51 @@ def staff_customers(query: str = "", user=Depends(staff_user)):
     }
 
 @router.post("/quotes", status_code=status.HTTP_201_CREATED)
-def add_quote(payload: QuoteRequest, user=Depends(staff_user)):
+def add_quote(payload: QuoteRequest, response: Response, user=Depends(staff_user)):
     try:
+        source_type = payload.source_type or "direct"
+        source_document_version = payload.source_document_version
+        source_document_id = payload.source_document_id
+        source_code = payload.source_code or ""
+        source_share_id = payload.source_share_id
+        source_inquiry_id = payload.source_inquiry_id
+        if payload.quote_id:
+            current = get_quote(payload.quote_id, None if user["role"] == "admin" else user["id"])
+            if current is not None:
+                source_share_id = source_share_id or current.get("source_share_id")
+                source_inquiry_id = source_inquiry_id or current.get("source_inquiry_id")
+                if payload.source_type is None:
+                    source_type = current.get("source_type") or "direct"
+                    source_document_version = current.get("source_document_version")
+                    source_document_id = current.get("source_document_id")
+                    source_code = current.get("source_code") or ""
+        if not payload.quote_id and source_type in ("share", "inquiry") and source_document_id:
+            existing = find_active_quote_for_source(source_type, source_document_id, user["id"])
+            if existing is not None:
+                existing["reused"] = True
+                response.status_code = status.HTTP_200_OK
+                return existing
         result = save_quote(
             payload.config_id, user["id"], payload.title, payload.items, payload.total_price,
             quote_id=payload.quote_id, currency=payload.currency,
-            source_share_id=payload.source_share_id, source_inquiry_id=payload.source_inquiry_id,
-            customer_name=payload.customer_name, customer_email=payload.customer_email,
+            source_share_id=source_share_id, source_inquiry_id=source_inquiry_id,
+            source_type=source_type, source_document_version=source_document_version,
+            source_document_id=source_document_id, source_code=source_code,
+            customer_name=payload.customer_name, customer_email=payload.customer_email, customer_phone=payload.customer_phone,
             language=payload.language,
             allow_any_owner=user["role"] == "admin",
             expected_version=payload.version,
         )
-        write_audit(user["id"], "quote_update" if payload.quote_id else "quote_create", "commerce_quotes" if result.get("document_version") == 2 else "quotes", result["id"], {"item_count": len(payload.items), "currency": payload.currency, "source_share_id": payload.source_share_id or ""})
+        write_audit(user["id"], "quote_update" if payload.quote_id else "quote_create", "commerce_quotes" if result.get("document_version") == 2 else "quotes", result["id"], {"item_count": len(payload.items), "currency": payload.currency, "source_share_id": source_share_id or ""})
         return result
     except ValueError as error:
         detail = str(error)
+        if detail == "Quote source already exists" and source_type in ("share", "inquiry") and source_document_id:
+            existing = find_active_quote_for_source(source_type, source_document_id, user["id"])
+            if existing is not None:
+                existing["reused"] = True
+                response.status_code = status.HTTP_200_OK
+                return existing
         if detail in ("Configuration not found", "Quote not found"):
             status_code = 404
         elif detail == "Quote access denied":
@@ -749,6 +869,8 @@ def add_quote(payload: QuoteRequest, user=Depends(staff_user)):
             raise AccountError("QUOTE_ARCHIVED", status_code=409)
         elif detail == "Quote version conflict":
             raise AccountError("QUOTE_VERSION_CONFLICT", status_code=409)
+        elif detail == "Quote source already exists":
+            raise AccountError("QUOTE_SOURCE_ALREADY_EXISTS", status_code=409)
         else:
             status_code = 422
         raise HTTPException(status_code=status_code, detail=detail)
@@ -815,7 +937,11 @@ def restore_staff_quote(quote_id: str, payload: QuoteLifecycleRequest, user=Depe
             expected_version=payload.version,
         )
     except ValueError as error:
-        code = {"Quote not archived": "QUOTE_NOT_ARCHIVED", "Quote version conflict": "QUOTE_VERSION_CONFLICT"}.get(str(error), "ACCOUNT_VALIDATION_FAILED")
+        code = {
+            "Quote not archived": "QUOTE_NOT_ARCHIVED",
+            "Quote version conflict": "QUOTE_VERSION_CONFLICT",
+            "Quote source already exists": "QUOTE_SOURCE_ALREADY_EXISTS",
+        }.get(str(error), "ACCOUNT_VALIDATION_FAILED")
         raise AccountError(code, status_code=409)
     if result is None:
         raise AccountError("QUOTE_NOT_FOUND", status_code=404)
@@ -879,11 +1005,18 @@ def shared_config_pdf(code: str, request: Request, user=Depends(staff_user), lan
         raise HTTPException(status_code=404, detail="Share code not found or expired")
     title = result.get("name") or "客户配置清单"
     entries = [{"item_type": item.get("item_type", "device_config"), "source_id": item.get("source_id"), "quantity": item.get("quantity", 1), "display_name": item.get("display_name", ""), "snapshot": item["snapshot"]} for item in result.get("items", [])]
-    customer = {"display_name": result.get("customer_name") or result.get("sender_name"), "email": result.get("customer_email") or result.get("sender_email")}
+    customer = {
+        "display_name": result.get("customer_name") or result.get("sender_name"),
+        "email": result.get("customer_email") or result.get("sender_email"),
+        "phone": result.get("customer_phone") or result.get("sender_phone"),
+    }
     # A share communicates configuration content, not a commercial offer.
     # Prices are restricted to quotation documents, regardless of whether a
     # customer or a staff member initiates the share export.
-    content = commerce_bundle_pdf(entries, customer, "en" if lang == "en" else "zh", "Share: {}".format(code), include_prices=False)
+    content = commerce_bundle_pdf(
+        entries, customer, "en" if lang == "en" else "zh",
+        include_prices=False, document_code=code,
+    )
     write_audit(user["id"], "share_pdf_export", "commerce_shares" if result.get("document_version") == 2 else "config_shares", result["id"], {"code": code, "item_count": len(entries)})
     return _pdf_response(content, "shared-configuration-{}.pdf".format(code))
 

@@ -435,6 +435,7 @@ class ProductEditorV2Request(BaseModel):
     enabled: bool = True
     colors: List[ProductColorEditorRequest] = Field(default_factory=list, max_length=50)
     specifications: List[ProductSpecificationEditorRequest] = Field(default_factory=list, max_length=100)
+    images: List[dict] = Field(default_factory=list, max_length=100)
     base_option_groups: List[BaseOptionGroupEditorRequest] = Field(max_length=3)
     price_variants: List[PriceVariantEditorRequest] = Field(max_length=500)
     optional_config_ids: List[str] = Field(default_factory=list, max_length=1000)
@@ -718,6 +719,7 @@ def replace_product_editor(product_id: str, payload: ProductEditorV2Request, req
             },
             colors=[item.model_dump() for item in payload.colors],
             specifications=[item.model_dump() for item in payload.specifications],
+            images=payload.images,
         )
     except CatalogValidationError as error:
         raise _catalog_error(error)

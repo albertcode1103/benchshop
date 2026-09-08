@@ -256,7 +256,7 @@
 
   function resolveDetailImages(model) {
     const code = model.type.replace(/^BOTEN\s+/i, "").trim();
-    return (model.detailImages || []).map((filename) => `tb/tbdetail/${code}/${filename}`);
+    return (model.detailImages || []).map((filename) => /^(?:[a-z]+:|\/|\.{0,2}\/|api\/)/i.test(filename) || filename.includes("/") ? filename : `tb/tbdetail/${code}/${filename}`);
   }
 
   function resolveGalleryImages(model, color) {

@@ -174,6 +174,19 @@ CREATE TABLE IF NOT EXISTS product_specifications (
 
 CREATE INDEX IF NOT EXISTS idx_product_specifications_product ON product_specifications(product_id, sort_order);
 
+CREATE TABLE IF NOT EXISTS product_images (
+    id TEXT PRIMARY KEY,
+    product_id TEXT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    image_path TEXT NOT NULL,
+    image_width INTEGER,
+    image_height INTEGER,
+    alt_zh TEXT NOT NULL DEFAULT '',
+    alt_en TEXT NOT NULL DEFAULT '',
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_product_images_product ON product_images(product_id, sort_order);
+
 CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
     email TEXT UNIQUE,
@@ -213,6 +226,7 @@ CREATE TABLE IF NOT EXISTS saved_configs (
     name TEXT NOT NULL,
     product_id TEXT NOT NULL REFERENCES products(id),
     snapshot_json TEXT NOT NULL,
+    source_trace_json TEXT NOT NULL DEFAULT '[]',
     status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'shared', 'quoted', 'closed')),
     version INTEGER NOT NULL DEFAULT 1,
     archived_at TEXT,
@@ -231,6 +245,7 @@ CREATE TABLE IF NOT EXISTS config_shares (
     language TEXT NOT NULL DEFAULT 'zh',
     customer_name TEXT NOT NULL DEFAULT '',
     customer_email TEXT NOT NULL DEFAULT '',
+    customer_phone TEXT NOT NULL DEFAULT '',
     item_count INTEGER NOT NULL DEFAULT 1,
     view_count INTEGER NOT NULL DEFAULT 0,
     last_viewed_at TEXT,
@@ -263,6 +278,7 @@ CREATE TABLE IF NOT EXISTS saved_catalog_items (
     catalog_type TEXT NOT NULL CHECK (catalog_type IN ('tools', 'accessories')),
     quantity INTEGER NOT NULL DEFAULT 1 CHECK (quantity > 0),
     snapshot_json TEXT NOT NULL,
+    source_trace_json TEXT NOT NULL DEFAULT '[]',
     version INTEGER NOT NULL DEFAULT 1,
     archived_at TEXT,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -305,10 +321,15 @@ CREATE TABLE IF NOT EXISTS commerce_quotes (
     config_id TEXT REFERENCES saved_configs(id) ON DELETE SET NULL,
     source_share_id TEXT REFERENCES commerce_shares(id) ON DELETE SET NULL,
     source_inquiry_id TEXT REFERENCES customer_inquiries(id) ON DELETE SET NULL,
+    source_type TEXT NOT NULL DEFAULT 'direct',
+    source_document_version INTEGER,
+    source_document_id TEXT,
+    source_code TEXT NOT NULL DEFAULT '',
     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     title TEXT NOT NULL DEFAULT '配置报价单',
     customer_name TEXT NOT NULL DEFAULT '',
     customer_email TEXT NOT NULL DEFAULT '',
+    customer_phone TEXT NOT NULL DEFAULT '',
     language TEXT NOT NULL DEFAULT 'zh',
     items_json TEXT NOT NULL,
     total_price REAL NOT NULL DEFAULT 0,
@@ -334,7 +355,6 @@ CREATE INDEX IF NOT EXISTS idx_commerce_shares_expiry ON commerce_shares(active,
 CREATE INDEX IF NOT EXISTS idx_commerce_share_items_share ON commerce_share_items(share_id, sort_order);
 CREATE INDEX IF NOT EXISTS idx_commerce_quotes_user ON commerce_quotes(user_id, updated_at);
 CREATE INDEX IF NOT EXISTS idx_commerce_quotes_lifecycle ON commerce_quotes(lifecycle_status, updated_at);
-
 CREATE TABLE IF NOT EXISTS quote_revisions (
     id TEXT PRIMARY KEY,
     quote_id TEXT NOT NULL REFERENCES commerce_quotes(id) ON DELETE CASCADE,
@@ -386,8 +406,11 @@ CREATE TABLE IF NOT EXISTS customer_inquiries (
     version INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    assigned_at TEXT,
     contacted_at TEXT,
     quoted_at TEXT,
+    first_quoted_at TEXT,
+    latest_quoted_at TEXT,
     closed_at TEXT,
     UNIQUE(created_by, idempotency_key)
 );
@@ -406,6 +429,21 @@ CREATE TABLE IF NOT EXISTS customer_inquiry_items (
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_customer_inquiry_items_inquiry ON customer_inquiry_items(inquiry_id, sort_order);
+
+CREATE TABLE IF NOT EXISTS customer_inquiry_sources (
+    id TEXT PRIMARY KEY,
+    inquiry_id TEXT NOT NULL REFERENCES customer_inquiries(id) ON DELETE CASCADE,
+    source_key TEXT NOT NULL,
+    source_share_id TEXT,
+    source_share_code TEXT NOT NULL DEFAULT '',
+    source_document_version INTEGER NOT NULL DEFAULT 1,
+    item_count INTEGER NOT NULL DEFAULT 0 CHECK (item_count >= 0),
+    quantity INTEGER NOT NULL DEFAULT 0 CHECK (quantity >= 0),
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(inquiry_id, source_key)
+);
+CREATE INDEX IF NOT EXISTS idx_customer_inquiry_sources_inquiry ON customer_inquiry_sources(inquiry_id, created_at, id);
+CREATE INDEX IF NOT EXISTS idx_customer_inquiry_sources_share ON customer_inquiry_sources(source_share_id, source_share_code);
 
 CREATE TABLE IF NOT EXISTS share_imports (
     id TEXT PRIMARY KEY,
@@ -502,6 +540,11 @@ def initialize_database() -> None:
         commerce_quote_columns = {row[1] for row in connection.execute("PRAGMA table_info(commerce_quotes)").fetchall()}
         for column, definition in (
             ("source_inquiry_id", "TEXT"),
+            ("source_type", "TEXT NOT NULL DEFAULT 'direct'"),
+            ("source_document_version", "INTEGER"),
+            ("source_document_id", "TEXT"),
+            ("source_code", "TEXT NOT NULL DEFAULT ''"),
+            ("customer_phone", "TEXT NOT NULL DEFAULT ''"),
             ("quote_number", "TEXT"),
             ("lifecycle_status", "TEXT NOT NULL DEFAULT 'draft'"),
             ("version", "INTEGER NOT NULL DEFAULT 1"),
@@ -519,6 +562,24 @@ def initialize_database() -> None:
             if column not in commerce_quote_columns:
                 connection.execute("ALTER TABLE commerce_quotes ADD COLUMN {} {}".format(column, definition))
         connection.execute("CREATE INDEX IF NOT EXISTS idx_commerce_quotes_source_inquiry ON commerce_quotes(source_inquiry_id)")
+        connection.execute("UPDATE commerce_quotes SET source_type = 'inquiry', source_document_id = source_inquiry_id WHERE source_inquiry_id IS NOT NULL AND (source_document_id IS NULL OR source_document_id = '')")
+        connection.execute("UPDATE commerce_quotes SET source_type = 'share', source_document_id = source_share_id WHERE source_share_id IS NOT NULL AND (source_document_id IS NULL OR source_document_id = '')")
+        connection.execute("""
+            UPDATE commerce_quotes AS older
+            SET lifecycle_status = 'archived', archived_at = COALESCE(archived_at, CURRENT_TIMESTAMP)
+            WHERE older.source_document_id IS NOT NULL
+              AND older.lifecycle_status != 'archived'
+              AND EXISTS (
+                  SELECT 1 FROM commerce_quotes AS newer
+                  WHERE newer.source_type = older.source_type
+                    AND newer.source_document_id = older.source_document_id
+                    AND newer.user_id = older.user_id
+                    AND newer.lifecycle_status != 'archived'
+                    AND (newer.updated_at > older.updated_at OR (newer.updated_at = older.updated_at AND newer.id > older.id))
+              )
+        """)
+        connection.execute("CREATE INDEX IF NOT EXISTS idx_commerce_quotes_source_document ON commerce_quotes(source_type, source_document_id, user_id, updated_at)")
+        connection.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_commerce_quotes_active_source_owner ON commerce_quotes(source_type, source_document_id, user_id) WHERE source_document_id IS NOT NULL AND lifecycle_status != 'archived'")
         delivery_columns = {row[1] for row in connection.execute("PRAGMA table_info(quote_deliveries)").fetchall()}
         for column, definition in (
             ("revision_id", "TEXT"),
@@ -529,19 +590,52 @@ def initialize_database() -> None:
             if column not in delivery_columns:
                 connection.execute("ALTER TABLE quote_deliveries ADD COLUMN {} {}".format(column, definition))
         connection.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_quote_deliveries_idempotency ON quote_deliveries(delivered_by, idempotency_key) WHERE idempotency_key IS NOT NULL")
+        inquiry_columns = {row[1] for row in connection.execute("PRAGMA table_info(customer_inquiries)").fetchall()}
+        for column in ("assigned_at", "first_quoted_at", "latest_quoted_at"):
+            if column not in inquiry_columns:
+                connection.execute("ALTER TABLE customer_inquiries ADD COLUMN {} TEXT".format(column))
+        connection.execute("""
+            UPDATE customer_inquiries
+            SET first_quoted_at = COALESCE(first_quoted_at, quoted_at, (SELECT created_at FROM commerce_quotes WHERE id = converted_quote_id)),
+                latest_quoted_at = COALESCE(latest_quoted_at, quoted_at, (SELECT updated_at FROM commerce_quotes WHERE id = converted_quote_id))
+            WHERE quoted_at IS NOT NULL OR converted_quote_id IS NOT NULL
+        """)
         saved_config_columns = {row[1] for row in connection.execute("PRAGMA table_info(saved_configs)").fetchall()}
         for column, definition in (
             ("version", "INTEGER NOT NULL DEFAULT 1"),
             ("archived_at", "TEXT"),
+            ("source_trace_json", "TEXT NOT NULL DEFAULT '[]'"),
         ):
             if column not in saved_config_columns:
                 connection.execute("ALTER TABLE saved_configs ADD COLUMN {} {}".format(column, definition))
+        saved_catalog_columns = {row[1] for row in connection.execute("PRAGMA table_info(saved_catalog_items)").fetchall()}
+        if "source_trace_json" not in saved_catalog_columns:
+            connection.execute("ALTER TABLE saved_catalog_items ADD COLUMN source_trace_json TEXT NOT NULL DEFAULT '[]'")
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS customer_inquiry_sources (
+                id TEXT PRIMARY KEY,
+                inquiry_id TEXT NOT NULL REFERENCES customer_inquiries(id) ON DELETE CASCADE,
+                source_key TEXT NOT NULL,
+                source_share_id TEXT,
+                source_share_code TEXT NOT NULL DEFAULT '',
+                source_document_version INTEGER NOT NULL DEFAULT 1,
+                item_count INTEGER NOT NULL DEFAULT 0 CHECK (item_count >= 0),
+                quantity INTEGER NOT NULL DEFAULT 0 CHECK (quantity >= 0),
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(inquiry_id, source_key)
+            )
+            """
+        )
+        connection.execute("CREATE INDEX IF NOT EXISTS idx_customer_inquiry_sources_inquiry ON customer_inquiry_sources(inquiry_id, created_at, id)")
+        connection.execute("CREATE INDEX IF NOT EXISTS idx_customer_inquiry_sources_share ON customer_inquiry_sources(source_share_id, source_share_code)")
         share_columns = {row[1] for row in connection.execute("PRAGMA table_info(config_shares)").fetchall()}
         for column, definition in (
             ("title", "TEXT NOT NULL DEFAULT ''"),
             ("language", "TEXT NOT NULL DEFAULT 'zh'"),
             ("customer_name", "TEXT NOT NULL DEFAULT ''"),
             ("customer_email", "TEXT NOT NULL DEFAULT ''"),
+            ("customer_phone", "TEXT NOT NULL DEFAULT ''"),
             ("item_count", "INTEGER NOT NULL DEFAULT 1"),
         ):
             if column not in share_columns:
