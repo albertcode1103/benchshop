@@ -443,6 +443,9 @@ body:not([data-selection-view="device"]) [data-device-content] {
   margin: 0;
   color: var(--color-text-secondary);
   font-size: 1rem;
+  line-height: 1.7;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
 }
 
 @media (max-width: 639px) {

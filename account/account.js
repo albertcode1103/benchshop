@@ -214,6 +214,30 @@ function escapeProfileHtml(value) {
   return String(value ?? "").replace(/[&<>'"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[character]));
 }
 
+function normalizeProfileCatalogCode(value) {
+  const raw = String(value || "").trim().toUpperCase();
+  const code = raw.replace(/\s+/g, "");
+  const match = code.match(/^(BTE|BTK|BTC|BT)-?([A-Z0-9]+)$/);
+  return match ? `${match[1]}-${match[2]}` : raw;
+}
+
+function profileCatalogName(name, code) {
+  let text = String(name || "").trim();
+  const canonical = normalizeProfileCatalogCode(code);
+  for (const alias of [String(code || "").trim(), canonical, canonical.replace(/-/g, "")].filter(Boolean).sort((a, b) => b.length - a.length)) {
+    const escaped = alias.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const updated = text.replace(new RegExp(`^${escaped}(?=$|[\\s·:：/\\\\|_—–-])(?:[\\s·:：/\\\\|_—–-]+)?`, "i"), "").trim();
+    if (updated !== text) { text = updated; break; }
+  }
+  return text;
+}
+
+function profileCatalogIdentity(code, name, fallback = "--") {
+  const canonical = normalizeProfileCatalogCode(code);
+  const cleanName = profileCatalogName(name, canonical) || fallback;
+  return `${canonical ? `<small class="profile-catalog-code">${escapeProfileHtml(canonical)}</small>` : ""}<span>${escapeProfileHtml(cleanName)}</span>`;
+}
+
 function profileDate(value) {
   if (!value) return "--";
   const dateValue = new Date(value);
@@ -350,9 +374,9 @@ async function openOwnShare(shareId) {
     return `<section class="profile-detail-group"><h3>${label}</h3><div class="profile-detail-list">${items.map((item) => {
       const snapshot = item.snapshot || {};
       const product = snapshot.product || {};
-      const name = type === "device_config" ? [product.name, product.title_name].filter(Boolean).join(" ") : [snapshot.code, snapshot.name].filter(Boolean).join(" ");
+      const name = type === "device_config" ? [product.name, product.title_name].filter(Boolean).join(" ") : "";
       const missing = item.available ? "" : `<small>${pc.unavailable}${item.missing?.length ? `: ${item.missing.map(escapeProfileHtml).join(", ")}` : ""}</small>`;
-      return `<div class="profile-detail-row${item.available ? "" : " is-unavailable"}"><span>${escapeProfileHtml(name || item.display_name || "--")}${missing}</span><strong>× ${Number(item.quantity || 1)}</strong></div>`;
+      return `<div class="profile-detail-row${item.available ? "" : " is-unavailable"}"><span>${type === "device_config" ? escapeProfileHtml(name || item.display_name || "--") : profileCatalogIdentity(snapshot.code, snapshot.name || item.display_name)}${missing}</span><strong>× ${Number(item.quantity || 1)}</strong></div>`;
     }).join("")}</div></section>`;
   }).join("");
   openProfileBusinessDialog(result.title || result.code, pc.shareDetails, body || `<div class="profile-list-empty">${pc.emptyShares}</div>`);
@@ -376,10 +400,10 @@ async function openOwnInquiry(inquiryId) {
     return `<section class="profile-detail-group"><h3>${label}</h3><div class="profile-detail-list">${items.map((item) => {
       const snapshot = item.snapshot || {};
       const product = snapshot.product || {};
-      const name = type === "device_config" ? [product.name, product.title_name].filter(Boolean).join(" ") : [snapshot.code, snapshot.name].filter(Boolean).join(" ");
+      const name = type === "device_config" ? [product.name, product.title_name].filter(Boolean).join(" ") : "";
       const unavailable = item.availability && item.availability !== "active";
       const warning = unavailable ? `<small>${pc.unavailable}</small>` : "";
-      return `<div class="profile-detail-row${unavailable ? " is-unavailable" : ""}"><span>${escapeProfileHtml(name || item.display_name || "--")}${warning}</span><strong>× ${Number(item.quantity || 1)}</strong></div>`;
+      return `<div class="profile-detail-row${unavailable ? " is-unavailable" : ""}"><span>${type === "device_config" ? escapeProfileHtml(name || item.display_name || "--") : profileCatalogIdentity(snapshot.code, snapshot.name || item.display_name)}${warning}</span><strong>× ${Number(item.quantity || 1)}</strong></div>`;
     }).join("")}</div></section>`;
   }).join("");
   const note = inquiry.message ? `<section class="profile-detail-group"><h3>${pc.note}</h3><p class="profile-inquiry-note">${escapeProfileHtml(inquiry.message)}</p></section>` : "";
@@ -412,7 +436,7 @@ async function cancelOwnInquiry(button) {
 
 async function openOwnQuote(quoteId) {
   const quote = await profileRequest(`/customer/me/quotes/${encodeURIComponent(quoteId)}`);
-  const rows = (quote.items || []).map((item) => `<div class="profile-detail-row"><span>${escapeProfileHtml([item.code, item.name].filter(Boolean).join(" ") || "--")}<small>${pc.quantity}: ${Number(item.quantity || 1)}</small></span><strong>${profileMoney(Number(item.quantity || 1) * Number(item.price || 0), quote.currency)}</strong></div>`).join("");
+  const rows = (quote.items || []).map((item) => `<div class="profile-detail-row"><span>${profileCatalogIdentity(item.code, item.name)}<small>${pc.quantity}: ${Number(item.quantity || 1)}</small></span><strong>${profileMoney(Number(item.quantity || 1) * Number(item.price || 0), quote.currency)}</strong></div>`).join("");
   const body = `<section class="profile-detail-group"><h3>${escapeProfileHtml(quote.sender?.display_name || "BOTEN")}</h3><div class="profile-detail-list">${rows}</div><div class="profile-quote-total"><span>${pc.total}</span><strong>${profileMoney(quote.total_price, quote.currency)}</strong></div></section>`;
   openProfileBusinessDialog(quote.title, pc.quotationDetails, body, `<button class="btn btn-primary" type="button" data-download-quote="${escapeProfileHtml(quote.id)}">${pc.downloadPdf}</button>`);
   await loadProfileQuotes();

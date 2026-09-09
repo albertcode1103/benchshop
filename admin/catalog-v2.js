@@ -99,7 +99,7 @@
     const images = state.editingProduct?.images || [];
     $("#product-images-editor").innerHTML = images.map((item, index) => `<article class="product-image-row" data-product-image="${escapeHtml(item.id)}">
       <input type="hidden" data-product-image-field="image_path" value="${escapeHtml(item.image_path || "")}"><input type="hidden" data-product-image-field="image_width" value="${escapeHtml(item.image_width || "")}"><input type="hidden" data-product-image-field="image_height" value="${escapeHtml(item.image_height || "")}">
-      <button type="button" class="product-image-thumbnail" data-preview-product-image aria-label="预览设备图片"><img src="${escapeHtml(catalogAssetUrl(item.image_path))}" alt="${escapeHtml(item.alt_zh || "设备图片")}"></button>
+      <button type="button" class="product-image-thumbnail" data-preview-product-image aria-label="预览设备图片"><img src="${escapeHtml(catalogAssetUrl(item.image_path))}" alt="${escapeHtml(item.alt_zh || item.alt_en || "设备图片")}" width="${Number(item.image_width) || 640}" height="${Number(item.image_height) || 480}"></button>
       <div class="product-image-copy"><label><span>中文说明</span><input data-product-image-field="alt_zh" value="${escapeHtml(item.alt_zh || "")}" placeholder="例如：设备正面"></label><label><span>英文说明</span><input data-product-image-field="alt_en" value="${escapeHtml(item.alt_en || "")}" placeholder="e.g. Front view"></label></div>
       <div class="row-actions"><button type="button" class="icon-button" data-move-product-image="${index}" data-direction="-1" aria-label="图片上移" ${index ? "" : "disabled"}>↑</button><button type="button" class="icon-button" data-move-product-image="${index}" data-direction="1" aria-label="图片下移" ${index === images.length - 1 ? "disabled" : ""}>↓</button><button type="button" class="button button-quiet" data-remove-product-image="${index}">删除</button></div>
     </article>`).join("") || '<div class="editor-empty">暂未上传设备图片。</div>';
@@ -1091,9 +1091,10 @@
     if (previewProductImage) {
       const row = previewProductImage.closest("[data-product-image]");
       const source = catalogAssetUrl($('[data-product-image-field="image_path"]', row).value);
+      const image = state.editingProduct.images.find((item) => item.id === row.dataset.productImage) || {};
       const preview = document.createElement("dialog");
       preview.className = "product-image-preview-dialog";
-      preview.innerHTML = `<div><button class="icon-button" type="button" aria-label="关闭">×</button><img src="${escapeHtml(source)}" alt="设备图片预览"></div>`;
+      preview.innerHTML = `<div><button class="icon-button" type="button" aria-label="关闭">×</button><img src="${escapeHtml(source)}" alt="${escapeHtml(image.alt_zh || image.alt_en || "设备图片预览")}" width="${Number(image.image_width) || 640}" height="${Number(image.image_height) || 480}"></div>`;
       document.body.appendChild(preview);
       $("button", preview).addEventListener("click", () => preview.close());
       preview.addEventListener("close", () => preview.remove(), { once: true });

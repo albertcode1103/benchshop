@@ -151,7 +151,7 @@ def seed() -> None:
                     title_name = excluded.title_name,
                     sort_order = excluded.sort_order
                 """,
-                (product_id, product["type"], product["name"], "设备描述XXXX占位", product_index),
+                (product_id, product["type"], product["name"], "", product_index),
             )
 
             for color_index, color in enumerate(product.get("colors", [])):

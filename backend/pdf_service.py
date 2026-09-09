@@ -24,6 +24,8 @@ from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen import canvas as pdf_canvas
 from reportlab.platypus import BaseDocTemplate, CondPageBreak, Frame, PageTemplate, Paragraph, Spacer, Table, TableStyle
 
+from .catalog_identity import normalize_catalog_code, strip_redundant_catalog_code
+
 
 try:
     hashlib.md5(usedforsecurity=False)
@@ -32,9 +34,12 @@ except TypeError:
 
 
 LOGGER = logging.getLogger(__name__)
-BRAND_ORANGE = colors.HexColor("#F36B21")
-BRAND_DARK = colors.HexColor("#A83E00")
-BRAND_LIGHT = colors.HexColor("#FFF4EB")
+# PDF exports intentionally retain the original BOTEN blue document palette.
+# The website can evolve independently without changing the appearance of
+# already-established customer-facing documents.
+BRAND_BLUE = colors.HexColor("#183B56")
+ACCENT_BLUE = colors.HexColor("#2E75B6")
+LIGHT_BLUE = colors.HexColor("#EAF2F8")
 TEXT_MAIN = colors.HexColor("#1A1A1A")
 TEXT_GRAY = colors.HexColor("#666666")
 BORDER_GRAY = colors.HexColor("#E5E7EB")
@@ -161,6 +166,13 @@ def _safe_int(value: Any, fallback: int = 0) -> int:
         return fallback
 
 
+def _positive_quantity(value: Any, fallback: int = 1) -> int:
+    """Keep legacy missing quantities compatible, but never revive explicit invalid rows."""
+    if value is None or str(value).strip() == "":
+        return fallback
+    return max(0, _safe_int(value, 0))
+
+
 def _safe_money(value: Any) -> float:
     try:
         return max(0.0, float(value or 0))
@@ -177,15 +189,15 @@ def _styles() -> Dict[str, ParagraphStyle]:
     base = getSampleStyleSheet()
     return {
         "title": ParagraphStyle("BotenTitle", parent=base["Title"], fontName=FONT_NAME, fontSize=21, leading=27, textColor=TEXT_MAIN, alignment=TA_LEFT, spaceAfter=5 * mm),
-        "card_title": ParagraphStyle("BotenCardTitle", parent=base["BodyText"], fontName=FONT_NAME, fontSize=8.2, leading=11, textColor=BRAND_DARK),
+        "card_title": ParagraphStyle("BotenCardTitle", parent=base["BodyText"], fontName=FONT_NAME, fontSize=8.2, leading=11, textColor=BRAND_BLUE),
         "card_label": ParagraphStyle("BotenCardLabel", parent=base["BodyText"], fontName=FONT_NAME, fontSize=7.5, leading=10, textColor=TEXT_GRAY),
         "card_value": ParagraphStyle("BotenCardValue", parent=base["BodyText"], fontName=FONT_NAME, fontSize=8.7, leading=12, textColor=TEXT_MAIN),
         "section": ParagraphStyle("BotenSection", parent=base["Heading2"], fontName=FONT_NAME, fontSize=12, leading=16, textColor=TEXT_MAIN, alignment=TA_LEFT),
-        "subsection": ParagraphStyle("BotenSubsection", parent=base["Heading3"], fontName=FONT_NAME, fontSize=9, leading=12, textColor=BRAND_DARK),
+        "subsection": ParagraphStyle("BotenSubsection", parent=base["Heading3"], fontName=FONT_NAME, fontSize=9, leading=12, textColor=BRAND_BLUE),
         "body": ParagraphStyle("BotenBody", parent=base["BodyText"], fontName=FONT_NAME, fontSize=8.5, leading=12, textColor=TEXT_MAIN),
         "header": ParagraphStyle("BotenHeader", parent=base["BodyText"], fontName=FONT_NAME, fontSize=8, leading=11, textColor=colors.white),
         "money": ParagraphStyle("BotenMoney", parent=base["BodyText"], fontName=FONT_NAME, fontSize=8.5, leading=12, textColor=TEXT_MAIN, alignment=TA_RIGHT),
-        "total": ParagraphStyle("BotenTotal", parent=base["Heading2"], fontName=FONT_NAME, fontSize=14, leading=18, alignment=TA_RIGHT, textColor=BRAND_DARK),
+        "total": ParagraphStyle("BotenTotal", parent=base["Heading2"], fontName=FONT_NAME, fontSize=14, leading=18, alignment=TA_RIGHT, textColor=BRAND_BLUE),
         "total_label": ParagraphStyle("BotenTotalLabel", parent=base["BodyText"], fontName=FONT_NAME, fontSize=10, leading=14, textColor=colors.white),
         "total_money": ParagraphStyle("BotenTotalMoney", parent=base["BodyText"], fontName=FONT_NAME, fontSize=11, leading=14, textColor=colors.white, alignment=TA_RIGHT),
     }
@@ -212,8 +224,8 @@ def _info_card(title: str, items: Iterable[Tuple[str, Any]], styles: Dict[str, P
         rows.append([_paragraph(label, styles["card_label"], ""), _paragraph(value, styles["card_value"], "")])
     card = Table(rows, colWidths=[25 * mm, max(width - 25 * mm, 10 * mm)], hAlign="LEFT")
     card.setStyle(TableStyle([
-        ("SPAN", (0, 0), (-1, 0)), ("BACKGROUND", (0, 0), (-1, 0), BRAND_LIGHT),
-        ("LINEBELOW", (0, 0), (-1, 0), 0.8, BRAND_ORANGE), ("BOX", (0, 0), (-1, -1), 0.6, BORDER_GRAY),
+        ("SPAN", (0, 0), (-1, 0)), ("BACKGROUND", (0, 0), (-1, 0), LIGHT_BLUE),
+        ("LINEBELOW", (0, 0), (-1, 0), 0.8, ACCENT_BLUE), ("BOX", (0, 0), (-1, -1), 0.6, BORDER_GRAY),
         ("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 7),
         ("RIGHTPADDING", (0, 0), (-1, -1), 7), ("TOPPADDING", (0, 0), (-1, -1), 5),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
@@ -238,8 +250,8 @@ def _note_card(title: str, value: str, styles: Dict[str, ParagraphStyle], width:
         [_paragraph(value, styles["card_value"], "")],
     ], colWidths=[width], hAlign="LEFT")
     card.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), BRAND_LIGHT),
-        ("LINEBELOW", (0, 0), (-1, 0), 0.8, BRAND_ORANGE),
+        ("BACKGROUND", (0, 0), (-1, 0), LIGHT_BLUE),
+        ("LINEBELOW", (0, 0), (-1, 0), 0.8, ACCENT_BLUE),
         ("BOX", (0, 0), (-1, -1), 0.6, BORDER_GRAY),
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
         ("LEFTPADDING", (0, 0), (-1, -1), 7),
@@ -329,12 +341,12 @@ class _UnifiedDocument(BaseDocTemplate):
             canvas.drawImage(self.logo, self.leftMargin, logo_y, width=source_width * scale, height=source_height * scale, preserveAspectRatio=True, mask="auto")
         else:
             canvas.setFont(FONT_NAME, 13)
-            canvas.setFillColor(BRAND_DARK)
+            canvas.setFillColor(BRAND_BLUE)
             canvas.drawString(self.leftMargin, logo_y + 2 * mm, "BOTEN")
         canvas.setFont(FONT_NAME, 7.5)
         canvas.setFillColor(TEXT_MAIN)
         canvas.drawRightString(A4[0] - self.rightMargin, A4[1] - 12.5 * mm, COMPANY_NAME)
-        canvas.setStrokeColor(BRAND_ORANGE)
+        canvas.setStrokeColor(ACCENT_BLUE)
         canvas.setLineWidth(0.8)
         canvas.line(self.leftMargin, A4[1] - 22 * mm, A4[0] - self.rightMargin, A4[1] - 22 * mm)
         canvas.setStrokeColor(BORDER_GRAY)
@@ -374,25 +386,24 @@ def _summary_table(items: Iterable[Tuple[str, Any]], styles: Dict[str, Paragraph
 def _table_style(right_columns: Sequence[int] = (), title_row: bool = False) -> TableStyle:
     header_row = 1 if title_row else 0
     commands: List[Tuple[Any, ...]] = [
-        ("BACKGROUND", (0, header_row), (-1, header_row), BRAND_DARK), ("TEXTCOLOR", (0, header_row), (-1, header_row), colors.white),
+        ("BACKGROUND", (0, header_row), (-1, header_row), BRAND_BLUE), ("TEXTCOLOR", (0, header_row), (-1, header_row), colors.white),
         ("ROWBACKGROUNDS", (0, header_row + 1), (-1, -1), [colors.white, LIGHT_GRAY]),
         ("BOX", (0, 0), (-1, -1), 0.5, BORDER_GRAY), ("INNERGRID", (0, header_row), (-1, -1), 0.3, BORDER_GRAY),
         ("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 6),
         ("RIGHTPADDING", (0, 0), (-1, -1), 6), ("TOPPADDING", (0, 0), (-1, -1), 5), ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
     ]
     if title_row:
-        commands.extend([("SPAN", (0, 0), (-1, 0)), ("BACKGROUND", (0, 0), (-1, 0), BRAND_LIGHT), ("TEXTCOLOR", (0, 0), (-1, 0), BRAND_DARK), ("LINEBELOW", (0, 0), (-1, 0), 0.8, BRAND_ORANGE)])
+        commands.extend([("SPAN", (0, 0), (-1, 0)), ("BACKGROUND", (0, 0), (-1, 0), LIGHT_BLUE), ("TEXTCOLOR", (0, 0), (-1, 0), BRAND_BLUE), ("LINEBELOW", (0, 0), (-1, 0), 0.8, ACCENT_BLUE)])
     for column in right_columns:
         commands.append(("ALIGN", (column, header_row + 1), (column, -1), "RIGHT"))
     return TableStyle(commands)
 
 
 def _display_item_name(item: Dict[str, Any], language: str) -> str:
-    code = _clean(item.get("code") or item.get("id"))
-    name = _clean(item.get("name") or item.get("display_name"))
-    label = name or code or "-"
-    if code and name and code.casefold() not in name.casefold():
-        label = "{} - {}".format(code, name)
+    raw_code = _clean(item.get("code") or item.get("id"))
+    code = normalize_catalog_code(raw_code)
+    name = strip_redundant_catalog_code(item.get("name") or item.get("display_name"), code, (raw_code,))
+    label = "\n".join(part for part in (code, name) if part) or "-"
     availability = _clean(item.get("availability"))
     if availability and availability not in ("active", "available"):
         label = "{} ({})".format(label, PDF_COPY[language]["unavailable"])
@@ -426,7 +437,7 @@ def _selected_single(snapshot: Dict[str, Any], category_id: str) -> str:
 
 def _section_heading(text: str, styles: Dict[str, ParagraphStyle]) -> Table:
     table = Table([[_paragraph(text, styles["section"], "")]], colWidths=[170 * mm], hAlign="LEFT")
-    table.setStyle(TableStyle([("LINEBELOW", (0, 0), (-1, -1), 1, BRAND_ORANGE), ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0), ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 2)]))
+    table.setStyle(TableStyle([("LINEBELOW", (0, 0), (-1, -1), 1, ACCENT_BLUE), ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0), ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 2)]))
     return table
 
 
@@ -442,8 +453,9 @@ def _item_table(title: str, items: Sequence[Dict[str, Any]], styles: Dict[str, P
     rows: List[List[Any]] = [[_paragraph(title, styles["subsection"], "")] + [""] * (len(headers) - 1)]
     rows.append([_paragraph(label, styles["header"], "") for label in headers])
     subtotal = 0.0
-    for offset, item in enumerate(items):
-        quantity = max(1, _safe_int(item.get("quantity"), 1))
+    visible_items = [item for item in items if _positive_quantity(item.get("quantity")) > 0]
+    for offset, item in enumerate(visible_items):
+        quantity = _positive_quantity(item.get("quantity"))
         row: List[Any] = [_paragraph(start_index + offset, styles["body"]), _paragraph(_display_item_name(item, language), styles["body"]), _paragraph(quantity, styles["money"])]
         if include_prices:
             price = _safe_money(item.get("price", item.get("quoted_price")))
@@ -459,11 +471,11 @@ def _item_table(title: str, items: Sequence[Dict[str, Any]], styles: Dict[str, P
     table.setStyle(_table_style(right_columns=right_columns, title_row=True))
     if include_prices:
         subtotal_row = -2 if grand_total is not None else -1
-        table.setStyle(TableStyle([("BACKGROUND", (0, subtotal_row), (-1, subtotal_row), BRAND_LIGHT), ("LINEABOVE", (0, subtotal_row), (-1, subtotal_row), 0.6, BRAND_ORANGE), ("SPAN", (1, subtotal_row), (3, subtotal_row))]))
+        table.setStyle(TableStyle([("BACKGROUND", (0, subtotal_row), (-1, subtotal_row), LIGHT_BLUE), ("LINEABOVE", (0, subtotal_row), (-1, subtotal_row), 0.6, ACCENT_BLUE), ("SPAN", (1, subtotal_row), (3, subtotal_row))]))
         if grand_total is not None:
             table.setStyle(TableStyle([
-                ("BACKGROUND", (0, -1), (-1, -1), BRAND_DARK),
-                ("LINEABOVE", (0, -1), (-1, -1), 1, BRAND_ORANGE),
+                ("BACKGROUND", (0, -1), (-1, -1), BRAND_BLUE),
+                ("LINEABOVE", (0, -1), (-1, -1), 1, ACCENT_BLUE),
                 ("SPAN", (1, -1), (3, -1)),
             ]))
     return table, subtotal
@@ -490,11 +502,11 @@ def _device_story(snapshot: Dict[str, Any], device_index: int, styles: Dict[str,
     for category in _sorted_categories(snapshot):
         if category.get("id") in {"motor", "voltage", "channel"}:
             continue
-        options = _sorted_options(category)
+        options = [option for option in _sorted_options(category) if _positive_quantity(option.get("quantity")) > 0]
         if not options:
             continue
         title = _clean(category.get("name") or category.get("id")) or copy["optional_configuration"]
-        normalized = [dict(option, quantity=max(1, _safe_int(option.get("quantity"), 1))) for option in options]
+        normalized = [dict(option, quantity=_positive_quantity(option.get("quantity"))) for option in options]
         table, _ = _item_table(title, normalized, styles, language)
         content.extend([table, Spacer(1, 2 * mm)])
     return content
@@ -522,7 +534,9 @@ def _aggregate_entries(entries: Sequence[Dict[str, Any]], item_type: str) -> Lis
         snapshot = dict(entry.get("snapshot") or {})
         identity = _clean(entry.get("source_id") or snapshot.get("id") or snapshot.get("code") or snapshot.get("name"))
         key = identity.casefold() or uuid.uuid4().hex
-        quantity = max(1, _safe_int(entry.get("quantity", snapshot.get("quantity")), 1))
+        quantity = _positive_quantity(entry.get("quantity", snapshot.get("quantity")))
+        if quantity <= 0:
+            continue
         if key in aggregated:
             aggregated[key]["quantity"] += quantity
         else:
@@ -536,7 +550,7 @@ def _commerce_story(entries: Sequence[Dict[str, Any]], context: PdfDocumentConte
     copy = PDF_COPY[context.language]
     story = _intro_story(context, styles)
     canonical = _canonical_entries(entries)
-    devices = [entry for entry in canonical if entry.get("item_type") == "device_config"]
+    devices = [entry for entry in canonical if entry.get("item_type") == "device_config" and _positive_quantity(entry.get("quantity")) > 0]
     for index, entry in enumerate(devices, start=1):
         story.extend(_device_story(entry.get("snapshot") or {}, index, styles, context.language))
     for item_type, title_key in (("tool", "tools"), ("accessory", "accessories")):
@@ -552,14 +566,17 @@ def _commerce_story(entries: Sequence[Dict[str, Any]], context: PdfDocumentConte
             continue
         item = dict(entry.get("snapshot") or {})
         item.setdefault("name", entry.get("display_name") or entry.get("source_id") or copy["other"])
-        item["quantity"] = max(1, _safe_int(entry.get("quantity"), 1))
+        item["quantity"] = _positive_quantity(entry.get("quantity"))
+        if item["quantity"] <= 0:
+            continue
         item["availability"] = "snapshot_only"
         unknown.append(item)
     if unknown:
         story.append(CondPageBreak(30 * mm))
         table, _ = _item_table(copy["other"], unknown, styles, context.language)
         story.append(table)
-    if not canonical:
+    has_visible_content = bool(devices or _aggregate_entries(canonical, "tool") or _aggregate_entries(canonical, "accessory") or unknown)
+    if not has_visible_content:
         story.append(_paragraph(copy["empty"], styles["body"]))
     return story
 
@@ -600,13 +617,16 @@ def _quote_item_sort(items: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
 def _aggregate_quote_items(items: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
     aggregated: Dict[Tuple[str, float], Dict[str, Any]] = {}
     for item in items:
+        quantity = _positive_quantity(item.get("quantity"))
+        if quantity <= 0:
+            continue
         identity = _clean(item.get("source_id") or item.get("id") or item.get("code") or item.get("name")).casefold()
         price = _safe_money(item.get("price", item.get("quoted_price")))
         key = (identity or uuid.uuid4().hex, price)
         if key in aggregated:
-            aggregated[key]["quantity"] += max(1, _safe_int(item.get("quantity"), 1))
+            aggregated[key]["quantity"] += quantity
         else:
-            aggregated[key] = dict(item, quantity=max(1, _safe_int(item.get("quantity"), 1)), price=price)
+            aggregated[key] = dict(item, quantity=quantity, price=price)
     return list(aggregated.values())
 
 
@@ -616,7 +636,17 @@ def _quote_groups(items: Sequence[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]]
     tools: List[Dict[str, Any]] = []
     accessories: List[Dict[str, Any]] = []
     other: List[Dict[str, Any]] = []
+    invalid_device_keys = {
+        _clean(item.get("device_key")) or "device-{}".format(max(1, _safe_int(item.get("device_sequence"), 1)))
+        for item in items if _clean(item.get("kind")) == "product" and _positive_quantity(item.get("quantity")) <= 0
+    }
+    invalid_device_sequences = {
+        _safe_int(item.get("device_sequence"))
+        for item in items if _clean(item.get("kind")) == "product" and _positive_quantity(item.get("quantity")) <= 0
+    }
     for item in _quote_item_sort(items):
+        if _positive_quantity(item.get("quantity")) <= 0:
+            continue
         kind = _clean(item.get("kind"))
         if kind == "product":
             sequence = max(1, _safe_int(item.get("device_sequence"), len(devices) + 1))
@@ -625,6 +655,8 @@ def _quote_groups(items: Sequence[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]]
             sequence_keys[sequence] = key
         elif kind in ("option", "surcharge"):
             parent = _clean(item.get("parent_device_key")) or sequence_keys.get(_safe_int(item.get("device_sequence")), "")
+            if parent in invalid_device_keys or _safe_int(item.get("device_sequence")) in invalid_device_sequences:
+                continue
             if parent in devices:
                 devices[parent]["options"].append(item)
             else:
@@ -677,7 +709,11 @@ def quote_pdf(quote: Dict[str, Any]) -> bytes:
     copy = PDF_COPY[language]
     story = _intro_story(context, styles)
     devices, tools, accessories, other = _quote_groups(quote.get("items") or [])
-    computed_total = sum(_safe_money(item.get("price", item.get("quoted_price"))) * max(1, _safe_int(item.get("quantity"), 1)) for item in quote.get("items") or [])
+    visible_quote_items = [line for group in devices for line in ([group["product"]] + group["options"])] + tools + accessories + other
+    computed_total = sum(
+        _safe_money(item.get("price", item.get("quoted_price"))) * _positive_quantity(item.get("quantity"))
+        for item in visible_quote_items
+    )
     declared_total = _safe_money(quote.get("total_price"))
     grand_total = computed_total if quote.get("items") else declared_total
     trailing_groups = [(items, title_key) for items, title_key in ((tools, "tools"), (accessories, "accessories"), (other, "other")) if items]

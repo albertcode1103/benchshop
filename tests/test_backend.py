@@ -35,6 +35,7 @@ from backend.audit_catalog import audit_catalog
 from backend.config_repository import build_snapshot, create_share, get_share, list_saved_configs, save_config
 from backend.commerce_repository import _normalize_refs, search_all_shares
 from backend.catalog_refactor_repository import CatalogValidationError, create_catalog_item, get_product_editor, save_product_editor
+from backend.catalog_identity import normalize_catalog_code, strip_redundant_catalog_code
 from backend.customer_payload import PRICE_KEYS, without_prices
 from backend.pricing_service import calculate_product_price
 from backend.translation_service import translation_draft
@@ -42,6 +43,22 @@ from backend.config_routes import staff_user
 from backend.database import get_connection
 from backend.database_maintenance import create_backup, restore_backup, verify_database
 from backend.media_routes import image_extension, store_image
+from backend.media_maintenance import cleanup_orphan_uploads, remove_unreferenced_media
+
+
+class CatalogIdentityTests(unittest.TestCase):
+    def test_catalog_codes_keep_required_hyphens(self) -> None:
+        self.assertEqual("BT-WB", normalize_catalog_code("btwb"))
+        self.assertEqual("BTE-4240", normalize_catalog_code("BTE4240"))
+        self.assertEqual("BTC-0001", normalize_catalog_code("btc-0001"))
+        self.assertEqual("BTK-1001", normalize_catalog_code("BTK1001"))
+        self.assertEqual("TEST-TOOL-01", normalize_catalog_code("test-tool-01"))
+        self.assertEqual("BOTEN CR1016", normalize_catalog_code("Boten CR1016"))
+
+    def test_duplicate_code_prefix_is_removed_from_bilingual_names(self) -> None:
+        self.assertEqual("德尔福 A E1 E3", strip_redundant_catalog_code("BTE-4240 · 德尔福 A E1 E3", "BTE-4240"))
+        self.assertEqual("DELPHI A E1 E3", strip_redundant_catalog_code("BTE4240 DELPHI A E1 E3", "BTE-4240"))
+        self.assertEqual("适用于 BTK-1001", strip_redundant_catalog_code("适用于 BTK-1001", "BTK-1001"))
 from backend.main import app
 from backend.pdf_service import commerce_bundle_pdf, configuration_pdf, quote_pdf, temporary_configuration_code
 from backend.repository import get_product, get_public_product_snapshot, list_products
@@ -2222,6 +2239,84 @@ class BackendWorkflowTests(unittest.TestCase):
             "CFG-20260909-123456-AB12",
             temporary_configuration_code(datetime(2026, 9, 9, 12, 34, 56), "ab12"),
         )
+
+    def test_pdf_exports_use_original_blue_palette(self) -> None:
+        from backend import pdf_service
+
+        self.assertEqual("0x183b56", pdf_service.BRAND_BLUE.hexval())
+        self.assertEqual("0x2e75b6", pdf_service.ACCENT_BLUE.hexval())
+        self.assertEqual("0xeaf2f8", pdf_service.LIGHT_BLUE.hexval())
+        source = Path(pdf_service.__file__).read_text(encoding="utf-8")
+        self.assertNotIn("#F36B21", source)
+        self.assertNotIn("#A83E00", source)
+        self.assertNotIn("#FFF4EB", source)
+
+    def test_pdf_ignores_non_positive_quantities_and_totals_visible_rows(self) -> None:
+        from pypdf import PdfReader
+
+        zero_config = commerce_bundle_pdf(
+            [
+                {"item_type": "tool", "source_id": "zero-tool", "quantity": 0, "snapshot": {"code": "ZERO-TOOL", "name": "Must not render"}},
+                {"item_type": "accessory", "source_id": "negative-accessory", "quantity": -3, "snapshot": {"code": "NEG-ACC", "name": "Must not render"}},
+                {"item_type": "tool", "source_id": "invalid-tool", "quantity": "invalid", "snapshot": {"code": "INVALID-QTY", "name": "Must not render"}},
+            ],
+            {"display_name": "Boundary Customer"},
+            document_code="CFG-ZERO",
+        )
+        zero_text = "\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(zero_config)).pages)
+        self.assertNotIn("ZERO-TOOL", zero_text)
+        self.assertNotIn("NEG-ACC", zero_text)
+        self.assertNotIn("INVALID-QTY", zero_text)
+        self.assertIn("暂无配置项目", zero_text)
+
+        long_name = "超长工具名称" * 45
+        quote_content = quote_pdf({
+            "id": "zero-quantity-quote",
+            "quote_number": "BTQ-ZERO-0001",
+            "currency": "CNY",
+            "items": [
+                {"kind": "product", "device_key": "device-zero", "device_sequence": 1, "code": "ZERO-DEVICE", "name": "Hidden device", "quantity": 0, "price": 9000},
+                {"kind": "option", "parent_device_key": "device-zero", "device_sequence": 1, "code": "ORPHAN-OPTION", "name": "Hidden child", "quantity": 2, "price": 400},
+                {"kind": "tool", "source_id": "valid-tool", "code": "VALID-TOOL", "name": long_name, "quantity": 2, "price": 25},
+                {"kind": "accessory", "source_id": "invalid-accessory", "code": "NEGATIVE", "name": "Hidden accessory", "quantity": -1, "price": 100},
+            ],
+            "total_price": 999999,
+        })
+        reader = PdfReader(BytesIO(quote_content))
+        quote_text = "\n".join(page.extract_text() or "" for page in reader.pages)
+        self.assertNotIn("ZERO-DEVICE", quote_text)
+        self.assertNotIn("ORPHAN-OPTION", quote_text)
+        self.assertNotIn("NEGATIVE", quote_text)
+        self.assertIn("VALID-TOOL", quote_text)
+        self.assertIn("CNY 50.00", quote_text)
+        self.assertNotIn("999,999.00", quote_text)
+        self.assertGreaterEqual(len(reader.pages), 1)
+
+    def test_catalog_upload_cleanup_is_preview_first_and_reference_safe(self) -> None:
+        TEST_UPLOADS.mkdir(parents=True, exist_ok=True)
+        orphan_name = "a" * 32 + ".png"
+        shared_name = "b" * 32 + ".png"
+        (TEST_UPLOADS / orphan_name).write_bytes(sample_png())
+        (TEST_UPLOADS / shared_name).write_bytes(sample_png())
+        with get_connection() as database:
+            database.execute(
+                "INSERT INTO product_images (id, product_id, image_path, image_width, image_height, alt_zh, alt_en, sort_order) VALUES (?, ?, ?, 2, 3, '', '', 999)",
+                ("cleanup-shared-image", "cr1016", "/api/v1/media/{}".format(shared_name)),
+            )
+        try:
+            preview = cleanup_orphan_uploads(False, TEST_UPLOADS)
+            self.assertIn(orphan_name, preview["candidates"])
+            self.assertTrue((TEST_UPLOADS / orphan_name).is_file())
+            self.assertNotIn(shared_name, preview["candidates"])
+            self.assertEqual([], remove_unreferenced_media(["/api/v1/media/{}".format(shared_name)], TEST_UPLOADS))
+            applied = cleanup_orphan_uploads(True, TEST_UPLOADS)
+            self.assertIn(orphan_name, applied["removed"])
+            self.assertFalse((TEST_UPLOADS / orphan_name).exists())
+            self.assertTrue((TEST_UPLOADS / shared_name).is_file())
+        finally:
+            with get_connection() as database:
+                database.execute("DELETE FROM product_images WHERE id = ?", ("cleanup-shared-image",))
+            (TEST_UPLOADS / shared_name).unlink(missing_ok=True)
 
     def test_safe_catalog_deletion(self) -> None:
         mapped = config_option_references("cri-1016")

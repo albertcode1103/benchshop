@@ -198,7 +198,7 @@ function renderCatalogCartGroup(type, items) {
   const toolMode = type === "tools";
   const title = toolMode ? cartText("serviceTools", "维修工具", "Service Tools") : cartText("accessories", "设备附件", "Accessories");
   const totalQuantity = items.reduce((total, item) => total + Number(item.quantity || 1), 0);
-  const rows = items.map((item) => `<div class="cart-catalog-group-row"><span><strong>${escapeCartHtml(item.name || "--")}</strong><small>${escapeCartHtml(item.code || "--")}</small></span><b>× ${item.quantity}</b></div>`).join("");
+  const rows = items.map((item) => `<div class="cart-catalog-group-row"><span><small>${escapeCartHtml(window.normalizeCatalogCode(item.code) || "--")}</small><strong>${escapeCartHtml(window.catalogDisplayName(item.name, item.code) || "--")}</strong></span><b>× ${item.quantity}</b></div>`).join("");
   return `<article class="cart-item cart-catalog-group-card" data-catalog-cart-group="${type}">
     <header class="cart-item-toolbar">
       <div class="cart-item-toolbar-label"><span class="cart-item-kind-title">${escapeCartHtml(title)}</span></div>
@@ -249,7 +249,7 @@ function showCatalogGroupDialog(type) {
   dialog.className = "share-dialog cart-detail-dialog catalog-group-dialog is-editing";
   dialog.setAttribute("aria-labelledby", "catalog-group-dialog-title");
   const rows = items.map((item) => `<article class="catalog-cart-dialog-row" data-catalog-dialog-item="${escapeCartHtml(item.id)}" data-version="${item.version}" data-original-quantity="${item.quantity}">
-    <div class="catalog-cart-dialog-copy"><strong>${escapeCartHtml(item.name || "--")}</strong><small>${escapeCartHtml(item.code || "--")}</small></div>
+    <div class="catalog-cart-dialog-copy"><small>${escapeCartHtml(window.normalizeCatalogCode(item.code) || "--")}</small><strong>${escapeCartHtml(window.catalogDisplayName(item.name, item.code) || "--")}</strong></div>
     <div class="catalog-cart-dialog-quantity"><span class="catalog-dialog-stepper"><button type="button" data-catalog-quantity-step="-1" aria-label="${cartText("decreaseQuantity", "减少数量", "Decrease quantity")}">−</button><input type="number" min="1" max="999" step="1" value="${item.quantity}" inputmode="numeric" aria-label="${cartText("quantity", "数量", "Quantity")}：${escapeCartHtml(item.name || item.code || "")}"><button type="button" data-catalog-quantity-step="1" aria-label="${cartText("increaseQuantity", "增加数量", "Increase quantity")}">+</button></span></div>
     <button class="btn btn-secondary btn-sm catalog-dialog-delete" type="button" data-mark-catalog-delete aria-pressed="false">${cartText("deleteAction", "删除", "Delete")}</button>
   </article>`).join("");

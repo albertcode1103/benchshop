@@ -70,6 +70,7 @@
 .profile-detail-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-md); padding: var(--space-sm) var(--space-md); border-radius: var(--radius-sm); background: var(--color-bg); }
 .profile-detail-row > span { display: grid; gap: 2px; min-width: 0; }
 .profile-detail-row small { color: var(--color-text-secondary); font-size: .75rem; }
+.profile-detail-row .profile-catalog-code { color: var(--color-accent-dark); font-weight: 700; letter-spacing: .035em; }
 .profile-detail-row.is-unavailable { color: var(--color-danger); background: #fff7f7; }
 .profile-source-codes { display: flex; flex-wrap: wrap; gap: var(--space-sm); }
 .profile-source-codes code { padding: .35rem .6rem; border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-bg); font-family: inherit; font-weight: 700; }

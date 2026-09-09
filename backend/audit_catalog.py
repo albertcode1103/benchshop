@@ -8,6 +8,10 @@ from typing import Any, Dict, List
 
 from .config import PROJECT_DIR, UPLOAD_DIR
 from .database import get_connection
+from .media_maintenance import orphan_uploads
+
+
+PLACEHOLDER_MARKERS = ("xxxx占位", "todo placeholder", "test placeholder")
 
 
 def issue(level: str, code: str, message: str, record: str = "") -> Dict[str, str]:
@@ -38,6 +42,8 @@ def audit_catalog() -> Dict[str, Any]:
                 text = str(row.get(field) or "")
                 if "\ufffd" in text or "??" in text:
                     findings.append(issue("error", "invalid_text", "{} contains replacement characters or repeated question marks".format(field), "{}:{}".format(table_name, record)))
+                if any(marker in text.casefold() for marker in PLACEHOLDER_MARKERS):
+                    findings.append(issue("error", "placeholder_text", "{} contains placeholder content".format(field), "{}:{}".format(table_name, record)))
 
     option_codes = Counter(str(row.get("code") or "").strip().upper() for row in options)
     for code, count in option_codes.items():
@@ -89,6 +95,9 @@ def audit_catalog() -> Dict[str, Any]:
 
     for failure in foreign_key_errors:
         findings.append(issue("error", "foreign_key", "Foreign-key check failed: {}".format(failure)))
+
+    for path in orphan_uploads():
+        findings.append(issue("warning", "orphan_upload", "Uploaded image is not referenced by catalog data", path.name))
 
     counts = Counter(item["level"] for item in findings)
     return {

@@ -18,7 +18,11 @@ function customerShareItemTitle(item) {
     const product = snapshot.product || {};
     return [product.name, product.title_name].filter(Boolean).join(" ") || item.display_name || "--";
   }
-  return [snapshot.code, snapshot.name].filter(Boolean).join(" ") || item.display_name || "--";
+  return window.catalogDisplayName(snapshot.name || item.display_name, snapshot.code) || window.normalizeCatalogCode(snapshot.code) || "--";
+}
+
+function customerShareItemCode(item) {
+  return item.item_type === "device_config" ? "" : window.normalizeCatalogCode(item.snapshot?.code);
 }
 
 function renderCustomerSharePreview(preview) {
@@ -34,7 +38,7 @@ function renderCustomerSharePreview(preview) {
     if (!items.length) return "";
     return `<section class="customer-share-group"><h3>${escapeCustomerShare(title)}</h3><div class="customer-share-items">${items.map((item) => `
       <article class="customer-share-item${item.available ? "" : " is-unavailable"}">
-        <div class="customer-share-item-main"><strong>${escapeCustomerShare(customerShareItemTitle(item))}</strong><span>${customerShareText("quantity", "数量", "Quantity")} ${Number(item.quantity || 1)}</span></div>
+        <div class="customer-share-item-main">${customerShareItemCode(item) ? `<small>${escapeCustomerShare(customerShareItemCode(item))}</small>` : ""}<strong>${escapeCustomerShare(customerShareItemTitle(item))}</strong><span>${customerShareText("quantity", "数量", "Quantity")} ${Number(item.quantity || 1)}</span></div>
         <span class="customer-share-availability">${item.available ? customerShareText("shareAvailable", "可加入", "Available") : customerShareText("shareUnavailable", "当前不可用", "Unavailable")}</span>
         ${item.available || !item.missing?.length ? "" : `<p>${customerShareText("missingContent", "缺失或已停用", "Missing or disabled")}：${item.missing.map(escapeCustomerShare).join("、")}</p>`}
       </article>`).join("")}</div></section>`;

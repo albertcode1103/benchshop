@@ -937,6 +937,31 @@ function commerceItemType(item) {
   return "device_config";
 }
 
+function normalizeCatalogCode(value) {
+  const raw = String(value || "").trim().toUpperCase();
+  const code = raw.replace(/\s+/g, "");
+  const match = code.match(/^(BTE|BTK|BTC|BT)-?([A-Z0-9]+)$/);
+  return match ? `${match[1]}-${match[2]}` : raw;
+}
+
+function catalogDisplayName(name, code) {
+  let text = String(name || "").trim();
+  const canonical = normalizeCatalogCode(code);
+  const aliases = [String(code || "").trim(), canonical, canonical.replace(/-/g, "")].filter(Boolean).sort((a, b) => b.length - a.length);
+  for (const alias of aliases) {
+    const escaped = alias.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const updated = text.replace(new RegExp(`^${escaped}(?=$|[\\s·:：/\\\\|_—–-])(?:[\\s·:：/\\\\|_—–-]+)?`, "i"), "").trim();
+    if (updated !== text) { text = updated; break; }
+  }
+  return text;
+}
+
+function catalogIdentityHtml(code, name, fallback = "未命名项目") {
+  const normalizedCode = normalizeCatalogCode(code);
+  const cleanName = catalogDisplayName(name, normalizedCode);
+  return `<span class="catalog-item-identity">${normalizedCode ? `<small>${escapeHtml(normalizedCode)}</small>` : ""}<strong>${escapeHtml(cleanName || fallback)}</strong></span>`;
+}
+
 function canonicalCommerceItems(items = []) {
   const typeOrder = { device_config: 0, tool: 1, accessory: 2 };
   return items.map((item, index) => ({ item, index })).sort((left, right) => {
@@ -1048,7 +1073,7 @@ async function viewInquiry(inquiryId) {
         ["颜色", snapshot.color?.label || snapshot.color?.code || ""], ["电机", singleValue("motor")],
         ["电源", singleValue("voltage")], ["通道", singleValue("channel")]
       ].filter(([, value]) => isConfiguredValue(value)).map(([label, value]) => `<div><span>${label}</span><strong>${escapeHtml(value)}</strong></div>`).join("");
-      const optionGroups = categories.filter((category) => !["motor", "voltage", "channel"].includes(category.id) && (category.options || []).length).map((category) => `<section class="share-detail-group"><header><span>${escapeHtml(category.name)}</span><small>${category.options.length} 项</small></header><ul>${category.options.map((option) => `<li><strong>${escapeHtml([option.code, option.name].filter(Boolean).join(" · ") || "未命名配置")}</strong>${plainDescription(option.description) ? `<span>${escapeHtml(plainDescription(option.description))}</span>` : ""}</li>`).join("")}</ul></section>`).join("");
+      const optionGroups = categories.filter((category) => !["motor", "voltage", "channel"].includes(category.id) && (category.options || []).length).map((category) => `<section class="share-detail-group"><header><span>${escapeHtml(category.name)}</span><small>${category.options.length} 项</small></header><ul>${category.options.map((option) => `<li>${catalogIdentityHtml(option.code, option.name, "未命名配置")}${plainDescription(option.description) ? `<span>${escapeHtml(plainDescription(option.description))}</span>` : ""}</li>`).join("")}</ul></section>`).join("");
       const availability = String(entry.availability || "snapshot_only");
       const availabilityNote = availability === "active" ? "" : `<em class="inquiry-availability ${escapeHtml(availability)}">${escapeHtml(inquiryAvailabilityLabel(availability))}</em>`;
       return `<article class="share-device-block inquiry-device-block"><h4>设备 ${index + 1} · ${escapeHtml(snapshot.product?.name || entry.display_name || "未填写")}${availabilityNote}</h4><section class="share-detail-group share-device-basics"><header><span>设备信息</span><small>型号与基本配置</small></header><div class="share-basic-list">${basics}</div></section><div class="share-detail-groups">${optionGroups || '<div class="empty">该设备未选择其他选配项目</div>'}</div></article>`;
@@ -1060,7 +1085,7 @@ async function viewInquiry(inquiryId) {
         const snapshot = entry.snapshot || {};
         const availability = String(entry.availability || "snapshot_only");
         const availabilityNote = availability === "active" ? "" : `<em class="inquiry-availability ${escapeHtml(availability)}">${escapeHtml(inquiryAvailabilityLabel(availability))}</em>`;
-        return `<li><strong>${escapeHtml([snapshot.code, snapshot.name || entry.display_name].filter(Boolean).join(" · ") || "未命名项目")}${availabilityNote}</strong><span>数量：${formatNumber(entry.quantity || snapshot.quantity || 1)}</span></li>`;
+        return `<li>${catalogIdentityHtml(snapshot.code, snapshot.name || entry.display_name)}${availabilityNote}<span>数量：${formatNumber(entry.quantity || snapshot.quantity || 1)}</span></li>`;
       }).join("");
       return `<article class="share-device-block share-catalog-block"><section class="share-detail-group"><header><span>${label}</span><small>共 ${formatNumber(total)} 件</small></header><ul>${rows}</ul></section></article>`;
     }).join("");
@@ -1564,11 +1589,11 @@ function openQuoteEditor({ quoteId = null, quoteVersion = null, configId = null,
       const groupLabel = type === "tool" ? "维修工具" : type === "accessory" ? "设备附件" : context;
       const availability = item.availability && item.availability !== "active" ? `<span class="quote-availability-warning">${item.availability === "inactive" ? "已停用" : item.availability === "missing" ? "已缺失" : "仅历史快照"}</span>` : "";
       const detail = item.kind === "product" ? quoteDeviceSpecifications(item) : "";
-      const itemCode = String(item.code || "").trim();
-      const itemName = String(item.name || "").trim();
-      const lineName = item.kind === "product" ? "设备基础价格" : itemCode && itemName.toLocaleLowerCase().startsWith(itemCode.toLocaleLowerCase()) ? itemName : [itemCode, itemName].filter(Boolean).join(" · ") || "未命名项目";
+      const itemCode = normalizeCatalogCode(item.code);
+      const itemName = catalogDisplayName(item.name, itemCode);
+      const lineName = item.kind === "product" ? "设备基础价格" : itemName || "未命名项目";
       const deleteButton = isLockedQuoteLine(item) ? '<span class="quote-base-lock">基础配置</span>' : `<button class="table-action danger quote-line-delete" type="button" data-delete-quote-line="${index}" aria-label="删除 ${escapeHtml(item.name || "报价项目")}">删除</button>`;
-      return `${startsGroup ? `<div class="quote-commerce-group-title">${escapeHtml(groupLabel)}</div>` : ""}<div class="quote-edit-row"><div class="quote-item-name">${availability ? `<small>${availability}</small>` : ""}<strong>${escapeHtml(lineName)}</strong>${detail ? `<span>${escapeHtml(detail)}</span>` : ""}</div><input class="quote-qty-input" data-q="qty" data-i="${index}" aria-label="数量" type="number" min="1" step="1" value="${item.quantity}"><input class="quote-price-input" data-q="price" data-i="${index}" aria-label="单价" type="number" min="0" step="0.01" value="${item.price}"><span class="quote-line-action">${deleteButton}</span></div>`;
+      return `${startsGroup ? `<div class="quote-commerce-group-title">${escapeHtml(groupLabel)}</div>` : ""}<div class="quote-edit-row"><div class="quote-item-name">${availability ? `<small>${availability}</small>` : ""}${itemCode && item.kind !== "product" ? `<small class="catalog-code">${escapeHtml(itemCode)}</small>` : ""}<strong>${escapeHtml(lineName)}</strong>${detail ? `<span>${escapeHtml(detail)}</span>` : ""}</div><input class="quote-qty-input" data-q="qty" data-i="${index}" aria-label="数量" type="number" min="1" step="1" value="${item.quantity}"><input class="quote-price-input" data-q="price" data-i="${index}" aria-label="单价" type="number" min="0" step="0.01" value="${item.price}"><span class="quote-line-action">${deleteButton}</span></div>`;
     }).join("") : '<div class="quote-edit-empty">暂无可报价项目，请添加项目后保存。</div>';
     itemStateInput.value = JSON.stringify(normalizedItems);
   };
@@ -1640,7 +1665,7 @@ function openQuoteEditor({ quoteId = null, quoteVersion = null, configId = null,
   const openRecipientPicker = async () => {
     const picker = document.createElement("dialog");
     picker.className = "share-dialog quote-customer-picker";
-    picker.innerHTML = `<form method="dialog" class="share-dialog-card quote-customer-picker-card"><header><div><span class="eyebrow">CUSTOMER</span><h2>选择接收客户</h2></div><button class="icon-button" value="cancel" aria-label="关闭">×</button></header><label class="quote-customer-picker-search"><span>搜索客户</span><input type="search" autocomplete="off" placeholder="姓名、邮箱或手机号" autofocus /></label><div class="quote-customer-picker-results" aria-live="polite"><div class="empty">正在读取客户…</div></div><footer><button class="button button-secondary" value="cancel">取消</button></footer></form>`;
+    picker.innerHTML = `<form method="dialog" class="share-dialog-card quote-customer-picker-card"><header><div><span class="eyebrow">CUSTOMER</span><h2>选择接收客户</h2></div><button class="icon-button" value="cancel" aria-label="关闭">×</button></header><label class="quote-customer-picker-search"><span>搜索客户</span><input type="search" autocomplete="off" placeholder="姓名、邮箱或手机号" /></label><div class="quote-customer-picker-results" aria-live="polite"><div class="empty">正在读取客户…</div></div><footer><button class="button button-secondary" value="cancel">取消</button></footer></form>`;
     document.body.appendChild(picker);
     const input = $("input", picker);
     const results = $(".quote-customer-picker-results", picker);
@@ -1665,6 +1690,7 @@ function openQuoteEditor({ quoteId = null, quoteVersion = null, configId = null,
     });
     picker.addEventListener("close", () => picker.remove(), { once: true });
     picker.showModal();
+    if (window.matchMedia("(min-width: 601px)").matches) requestAnimationFrame(() => input.focus());
     await search();
   };
   const openManualCustomerEditor = () => {
@@ -1898,7 +1924,7 @@ function renderShareDetail(share) {
     const categories = categoryList.filter((category) => !baseCategoryIds.has(category.id)).map((category) => {
       const options = (category.options || []).map((option) => {
         const description = plainDescription(option.description);
-        return `<li><strong>${escapeHtml(option.name)}</strong>${description ? `<span>${escapeHtml(description)}</span>` : ""}</li>`;
+        return `<li>${catalogIdentityHtml(option.code, option.name, "未命名配置")}${description ? `<span>${escapeHtml(description)}</span>` : ""}</li>`;
       }).join("");
       return `<section class="share-detail-group"><header><span>${escapeHtml(category.name)}</span><small>${category.options.length} 项</small></header><ul>${options}</ul></section>`;
     }).join("");
@@ -1917,7 +1943,7 @@ function renderShareDetail(share) {
     if (!entries.length) return "";
     const rows = entries.map((entry) => {
       const snapshot = entry.snapshot || {};
-      return `<li><strong>${escapeHtml([snapshot.code, snapshot.name || entry.display_name].filter(Boolean).join(" · ") || "—")}</strong><span>数量：${Number(entry.quantity || snapshot.quantity || 1)}</span></li>`;
+      return `<li>${catalogIdentityHtml(snapshot.code, snapshot.name || entry.display_name, "—")}<span>数量：${Number(entry.quantity || snapshot.quantity || 1)}</span></li>`;
     }).join("");
     return `<article class="share-device-block share-catalog-block"><section class="share-detail-group"><header><span>${label}</span><small>${entries.length} 项</small></header><ul>${rows}</ul></section></article>`;
   }).join("");

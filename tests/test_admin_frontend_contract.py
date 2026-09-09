@@ -15,6 +15,7 @@ CUSTOMER_LANGUAGE = (PROJECT_ROOT / "js" / "language.js").read_text(encoding="ut
 CUSTOMER_MARKETPLACE = (PROJECT_ROOT / "js" / "catalog-marketplace.js").read_text(encoding="utf-8")
 CUSTOMER_NAVIGATION_DRAWER = (PROJECT_ROOT / "js" / "navigation-drawer.js").read_text(encoding="utf-8")
 CUSTOMER_SHARE_VIEWER = (PROJECT_ROOT / "js" / "share-viewer.js").read_text(encoding="utf-8")
+CUSTOMER_DATA = (PROJECT_ROOT / "js" / "data.js").read_text(encoding="utf-8")
 CUSTOMER_LAYOUT_CSS = (PROJECT_ROOT / "css" / "layout.css").read_text(encoding="utf-8")
 CUSTOMER_COMPONENTS_CSS = (PROJECT_ROOT / "css" / "components.css").read_text(encoding="utf-8")
 ACCOUNT_HTML = (PROJECT_ROOT / "account" / "index.html").read_text(encoding="utf-8")
@@ -23,6 +24,14 @@ ACCOUNT_CSS = (PROJECT_ROOT / "account" / "account.css").read_text(encoding="utf
 
 
 class AdminFrontendContractTests(unittest.TestCase):
+    def test_catalog_identity_is_separate_and_normalized_across_customer_and_admin_views(self) -> None:
+        self.assertIn("window.normalizeCatalogCode", CUSTOMER_DATA)
+        self.assertIn('class="option-code"', CUSTOMER_RENDERER)
+        self.assertIn("window.catalogDisplayName(item.name, item.code)", CUSTOMER_CART)
+        self.assertIn("customerShareItemCode(item)", CUSTOMER_SHARE_VIEWER)
+        self.assertIn("function catalogIdentityHtml(", ADMIN_JS)
+        self.assertIn('class="catalog-code"', ADMIN_JS)
+
     def test_product_navigation_uses_a_two_level_accessible_drawer(self) -> None:
         self.assertIn('id="catalog-drawer-toggle"', CUSTOMER_HTML)
         self.assertIn('id="catalog-navigation-drawer"', CUSTOMER_HTML)
@@ -251,6 +260,15 @@ class AdminFrontendContractTests(unittest.TestCase):
         self.assertIn('specialNote: option.special_note || ""', customer_api)
         self.assertIn('option-special-note', CUSTOMER_RENDERER)
 
+    def test_customer_device_description_preserves_database_line_breaks(self) -> None:
+        self.assertIn(
+            'rendererElements.pageDesc.textContent = model.description',
+            CUSTOMER_RENDERER,
+        )
+        page_description_rule = CUSTOMER_LAYOUT_CSS.split('.page-desc {', 1)[1].split('}', 1)[0]
+        self.assertIn('white-space: pre-line;', page_description_rule)
+        self.assertIn('overflow-wrap: anywhere;', page_description_rule)
+
     def test_saved_cart_requests_current_catalog_language(self) -> None:
         customer_cart = (PROJECT_ROOT / "js" / "cart.js").read_text(encoding="utf-8")
         customer_price = (PROJECT_ROOT / "js" / "price.js").read_text(encoding="utf-8")
@@ -421,6 +439,17 @@ class AdminFrontendContractTests(unittest.TestCase):
         self.assertIn('<h2 data-share-drawer-title>分享记录</h2>', ADMIN_JS)
         self.assertIn('分享记录 <span translate="no">', ADMIN_JS)
         self.assertIn('<span>报价状态</span>${quoteState}', ADMIN_JS)
+
+    def test_customer_picker_and_large_quote_editor_accessibility_contract(self) -> None:
+        self.assertNotIn('placeholder="姓名、邮箱或手机号" autofocus', ADMIN_JS)
+        self.assertIn('window.matchMedia("(min-width: 601px)").matches', ADMIN_JS)
+        self.assertIn('requestAnimationFrame(() => input.focus())', ADMIN_JS)
+        self.assertIn('.quote-customer-result:focus-visible', ADMIN_CSS)
+        self.assertIn('outline: 2px solid var(--orange)', ADMIN_CSS)
+        self.assertIn('content-visibility: auto', ADMIN_CSS)
+        self.assertIn('contain-intrinsic-block-size: auto 54px', ADMIN_CSS)
+        self.assertIn('width="${Number(item.image_width) || 640}"', ADMIN_CATALOG_V2)
+        self.assertIn('alt_zh || item.alt_en || "设备图片"', ADMIN_CATALOG_V2)
 
     def test_catalog_pages_add_directly_to_cart_without_pending_summary(self) -> None:
         for marker in (

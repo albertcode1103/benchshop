@@ -331,7 +331,7 @@
         colors: tb.colors,
         detailImages: tb.detailImages || [],
         basePrice: 0,
-        description: "设备描述XXXX占位",
+        description: "",
         categories: buildModelCategories(tb, modelId)
       };
     })
@@ -354,3 +354,22 @@
     });
     return selections;
   }
+window.normalizeCatalogCode = function normalizeCatalogCode(value) {
+  const raw = String(value || "").trim().toUpperCase();
+  const code = raw.replace(/\s+/g, "");
+  const match = code.match(/^(BTE|BTK|BTC|BT)-?([A-Z0-9]+)$/);
+  return match ? `${match[1]}-${match[2]}` : raw;
+};
+
+window.catalogDisplayName = function catalogDisplayName(name, code) {
+  let text = String(name || "").trim();
+  const canonical = window.normalizeCatalogCode(code);
+  const aliases = [String(code || "").trim(), canonical, canonical.replace(/-/g, "")]
+    .filter(Boolean).sort((left, right) => right.length - left.length);
+  for (const alias of aliases) {
+    const escaped = alias.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const updated = text.replace(new RegExp(`^${escaped}(?=$|[\\s·:：/\\\\|_—–-])(?:[\\s·:：/\\\\|_—–-]+)?`, "i"), "").trim();
+    if (updated !== text) { text = updated; break; }
+  }
+  return text;
+};

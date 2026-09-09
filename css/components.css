@@ -459,6 +459,14 @@
   margin-bottom: var(--space-xs);
 }
 
+.option-card .option-code {
+  margin-bottom: 2px;
+  color: var(--color-accent-dark);
+  font-size: .75rem;
+  font-weight: 700;
+  letter-spacing: .035em;
+}
+
 .option-card .option-desc {
   font-size: 0.8125rem;
   color: var(--color-text-secondary);
@@ -823,6 +831,7 @@ html:has(dialog[open]) { overflow: hidden; }
 .customer-share-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-xs) var(--space-md); align-items: center; padding: var(--space-md); border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface); }
 .customer-share-item.is-unavailable { border-color: #efb4b4; background: #fff7f7; }
 .customer-share-item-main { display: grid; gap: 2px; min-width: 0; }
+.customer-share-item-main small { color: var(--color-accent-dark); font-size: .75rem; font-weight: 700; letter-spacing: .03em; }
 .customer-share-item-main strong { overflow-wrap: anywhere; font-size: .9375rem; }
 .customer-share-item-main span { color: var(--color-text-secondary); font-size: .75rem; }
 .customer-share-availability { color: #08734f; font-size: .75rem; font-weight: 700; }
@@ -993,7 +1002,7 @@ html:has(dialog[open]) { overflow: hidden; }
 .cart-catalog-group-row strong,
 .cart-catalog-group-row small { display: block; }
 .cart-catalog-group-row strong { font-size: .8125rem; overflow-wrap: anywhere; }
-.cart-catalog-group-row small { margin-top: 2px; color: var(--color-text-secondary); font-size: .75rem; }
+.cart-catalog-group-row small { margin-bottom: 2px; color: var(--color-accent-dark); font-size: .75rem; font-weight: 700; letter-spacing: .03em; }
 .cart-catalog-group-row > b { color: var(--color-accent-dark); font-size: .8125rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .cart-catalog-group-total { display: flex; align-items: center; justify-content: space-between; gap: var(--space-md); padding-top: var(--space-md); font-size: .8125rem; }
 .cart-catalog-group-total span { color: var(--color-text-secondary); }

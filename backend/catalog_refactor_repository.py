@@ -5,7 +5,9 @@ import uuid
 from typing import Any, Dict, List, Optional, Sequence
 
 from .database import get_connection
+from .catalog_identity import normalize_catalog_code, strip_redundant_catalog_code
 from .media_routes import validate_media_reference
+from .media_maintenance import remove_unreferenced_media
 
 
 BASE_OPTION_TYPES = ("motor", "power", "channel")
@@ -322,9 +324,9 @@ def create_catalog_item(
     sort_order: int = 0,
     translation_status: str = "machine_draft",
 ) -> Dict[str, Any]:
-    code = code.strip()
-    name_zh = name_zh.strip()
-    name_en = name_en.strip()
+    code = normalize_catalog_code(code)
+    name_zh = strip_redundant_catalog_code(name_zh, code)
+    name_en = strip_redundant_catalog_code(name_en, code)
     if not code:
         raise CatalogValidationError("CATALOG_CODE_REQUIRED", "code")
     if not name_zh or (enabled and not name_en):
@@ -403,9 +405,9 @@ def update_catalog_item(
     sort_order: int = 0,
     translation_status: str = "machine_draft",
 ) -> Dict[str, Any]:
-    code = code.strip()
-    name_zh = name_zh.strip()
-    name_en = name_en.strip()
+    code = normalize_catalog_code(code)
+    name_zh = strip_redundant_catalog_code(name_zh, code)
+    name_en = strip_redundant_catalog_code(name_en, code)
     if not code:
         raise CatalogValidationError("CATALOG_CODE_REQUIRED", "code")
     if not name_zh or (enabled and not name_en):
@@ -796,6 +798,7 @@ def save_product_editor(
         raise CatalogValidationError("BASE_OPTION_GROUP_REQUIRED", "base_option_groups")
 
     optional_config_overrides = optional_config_overrides or {}
+    removed_image_paths: List[str] = []
     with get_connection() as db:
         current = db.execute(
             """
@@ -1002,6 +1005,11 @@ def save_product_editor(
                 )
 
         if images is not None:
+            previous_image_paths = {
+                str(row[0]) for row in db.execute(
+                    "SELECT image_path FROM product_images WHERE product_id = ?", (product_id,)
+                ).fetchall() if row[0]
+            }
             normalized_images = []
             for image_index, image in enumerate(images):
                 path = str(image.get("image_path") or "").strip()
@@ -1016,6 +1024,8 @@ def save_product_editor(
                 normalized_images.append((str(image.get("id") or uuid.uuid4().hex), product_id, path, width, height, str(image.get("alt_zh") or "").strip(), str(image.get("alt_en") or "").strip(), image_index))
             db.execute("DELETE FROM product_images WHERE product_id = ?", (product_id,))
             db.executemany("INSERT INTO product_images (id, product_id, image_path, image_width, image_height, alt_zh, alt_en, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", normalized_images)
+            submitted_image_paths = {row[2] for row in normalized_images}
+            removed_image_paths = sorted(previous_image_paths - submitted_image_paths)
 
         existing_group_ids = {
             row[0]
@@ -1309,6 +1319,8 @@ def save_product_editor(
                 (product_id, item["id"], mapping_id, note_zh, note_en, sort_order),
             )
 
+    if removed_image_paths:
+        remove_unreferenced_media(removed_image_paths)
     result = get_product_editor(product_id)
     if result is None:
         raise CatalogValidationError("CATALOG_PRODUCT_NOT_FOUND", "product_id")

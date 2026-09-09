@@ -153,7 +153,7 @@ async function changeMarketplaceCartQuantity(optionId, quantity, delta) {
 }
 
 function marketplaceSummaryRow(item) {
-  return `<div class="catalog-summary-row"><span><strong>${escapeMarketplaceHtml(item.code || "--")}</strong><small>${escapeMarketplaceHtml(item.name || "--")}</small></span><b>× ${Number(item.quantity || 1)}</b></div>`;
+  return `<div class="catalog-summary-row"><span><strong>${escapeMarketplaceHtml(window.normalizeCatalogCode(item.code) || "--")}</strong><small>${escapeMarketplaceHtml(window.catalogDisplayName(item.name, item.code) || "--")}</small></span><b>× ${Number(item.quantity || 1)}</b></div>`;
 }
 
 function renderMarketplaceSummary() {
@@ -260,8 +260,8 @@ function renderCatalogMarketplace() {
         <img src="${escapeMarketplaceHtml(image)}" alt="" width="${imageWidth}" height="${imageHeight}" loading="lazy" onerror="this.src='assets/images/placeholder-option.svg'" />
       </div>
       <div class="catalog-product-body">
-        <div class="catalog-product-code">${escapeMarketplaceHtml(item.code || "--")}</div>
-        <h3>${escapeMarketplaceHtml(item.name || "--")}</h3>
+        <div class="catalog-product-code">${escapeMarketplaceHtml(window.normalizeCatalogCode(item.code) || "--")}</div>
+        <h3>${escapeMarketplaceHtml(window.catalogDisplayName(item.name, item.code) || "--")}</h3>
         ${description ? `<p>${escapeMarketplaceHtml(description)}</p>` : ""}
         ${inCartQuantity ? `<div class="catalog-product-in-cart">${marketplaceText("inCartQuantity", "购物车中：{count}", "In cart: {count}").replace("{count}", inCartQuantity)}</div>` : ""}
       </div>
