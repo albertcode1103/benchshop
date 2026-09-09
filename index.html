@@ -11,23 +11,23 @@
   <link rel="shortcut icon" type="image/png" href="tb/site/LOGO.png?v=20260831" />
   <link rel="apple-touch-icon" href="tb/site/LOGO.png?v=20260831" />
   <link rel="stylesheet" href="css/main.css?v=20260904-1" />
-  <link rel="stylesheet" href="css/layout.css?v=20260909-1" />
-  <link rel="stylesheet" href="css/components.css?v=20260909-1" />
+  <link rel="stylesheet" href="css/layout.css?v=20260909-3" />
+  <link rel="stylesheet" href="css/components.css?v=20260910-2" />
   <link rel="stylesheet" href="css/print.css?v=20260831-1" />
-  <script src="js/runtime-config.js?v=20260907-1"></script>
+  <script src="js/runtime-config.js?v=20260910-1"></script>
   <script src="js/data.js?v=20260909-1" defer></script>
   <script src="js/catalog-api.js?v=20260908-2" defer></script>
   <script src="js/state.js?v=20260905-1" defer></script>
-  <script src="js/price.js?v=20260905-4" defer></script>
-  <script src="js/renderer.js?v=20260909-1" defer></script>
-  <script src="js/navigation-drawer.js?v=20260908-2" defer></script>
+  <script src="js/price.js?v=20260909-1" defer></script>
+  <script src="js/renderer.js?v=20260909-3" defer></script>
+  <script src="js/navigation-drawer.js?v=20260910-4" defer></script>
   <script src="js/auth.js?v=20260905-5" defer></script>
-  <script src="js/share-viewer.js?v=20260909-1" defer></script>
-  <script src="js/cart.js?v=20260909-1" defer></script>
-  <script src="js/catalog-marketplace.js?v=20260909-1" defer></script>
+  <script src="js/share-viewer.js?v=20260909-4" defer></script>
+  <script src="js/cart.js?v=20260909-3" defer></script>
+  <script src="js/catalog-marketplace.js?v=20260910-1" defer></script>
   <script src="js/pdf.js?v=20260903-1" defer></script>
   <script src="js/main.js?v=20260905-2" defer></script>
-  <script src="js/language.js?v=20260908-1" defer></script>
+  <script src="js/language.js?v=20260910-2" defer></script>
 </head>
 <body>
   <a class="skip-link" href="#main-content">跳到主要内容</a>
@@ -107,8 +107,14 @@ stroke-width="2" aria-hidden="true">
     <section class="config-stage" aria-label="配置区域">
 
       <div class="stage-header" data-device-content>
-        <h1 class="page-title" id="page-title">--</h1>
-        <p class="page-subtitle" id="page-subtitle">--</p>
+        <div class="stage-heading">
+          <h1 class="page-title" id="page-title">--</h1>
+          <p class="page-subtitle" id="page-subtitle">--</p>
+        </div>
+        <button id="catalog-stage-toggle" class="btn btn-secondary stage-catalog-toggle no-print" type="button" aria-haspopup="dialog" aria-controls="catalog-navigation-drawer" aria-expanded="false">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+          <span id="catalog-stage-toggle-label">查看目录</span>
+        </button>
       </div>
 
       <div class="preview-area" id="preview-area" data-device-content>
@@ -333,6 +339,10 @@ aria-controls="catalog-summary-panel" aria-label="查看购物车中的工具" h
           <button id="customer-share-search" class="btn btn-secondary" type="submit">查看</button>
         </div>
       </form>
+      <section id="customer-share-note" class="customer-share-note" hidden>
+        <strong id="customer-share-note-label">分享备注</strong>
+        <p id="customer-share-note-text"></p>
+      </section>
       <div id="customer-share-status" class="customer-share-status" role="status" aria-live="polite"></div>
       <div id="customer-share-content" class="customer-share-content" hidden></div>
       <footer class="customer-share-actions">

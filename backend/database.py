@@ -246,6 +246,7 @@ CREATE TABLE IF NOT EXISTS config_shares (
     customer_name TEXT NOT NULL DEFAULT '',
     customer_email TEXT NOT NULL DEFAULT '',
     customer_phone TEXT NOT NULL DEFAULT '',
+    note TEXT NOT NULL DEFAULT '',
     item_count INTEGER NOT NULL DEFAULT 1,
     view_count INTEGER NOT NULL DEFAULT 0,
     last_viewed_at TEXT,
@@ -296,6 +297,7 @@ CREATE TABLE IF NOT EXISTS commerce_shares (
     language TEXT NOT NULL DEFAULT 'zh',
     customer_name TEXT NOT NULL DEFAULT '',
     customer_email TEXT NOT NULL DEFAULT '',
+    note TEXT NOT NULL DEFAULT '',
     item_count INTEGER NOT NULL DEFAULT 1,
     product_summary TEXT NOT NULL DEFAULT '',
     primary_config_id TEXT REFERENCES saved_configs(id) ON DELETE SET NULL,
@@ -636,10 +638,14 @@ def initialize_database() -> None:
             ("customer_name", "TEXT NOT NULL DEFAULT ''"),
             ("customer_email", "TEXT NOT NULL DEFAULT ''"),
             ("customer_phone", "TEXT NOT NULL DEFAULT ''"),
+            ("note", "TEXT NOT NULL DEFAULT ''"),
             ("item_count", "INTEGER NOT NULL DEFAULT 1"),
         ):
             if column not in share_columns:
                 connection.execute("ALTER TABLE config_shares ADD COLUMN {} {}".format(column, definition))
+        commerce_share_columns = {row[1] for row in connection.execute("PRAGMA table_info(commerce_shares)").fetchall()}
+        if "note" not in commerce_share_columns:
+            connection.execute("ALTER TABLE commerce_shares ADD COLUMN note TEXT NOT NULL DEFAULT ''")
         connection.execute("""
             INSERT INTO config_share_items (id, share_id, config_id, sort_order, display_name, snapshot_json)
             SELECT lower(hex(randomblob(16))), s.id, s.config_id, 0, c.name, c.snapshot_json

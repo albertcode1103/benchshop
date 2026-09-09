@@ -25,21 +25,64 @@ function customerShareItemCode(item) {
   return item.item_type === "device_config" ? "" : window.normalizeCatalogCode(item.snapshot?.code);
 }
 
+function customerShareConfigured(value) {
+  const normalized = String(value || "").trim().toLocaleLowerCase();
+  return Boolean(normalized) && !new Set(["未配置", "未选择", "无", "none", "not configured", "not selected", "n/a", "—", "-"]).has(normalized);
+}
+
+function customerShareCatalogIdentity(code, name, fallback) {
+  const normalizedCode = window.normalizeCatalogCode(code);
+  const displayName = window.catalogDisplayName(name, normalizedCode) || fallback;
+  return `${normalizedCode ? `<small class="customer-share-option-code">${escapeCustomerShare(normalizedCode)}</small>` : ""}<strong>${escapeCustomerShare(displayName)}</strong>`;
+}
+
+function renderCustomerShareDevice(item, index) {
+  const snapshot = item.snapshot || {};
+  const product = snapshot.product || {};
+  const categories = snapshot.categories || [];
+  const baseIds = new Set(["motor", "voltage", "channel"]);
+  const singleValue = (id) => categories.find((category) => category.id === id)?.options?.map((option) => option.name || option.code).filter(customerShareConfigured).join(" / ") || "";
+  const basics = [
+    [customerShareText("model", "型号", "Model"), product.name],
+    [customerShareText("productName", "名称", "Name"), product.title_name],
+    [customerShareText("appearance", "外观颜色", "Appearance"), snapshot.color?.label || snapshot.color?.code],
+    [customerShareText("motor", "电机", "Motor"), singleValue("motor")],
+    [customerShareText("powerSupply", "电源", "Power Supply"), singleValue("voltage")],
+    [customerShareText("channels", "通道", "Channels"), singleValue("channel")]
+  ].filter(([, value]) => customerShareConfigured(value)).map(([label, value]) => `<div><span>${escapeCustomerShare(label)}</span><strong>${escapeCustomerShare(value)}</strong></div>`).join("");
+  const optionGroups = categories.filter((category) => !baseIds.has(category.id) && (category.options || []).length).map((category) => `
+    <section class="customer-share-option-group">
+      <header><strong>${escapeCustomerShare(category.name)}</strong><small>${category.options.length} ${customerShareText("items", "项", "items")}</small></header>
+      <ul>${category.options.map((option) => `<li><span>${customerShareCatalogIdentity(option.code, option.name, customerShareText("unnamedOption", "未命名配置", "Unnamed option"))}${option.description ? `<em>${escapeCustomerShare(String(option.description).replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim())}</em>` : ""}</span><b>× 1</b></li>`).join("")}</ul>
+    </section>`).join("");
+  const warning = item.available || !item.missing?.length ? "" : `<p class="customer-share-device-warning">${customerShareText("missingContent", "缺失或已停用", "Missing or disabled")}：${item.missing.map(escapeCustomerShare).join("、")}</p>`;
+  return `<article class="customer-share-device${item.available ? "" : " is-unavailable"}">
+    <h4>${customerShareText("sharedDeviceNumber", "设备", "Device")} ${index + 1} · ${escapeCustomerShare(product.name || item.display_name || "--")}<span>× ${Number(item.quantity || 1)}</span></h4>
+    ${warning}<section class="customer-share-device-basics"><header><strong>${customerShareText("deviceInformation", "设备信息", "Device Information")}</strong><small>${customerShareText("modelAndBaseConfiguration", "型号与基本配置", "Model and base configuration")}</small></header><div>${basics}</div></section>
+    <div class="customer-share-option-groups">${optionGroups || `<p class="customer-share-device-empty">${customerShareText("noOptionalConfiguration", "该设备未选择其他选配项目", "No optional configuration selected.")}</p>`}</div>
+  </article>`;
+}
+
 function renderCustomerSharePreview(preview) {
   const content = document.getElementById("customer-share-content");
   const importButton = document.getElementById("customer-share-import");
+  const note = document.getElementById("customer-share-note");
   const groups = [
     ["device_config", customerShareText("cartDevices", "设备配置", "Device Configurations")],
     ["tool", customerShareText("serviceTools", "维修工具", "Service Tools")],
     ["accessory", customerShareText("accessories", "设备附件", "Accessories")]
   ];
+  note.hidden = !preview.note;
+  document.getElementById("customer-share-note-label").textContent = customerShareText("shareNote", "分享备注", "Share note");
+  document.getElementById("customer-share-note-text").textContent = preview.note || "";
   content.innerHTML = groups.map(([type, title]) => {
     const items = preview.items.filter((item) => item.item_type === type);
     if (!items.length) return "";
-    return `<section class="customer-share-group"><h3>${escapeCustomerShare(title)}</h3><div class="customer-share-items">${items.map((item) => `
+    if (type === "device_config") return `<section class="customer-share-group customer-share-device-group"><h3>${escapeCustomerShare(title)}</h3><div class="customer-share-devices">${items.map(renderCustomerShareDevice).join("")}</div></section>`;
+    return `<section class="customer-share-group"><h3>${escapeCustomerShare(title)}</h3><div class="customer-share-items customer-share-catalog-card">${items.map((item) => `
       <article class="customer-share-item${item.available ? "" : " is-unavailable"}">
         <div class="customer-share-item-main">${customerShareItemCode(item) ? `<small>${escapeCustomerShare(customerShareItemCode(item))}</small>` : ""}<strong>${escapeCustomerShare(customerShareItemTitle(item))}</strong><span>${customerShareText("quantity", "数量", "Quantity")} ${Number(item.quantity || 1)}</span></div>
-        <span class="customer-share-availability">${item.available ? customerShareText("shareAvailable", "可加入", "Available") : customerShareText("shareUnavailable", "当前不可用", "Unavailable")}</span>
+        <div class="customer-share-item-meta"><span class="customer-share-item-quantity">× ${Number(item.quantity || 1)}</span><span class="customer-share-availability">${item.available ? customerShareText("shareAvailable", "可加入", "Available") : customerShareText("shareUnavailable", "当前不可用", "Unavailable")}</span></div>
         ${item.available || !item.missing?.length ? "" : `<p>${customerShareText("missingContent", "缺失或已停用", "Missing or disabled")}：${item.missing.map(escapeCustomerShare).join("、")}</p>`}
       </article>`).join("")}</div></section>`;
   }).join("");
@@ -59,6 +102,7 @@ async function searchCustomerShare(event) {
   const code = codeInput.value.replace(/\D/g, "").slice(0, 6);
   codeInput.value = code;
   customerSharePreview = null;
+  document.getElementById("customer-share-note").hidden = true;
   document.getElementById("customer-share-content").hidden = true;
   document.getElementById("customer-share-import").hidden = true;
   if (!/^\d{6}$/.test(code)) {
@@ -128,6 +172,7 @@ window.openCustomerShareDialog = function openCustomerShareDialog() {
   customerSharePreview = null;
   customerShareImportKey = "";
   document.getElementById("customer-share-form").reset();
+  document.getElementById("customer-share-note").hidden = true;
   document.getElementById("customer-share-content").hidden = true;
   document.getElementById("customer-share-import").hidden = true;
   const status = document.getElementById("customer-share-status");

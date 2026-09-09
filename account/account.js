@@ -365,21 +365,48 @@ function openProfileBusinessDialog(title, kicker, body, actions = "") {
   if (!dialog.open) dialog.showModal();
 }
 
+function renderProfileDevicePreview(item, index) {
+  const snapshot = item.snapshot || {};
+  const product = snapshot.product || {};
+  const categories = snapshot.categories || [];
+  const baseIds = new Set(["motor", "voltage", "channel"]);
+  const configured = (value) => {
+    const normalized = String(value || "").trim().toLocaleLowerCase();
+    return Boolean(normalized) && !new Set(["未配置", "未选择", "无", "none", "not configured", "not selected", "n/a", "—", "-"]).has(normalized);
+  };
+  const singleValue = (id) => categories.find((category) => category.id === id)?.options?.map((option) => option.name || option.code).filter(configured).join(" / ") || "";
+  const basics = [
+    [profileLanguage === "en" ? "Model" : "型号", product.name],
+    [profileLanguage === "en" ? "Name" : "名称", product.title_name],
+    [profileLanguage === "en" ? "Appearance" : "外观颜色", snapshot.color?.label || snapshot.color?.code],
+    [profileLanguage === "en" ? "Motor" : "电机", singleValue("motor")],
+    [profileLanguage === "en" ? "Power Supply" : "电源", singleValue("voltage")],
+    [profileLanguage === "en" ? "Channels" : "通道", singleValue("channel")],
+  ].filter(([, value]) => configured(value)).map(([label, value]) => `<div><span>${label}</span><strong>${escapeProfileHtml(value)}</strong></div>`).join("");
+  const optionGroups = categories.filter((category) => !baseIds.has(category.id) && (category.options || []).length).map((category) => {
+    const rows = category.options.map((option) => `<li><span>${profileCatalogIdentity(option.code, option.name, profileLanguage === "en" ? "Unnamed option" : "未命名配置")}${option.description ? `<small>${escapeProfileHtml(String(option.description).replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim())}</small>` : ""}</span><strong>× 1</strong></li>`).join("");
+    return `<section class="profile-device-option-group"><header><strong>${escapeProfileHtml(category.name)}</strong><small>${category.options.length} ${profileLanguage === "en" ? "items" : "项"}</small></header><ul>${rows}</ul></section>`;
+  }).join("");
+  const warning = item.available ? "" : `<small class="profile-device-warning">${pc.unavailable}${item.missing?.length ? `: ${item.missing.map(escapeProfileHtml).join(", ")}` : ""}</small>`;
+  return `<article class="profile-device-preview${item.available ? "" : " is-unavailable"}"><h4>${profileLanguage === "en" ? "Device" : "设备"} ${index + 1} · ${escapeProfileHtml(product.name || item.display_name || "--")} <span>× ${Number(item.quantity || 1)}</span></h4>${warning}<section class="profile-device-basics"><header><strong>${profileLanguage === "en" ? "Device Information" : "设备信息"}</strong><small>${profileLanguage === "en" ? "Model and base configuration" : "型号与基本配置"}</small></header><div>${basics}</div></section><div class="profile-device-option-groups">${optionGroups || `<p class="profile-device-empty">${profileLanguage === "en" ? "No optional configuration selected." : "该设备未选择其他选配项目"}</p>`}</div></article>`;
+}
+
 async function openOwnShare(shareId) {
   const result = await profileRequest(`/customer/me/shares/${encodeURIComponent(shareId)}?lang=${profileLanguage}`);
-  const groups = [["device_config", profileLanguage === "en" ? "Devices" : "设备"], ["tool", profileLanguage === "en" ? "Service Tools" : "维修工具"], ["accessory", profileLanguage === "en" ? "Accessories" : "设备附件"]];
-  const body = groups.map(([type, label]) => {
+  const devices = result.items.filter((item) => (item.item_type || "device_config") === "device_config");
+  const deviceSection = devices.length ? `<section class="profile-detail-group profile-device-section"><h3>${profileLanguage === "en" ? "Devices" : "设备"}</h3>${devices.map(renderProfileDevicePreview).join("")}</section>` : "";
+  const catalogSections = [["tool", profileLanguage === "en" ? "Service Tools" : "维修工具"], ["accessory", profileLanguage === "en" ? "Accessories" : "设备附件"]].map(([type, label]) => {
     const items = result.items.filter((item) => (item.item_type || "device_config") === type);
     if (!items.length) return "";
     return `<section class="profile-detail-group"><h3>${label}</h3><div class="profile-detail-list">${items.map((item) => {
       const snapshot = item.snapshot || {};
-      const product = snapshot.product || {};
-      const name = type === "device_config" ? [product.name, product.title_name].filter(Boolean).join(" ") : "";
       const missing = item.available ? "" : `<small>${pc.unavailable}${item.missing?.length ? `: ${item.missing.map(escapeProfileHtml).join(", ")}` : ""}</small>`;
-      return `<div class="profile-detail-row${item.available ? "" : " is-unavailable"}"><span>${type === "device_config" ? escapeProfileHtml(name || item.display_name || "--") : profileCatalogIdentity(snapshot.code, snapshot.name || item.display_name)}${missing}</span><strong>× ${Number(item.quantity || 1)}</strong></div>`;
+      return `<div class="profile-detail-row${item.available ? "" : " is-unavailable"}"><span>${profileCatalogIdentity(snapshot.code, snapshot.name || item.display_name)}${missing}</span><strong>× ${Number(item.quantity || 1)}</strong></div>`;
     }).join("")}</div></section>`;
   }).join("");
-  openProfileBusinessDialog(result.title || result.code, pc.shareDetails, body || `<div class="profile-list-empty">${pc.emptyShares}</div>`);
+  const body = deviceSection + catalogSections;
+  const note = result.note ? `<section class="profile-detail-group profile-share-note"><h3>${profileLanguage === "en" ? "Share note" : "分享备注"}</h3><p>${escapeProfileHtml(result.note)}</p></section>` : "";
+  openProfileBusinessDialog(result.title || result.code, pc.shareDetails, note + (body || `<div class="profile-list-empty">${pc.emptyShares}</div>`));
 }
 
 async function openOwnInquiry(inquiryId) {

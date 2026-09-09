@@ -263,10 +263,9 @@ function renderCatalogMarketplace() {
         <div class="catalog-product-code">${escapeMarketplaceHtml(window.normalizeCatalogCode(item.code) || "--")}</div>
         <h3>${escapeMarketplaceHtml(window.catalogDisplayName(item.name, item.code) || "--")}</h3>
         ${description ? `<p>${escapeMarketplaceHtml(description)}</p>` : ""}
-        ${inCartQuantity ? `<div class="catalog-product-in-cart">${marketplaceText("inCartQuantity", "购物车中：{count}", "In cart: {count}").replace("{count}", inCartQuantity)}</div>` : ""}
       </div>
       <footer class="catalog-product-actions">
-        <label class="catalog-quantity-field"><span>${marketplaceText("quantity", "数量", "Quantity")}</span>
+        <label class="catalog-quantity-field"><span class="catalog-quantity-label"><span>${marketplaceText("quantity", "数量", "Quantity")}</span>${inCartQuantity ? `<small>${marketplaceText("inCartQuantity", "购物车中：{count}", "In cart: {count}").replace("{count}", inCartQuantity)}</small>` : ""}</span>
           <span class="catalog-quantity-control">
             <button type="button" data-quantity-step="-1" aria-label="${marketplaceLanguage() === "en" ? "Decrease quantity" : "减少数量"}">−</button>
             <input type="number" min="1" max="999" step="1" value="${inCartQuantity || 1}" inputmode="numeric" aria-label="${marketplaceText("quantity", "数量", "Quantity")}" ${selected ? "readonly" : ""} />

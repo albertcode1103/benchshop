@@ -93,6 +93,7 @@ class CartItemRef(BaseModel):
 class CartBatchRequest(BaseModel):
     items: List[CartItemRef] = Field(default_factory=list)
     lang: str = Field(default="zh", max_length=5)
+    note: str = Field(default="", max_length=30)
 
 class QuoteRequest(BaseModel):
     config_id: Optional[str] = None
@@ -334,7 +335,7 @@ def remove_catalog_cart_item(item_id: str, version: int = Query(..., ge=1), user
 @router.post("/cart/share", status_code=status.HTTP_201_CREATED)
 def share_cart(payload: CartBatchRequest, user=Depends(registered_user)):
     try:
-        result = create_commerce_share(_cart_refs(payload), user["id"], payload.lang)
+        result = create_commerce_share(_cart_refs(payload), user["id"], payload.lang, payload.note.strip())
     except CatalogValidationError as error:
         raise _catalog_cart_error(error)
     except RuntimeError:

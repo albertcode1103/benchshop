@@ -11,6 +11,8 @@
 
   function initCatalogNavigationDrawer() {
     const toggle = document.getElementById("catalog-drawer-toggle");
+    const stageToggle = document.getElementById("catalog-stage-toggle");
+    const toggles = [toggle, stageToggle].filter(Boolean);
     const drawer = document.getElementById("catalog-navigation-drawer");
     const modelDrawer = document.getElementById("catalog-model-drawer");
     const backdrop = document.getElementById("catalog-navigation-backdrop");
@@ -24,6 +26,7 @@
 
     function applyCopy() {
       document.getElementById("catalog-drawer-toggle-label").textContent = text("openProductNavigation", "打开产品导航", "Open product navigation");
+      document.getElementById("catalog-stage-toggle-label").textContent = text("viewCatalog", "查看目录", "View Catalog");
       document.getElementById("catalog-navigation-title").textContent = text("productNavigation", "产品导航", "Product Navigation");
       document.getElementById("catalog-model-title").textContent = text("testEquipment", "检测设备", "Test Equipment");
       deviceEntry.querySelector("span").textContent = text("testEquipment", "检测设备", "Test Equipment");
@@ -66,7 +69,7 @@
       modelDrawer.setAttribute("aria-hidden", "true");
       backdrop.setAttribute("aria-hidden", "true");
       deviceEntry.setAttribute("aria-expanded", "false");
-      toggle.setAttribute("aria-expanded", "false");
+      toggles.forEach((button) => button.setAttribute("aria-expanded", "false"));
       pageRegions.forEach((region) => { region.inert = false; });
       document.body.style.overflow = "";
       returnFocus?.focus?.();
@@ -81,7 +84,7 @@
       backdrop.classList.add("open");
       drawer.setAttribute("aria-hidden", "false");
       backdrop.setAttribute("aria-hidden", "false");
-      toggle.setAttribute("aria-expanded", "true");
+      toggles.forEach((button) => button.setAttribute("aria-expanded", "true"));
       pageRegions.forEach((region) => { region.inert = true; });
       document.body.style.overflow = "hidden";
       requestAnimationFrame(() => deviceEntry.focus());
@@ -102,7 +105,7 @@
       select.dispatchEvent(new Event("change", { bubbles: true }));
     }
 
-    toggle.addEventListener("click", openDrawer);
+    toggles.forEach((button) => button.addEventListener("click", openDrawer));
     document.getElementById("catalog-drawer-close").addEventListener("click", closeDrawer);
     document.getElementById("catalog-model-close").addEventListener("click", closeDrawer);
     document.getElementById("catalog-model-back").addEventListener("click", closeSecondLevel);
@@ -130,5 +133,6 @@
     });
   }
 
-  document.addEventListener("DOMContentLoaded", initCatalogNavigationDrawer);
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", initCatalogNavigationDrawer, { once: true });
+  else initCatalogNavigationDrawer();
 })();

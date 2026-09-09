@@ -143,6 +143,7 @@ def customer_share_preview(code: str, language: str = "zh", increment_view: bool
     return {
         "code": share.get("code") or code,
         "title": share.get("title") or ("Configuration" if selected_language == "en" else "设备配置"),
+        "note": share.get("note") or "",
         "expires_at": share.get("expires_at"),
         "item_count": len(items),
         "available_count": sum(1 for item in items if item["available"]),
@@ -389,7 +390,7 @@ def _load_share_item(item_type: str, source_id: str, user_id: str) -> Dict[str, 
     }
 
 
-def create_commerce_share(items: Sequence[Dict[str, Any]], user_id: str, lang: str = "zh") -> Dict[str, Any]:
+def create_commerce_share(items: Sequence[Dict[str, Any]], user_id: str, lang: str = "zh", note: str = "") -> Dict[str, Any]:
     refs = _normalize_refs(items)
     loaded = sorted(
         (_load_share_item(item_type, source_id, user_id) for item_type, source_id in refs),
@@ -421,8 +422,8 @@ def create_commerce_share(items: Sequence[Dict[str, Any]], user_id: str, lang: s
             INSERT INTO commerce_shares
                 (id, code, created_by, expires_at, title, language,
                  customer_name, customer_email, item_count, product_summary,
-                 primary_config_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 primary_config_id, note)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 share_id,
@@ -436,6 +437,7 @@ def create_commerce_share(items: Sequence[Dict[str, Any]], user_id: str, lang: s
                 len(loaded),
                 ", ".join(models),
                 primary_config_id,
+                str(note or "").strip()[:30],
             ),
         )
         for index, item in enumerate(loaded):
@@ -471,6 +473,7 @@ def create_commerce_share(items: Sequence[Dict[str, Any]], user_id: str, lang: s
         "item_count": len(loaded),
         "expires_at": expires_at,
         "document_version": 2,
+        "note": str(note or "").strip()[:30],
     }
 
 

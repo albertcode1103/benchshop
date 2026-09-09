@@ -381,7 +381,7 @@ def get_share(code: str, lang: Optional[str] = None, increment_view: bool = True
         row = connection.execute(
             """
             SELECT s.id, s.code, s.config_id, s.created_by, s.expires_at, s.view_count, s.created_at,
-                   s.title, s.language, s.customer_name, s.customer_email, s.item_count,
+                   s.title, s.language, s.customer_name, s.customer_email, s.note, s.item_count,
                    c.name, c.product_id,
                    u.display_name AS sender_name, u.email AS sender_email, u.phone AS sender_phone
             FROM config_shares s

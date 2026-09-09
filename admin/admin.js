@@ -1085,7 +1085,7 @@ async function viewInquiry(inquiryId) {
         const snapshot = entry.snapshot || {};
         const availability = String(entry.availability || "snapshot_only");
         const availabilityNote = availability === "active" ? "" : `<em class="inquiry-availability ${escapeHtml(availability)}">${escapeHtml(inquiryAvailabilityLabel(availability))}</em>`;
-        return `<li>${catalogIdentityHtml(snapshot.code, snapshot.name || entry.display_name)}${availabilityNote}<span>数量：${formatNumber(entry.quantity || snapshot.quantity || 1)}</span></li>`;
+        return `<li>${catalogIdentityHtml(snapshot.code, snapshot.name || entry.display_name)}${availabilityNote}<span class="share-item-quantity">数量：${formatNumber(entry.quantity || snapshot.quantity || 1)}</span></li>`;
       }).join("");
       return `<article class="share-device-block share-catalog-block"><section class="share-detail-group"><header><span>${label}</span><small>共 ${formatNumber(total)} 件</small></header><ul>${rows}</ul></section></article>`;
     }).join("");
@@ -1943,7 +1943,7 @@ function renderShareDetail(share) {
     if (!entries.length) return "";
     const rows = entries.map((entry) => {
       const snapshot = entry.snapshot || {};
-      return `<li>${catalogIdentityHtml(snapshot.code, snapshot.name || entry.display_name, "—")}<span>数量：${Number(entry.quantity || snapshot.quantity || 1)}</span></li>`;
+      return `<li>${catalogIdentityHtml(snapshot.code, snapshot.name || entry.display_name, "—")}<span class="share-item-quantity">数量：${Number(entry.quantity || snapshot.quantity || 1)}</span></li>`;
     }).join("");
     return `<article class="share-device-block share-catalog-block"><section class="share-detail-group"><header><span>${label}</span><small>${entries.length} 项</small></header><ul>${rows}</ul></section></article>`;
   }).join("");
@@ -1961,7 +1961,8 @@ function renderShareDetail(share) {
     const accessoryCount = shareItems.filter((item) => item.item_type === "accessory").reduce((sum, item) => sum + Number(item.quantity || 1), 0);
     if (toolCount) summaryParts.push(`${toolCount} 件工具`);
     if (accessoryCount) summaryParts.push(`${accessoryCount} 件附件`);
-  return `<header class="share-result-header"><div><h3>${escapeHtml(summaryParts.join(" · ") || "分享配置")}</h3></div><span class="badge good">有效至 ${formatDate(share.expires_at)}</span></header><div class="share-device-summary"><div><span>发送用户</span>${senderDetails}</div><div><span>报价状态</span>${quoteState}</div></div>${devices}${catalogSections}`;
+  const shareNote = `<section class="share-note-block"><span>分享备注</span><p>${share.note ? escapeHtml(share.note) : "无备注"}</p></section>`;
+  return `<header class="share-result-header"><div><h3>${escapeHtml(summaryParts.join(" · ") || "分享配置")}</h3></div><span class="badge good">有效至 ${formatDate(share.expires_at)}</span></header><div class="share-device-summary"><div><span>发送用户</span>${senderDetails}</div><div><span>报价状态</span>${quoteState}</div></div>${shareNote}${devices}${catalogSections}`;
 }
 
 function ensureShareDrawer() {

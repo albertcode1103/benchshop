@@ -10,9 +10,13 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 from xml.sax.saxutils import escape
-from zoneinfo import ZoneInfo
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:  # Python 3.8 compatibility on the local/NAS runtime.
+    from pytz import timezone as ZoneInfo
 
 from reportlab.lib import colors
+from reportlab.lib import utils as reportlab_utils
 from reportlab.lib.enums import TA_LEFT, TA_RIGHT
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
@@ -30,7 +34,11 @@ from .catalog_identity import normalize_catalog_code, strip_redundant_catalog_co
 try:
     hashlib.md5(usedforsecurity=False)
 except TypeError:
-    pdfdoc.md5 = lambda value=b"", **_: hashlib.md5(value)
+    def _compatible_md5(value=b"", **_):
+        return hashlib.md5(value)
+
+    pdfdoc.md5 = _compatible_md5
+    reportlab_utils.md5 = _compatible_md5
 
 
 LOGGER = logging.getLogger(__name__)
@@ -82,7 +90,7 @@ PDF_COPY = {
         "motor": "电机配置", "power": "电源配置", "channel": "通道配置",
         "base_price": "设备基础价格", "basic_configuration": "基础配置", "optional_configuration": "可选配置",
         "tools": "维修工具", "accessories": "设备附件", "other": "其他项目",
-        "number": "序号", "item_name": "名称", "quantity": "数量", "unit_price": "单价",
+        "number": "序号", "item_code": "编号", "item_name": "名称", "quantity": "数量", "unit_price": "单价",
         "subtotal": "小计", "group_subtotal": "分组小计", "total": "合计", "unavailable": "已失效",
         "empty": "暂无配置项目", "page": "第 {current} / {total} 页",
         "draft": "草稿", "sent": "已发送", "archived": "已归档",
@@ -97,7 +105,7 @@ PDF_COPY = {
         "motor": "Motor", "power": "Power Supply", "channel": "Channels",
         "base_price": "Device Base Price", "basic_configuration": "Basic Configuration", "optional_configuration": "Optional Configuration",
         "tools": "Service Tools", "accessories": "Accessories", "other": "Other Items",
-        "number": "No.", "item_name": "Name", "quantity": "Qty", "unit_price": "Unit Price",
+        "number": "No.", "item_code": "Code", "item_name": "Name", "quantity": "Qty", "unit_price": "Unit Price",
         "subtotal": "Subtotal", "group_subtotal": "Group Subtotal", "total": "Total", "unavailable": "Unavailable",
         "empty": "No configuration items", "page": "Page {current} / {total}",
         "draft": "Draft", "sent": "Sent", "archived": "Archived",
@@ -403,11 +411,15 @@ def _display_item_name(item: Dict[str, Any], language: str) -> str:
     raw_code = _clean(item.get("code") or item.get("id"))
     code = normalize_catalog_code(raw_code)
     name = strip_redundant_catalog_code(item.get("name") or item.get("display_name"), code, (raw_code,))
-    label = "\n".join(part for part in (code, name) if part) or "-"
+    label = name or "-"
     availability = _clean(item.get("availability"))
     if availability and availability not in ("active", "available"):
         label = "{} ({})".format(label, PDF_COPY[language]["unavailable"])
     return label
+
+
+def _display_item_code(item: Dict[str, Any]) -> str:
+    return normalize_catalog_code(_clean(item.get("code") or item.get("id"))) or "-"
 
 
 def _sort_value(value: Any) -> int:
@@ -443,20 +455,20 @@ def _section_heading(text: str, styles: Dict[str, ParagraphStyle]) -> Table:
 
 def _item_table(title: str, items: Sequence[Dict[str, Any]], styles: Dict[str, ParagraphStyle], language: str, currency: str = "", include_prices: bool = False, start_index: int = 1, grand_total: Optional[float] = None) -> Tuple[Table, float]:
     copy = PDF_COPY[language]
-    headers = [copy["number"], copy["item_name"], copy["quantity"]]
-    widths = [14 * mm, 136 * mm, 20 * mm]
-    right_columns = [2]
+    headers = [copy["number"], copy["item_code"], copy["item_name"], copy["quantity"]]
+    widths = [12 * mm, 30 * mm, 108 * mm, 20 * mm]
+    right_columns = [3]
     if include_prices:
         headers.extend([copy["unit_price"], copy["subtotal"]])
-        widths = [12 * mm, 88 * mm, 16 * mm, 27 * mm, 27 * mm]
-        right_columns = [2, 3, 4]
+        widths = [10 * mm, 26 * mm, 64 * mm, 15 * mm, 27.5 * mm, 27.5 * mm]
+        right_columns = [3, 4, 5]
     rows: List[List[Any]] = [[_paragraph(title, styles["subsection"], "")] + [""] * (len(headers) - 1)]
     rows.append([_paragraph(label, styles["header"], "") for label in headers])
     subtotal = 0.0
     visible_items = [item for item in items if _positive_quantity(item.get("quantity")) > 0]
     for offset, item in enumerate(visible_items):
         quantity = _positive_quantity(item.get("quantity"))
-        row: List[Any] = [_paragraph(start_index + offset, styles["body"]), _paragraph(_display_item_name(item, language), styles["body"]), _paragraph(quantity, styles["money"])]
+        row: List[Any] = [_paragraph(start_index + offset, styles["body"]), _paragraph(_display_item_code(item), styles["body"]), _paragraph(_display_item_name(item, language), styles["body"]), _paragraph(quantity, styles["money"])]
         if include_prices:
             price = _safe_money(item.get("price", item.get("quoted_price")))
             line_total = price * quantity
@@ -464,19 +476,19 @@ def _item_table(title: str, items: Sequence[Dict[str, Any]], styles: Dict[str, P
             row.extend([_paragraph("{} {:,.2f}".format(currency, price), styles["money"]), _paragraph("{} {:,.2f}".format(currency, line_total), styles["money"])])
         rows.append(row)
     if include_prices:
-        rows.append(["", _paragraph(copy["group_subtotal"], styles["card_value"]), "", "", _paragraph("{} {:,.2f}".format(currency, subtotal), styles["money"])])
+        rows.append(["", _paragraph(copy["group_subtotal"], styles["card_value"]), "", "", "", _paragraph("{} {:,.2f}".format(currency, subtotal), styles["money"])])
         if grand_total is not None:
-            rows.append(["", _paragraph(copy["total"], styles["total_label"]), "", "", _paragraph("{} {:,.2f}".format(currency, grand_total), styles["total_money"])])
+            rows.append(["", _paragraph(copy["total"], styles["total_label"]), "", "", "", _paragraph("{} {:,.2f}".format(currency, grand_total), styles["total_money"])])
     table = Table(rows, colWidths=widths, repeatRows=2, hAlign="LEFT", splitByRow=1)
     table.setStyle(_table_style(right_columns=right_columns, title_row=True))
     if include_prices:
         subtotal_row = -2 if grand_total is not None else -1
-        table.setStyle(TableStyle([("BACKGROUND", (0, subtotal_row), (-1, subtotal_row), LIGHT_BLUE), ("LINEABOVE", (0, subtotal_row), (-1, subtotal_row), 0.6, ACCENT_BLUE), ("SPAN", (1, subtotal_row), (3, subtotal_row))]))
+        table.setStyle(TableStyle([("BACKGROUND", (0, subtotal_row), (-1, subtotal_row), LIGHT_BLUE), ("LINEABOVE", (0, subtotal_row), (-1, subtotal_row), 0.6, ACCENT_BLUE), ("SPAN", (1, subtotal_row), (4, subtotal_row))]))
         if grand_total is not None:
             table.setStyle(TableStyle([
                 ("BACKGROUND", (0, -1), (-1, -1), BRAND_BLUE),
                 ("LINEABOVE", (0, -1), (-1, -1), 1, ACCENT_BLUE),
-                ("SPAN", (1, -1), (3, -1)),
+                ("SPAN", (1, -1), (4, -1)),
             ]))
     return table, subtotal
 

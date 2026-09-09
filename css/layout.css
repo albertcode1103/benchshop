@@ -58,7 +58,7 @@
 
 .brand-logo {
   width: auto;
-  height: 32px;
+  height: 40px;
   object-fit: contain;
 }
 
@@ -88,8 +88,15 @@ body:not([data-selection-view="device"]) [data-device-content] {
 }
 
 .stage-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-lg);
   margin-bottom: var(--space-xl);
 }
+
+.stage-heading { min-width: 0; }
+.stage-catalog-toggle { flex: 0 0 auto; margin-top: 2px; white-space: nowrap; }
 
 .page-title {
   font-size: clamp(1.75rem, 4vw, 2.5rem);
@@ -101,6 +108,11 @@ body:not([data-selection-view="device"]) [data-device-content] {
 .page-subtitle {
   color: var(--color-text-secondary);
   font-size: 1rem;
+}
+
+@media (max-width: 640px) {
+  .stage-header { gap: var(--space-md); }
+  .stage-catalog-toggle { padding-inline: var(--space-sm); }
 }
 
 .preview-area {

@@ -66,12 +66,36 @@
 .profile-detail-group { padding: var(--space-md) 0; border-top: 1px solid var(--color-border); }
 .profile-detail-group:first-child { border-top: 0; }
 .profile-detail-group h3 { margin-bottom: var(--space-sm); font-size: 1rem; }
+.profile-share-note { padding: var(--space-md); border: 1px solid color-mix(in srgb, var(--color-accent) 28%, var(--color-border)); border-radius: var(--radius-md); background: var(--color-accent-light); }
+.profile-share-note p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .profile-detail-list { display: grid; gap: var(--space-sm); }
 .profile-detail-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-md); padding: var(--space-sm) var(--space-md); border-radius: var(--radius-sm); background: var(--color-bg); }
 .profile-detail-row > span { display: grid; gap: 2px; min-width: 0; }
 .profile-detail-row small { color: var(--color-text-secondary); font-size: .75rem; }
-.profile-detail-row .profile-catalog-code { color: var(--color-accent-dark); font-weight: 700; letter-spacing: .035em; }
+.profile-detail-row .profile-catalog-code { color: var(--color-accent-dark); font-size: 15px; font-weight: 700; letter-spacing: .035em; }
 .profile-detail-row.is-unavailable { color: var(--color-danger); background: #fff7f7; }
+.profile-device-preview { overflow: hidden; margin-bottom: var(--space-md); border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface); }
+.profile-device-preview:last-child { margin-bottom: 0; }
+.profile-device-preview > h4 { display: flex; justify-content: space-between; gap: var(--space-md); margin: 0; padding: var(--space-sm) var(--space-md); background: var(--color-bg); font-size: .9375rem; }
+.profile-device-preview > h4 span { flex: 0 0 auto; color: var(--color-accent-dark); font-variant-numeric: tabular-nums; }
+.profile-device-warning { display: block; padding: var(--space-sm) var(--space-md) 0; color: var(--color-danger); }
+.profile-device-basics > header, .profile-device-option-group > header { display: flex; align-items: center; justify-content: space-between; gap: var(--space-md); padding: var(--space-sm) var(--space-md); border-bottom: 1px solid var(--color-border); }
+.profile-device-basics > header small, .profile-device-option-group > header small { color: var(--color-text-secondary); }
+.profile-device-basics > div { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.profile-device-basics > div > div { display: grid; gap: 2px; padding: var(--space-sm) var(--space-md); border-bottom: 1px solid var(--color-border); }
+.profile-device-basics > div > div:nth-child(odd) { border-right: 1px solid var(--color-border); }
+.profile-device-basics span { color: var(--color-text-secondary); font-size: .75rem; }
+.profile-device-option-groups { display: grid; gap: var(--space-sm); padding: var(--space-sm); background: var(--color-bg); }
+.profile-device-option-group { overflow: hidden; border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface); }
+.profile-device-option-group ul { margin: 0; padding: 0 var(--space-md); list-style: none; }
+.profile-device-option-group li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-md); padding: var(--space-sm) 0; border-bottom: 1px dashed var(--color-border); }
+.profile-device-option-group li:last-child { border-bottom: 0; }
+.profile-device-option-group li > span { display: grid; min-width: 0; gap: 2px; }
+.profile-device-option-group li > strong { white-space: nowrap; }
+.profile-device-option-group .profile-catalog-code { color: var(--color-accent-dark); font-size: 15px; font-weight: 700; letter-spacing: .035em; }
+.profile-device-option-group li small { color: var(--color-text-secondary); line-height: 1.45; }
+.profile-device-empty { margin: 0; padding: var(--space-md); color: var(--color-text-secondary); text-align: center; }
+@media (max-width: 600px) { .profile-device-basics > div { grid-template-columns: 1fr; }.profile-device-basics > div > div:nth-child(odd) { border-right: 0; } }
 .profile-source-codes { display: flex; flex-wrap: wrap; gap: var(--space-sm); }
 .profile-source-codes code { padding: .35rem .6rem; border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-bg); font-family: inherit; font-weight: 700; }
 .profile-inquiry-note, .profile-inquiry-confirm { color: var(--color-text-secondary); line-height: 1.65; white-space: pre-wrap; }

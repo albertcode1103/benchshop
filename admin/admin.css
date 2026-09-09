@@ -196,6 +196,9 @@ tbody tr:last-child td { border-bottom: 0; }.align-right { text-align: right; }
 .share-device-summary div { display: flex; flex-direction: column; gap: 4px; padding: 13px; border: 1px solid rgba(234,91,12,.14); border-radius: 9px; background: rgba(255,255,255,.72); }
 .share-device-summary span, .share-device-summary small, .share-detail-group small { color: var(--muted); font-size: 11px; }
 .share-device-summary strong { font-size: 14px; }
+.share-note-block { margin: 0 20px 18px; padding: 13px; border: 1px solid rgba(234,91,12,.2); border-radius: 9px; background: var(--orange-soft); }
+.share-note-block > span { color: var(--muted); font-size: 11px; }
+.share-note-block p { margin: 5px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .share-detail-groups { display: grid; grid-template-columns: 1fr; gap: 10px; }
 .share-detail-group { overflow: hidden; border: 1px solid rgba(234,91,12,.14); border-radius: 9px; background: #fff; }
 .share-detail-group header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 13px; border-bottom: 1px solid var(--line); font-size: 13px; font-weight: 800; }
@@ -203,12 +206,13 @@ tbody tr:last-child td { border-bottom: 0; }.align-right { text-align: right; }
 .share-detail-group li { display: flex; flex-direction: column; gap: 2px; padding: 6px 0; border-bottom: 1px dashed var(--line); font-size: 12px; }
 .share-detail-group li:last-child { border-bottom: 0; }
 .catalog-item-identity { display: grid; min-width: 0; gap: 2px; }
-.catalog-item-identity small, .quote-item-name .catalog-code { color: var(--orange-dark); font-size: 11px; font-weight: 800; letter-spacing: .035em; }
+.catalog-item-identity small, .quote-item-name .catalog-code { color: var(--orange-dark); font-size: 15px; font-weight: 800; letter-spacing: .035em; }
 .catalog-item-identity strong { overflow-wrap: anywhere; }
 .share-detail-group li span { color: var(--muted); line-height: 1.45; }
 .share-catalog-block .share-detail-group li { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; column-gap: 14px; }
-.share-catalog-block .share-detail-group li strong { min-width: 0; overflow-wrap: anywhere; }
-.share-catalog-block .share-detail-group li span { justify-self: end; white-space: nowrap; text-align: right; }
+.share-catalog-block .share-detail-group li > .catalog-item-identity { justify-self: start; min-width: 0; text-align: left; }
+.share-catalog-block .share-detail-group li > .catalog-item-identity strong { min-width: 0; overflow-wrap: anywhere; }
+.share-catalog-block .share-detail-group li > .share-item-quantity { justify-self: end; color: var(--muted); white-space: nowrap; text-align: right; }
 .share-result-loading { padding: 24px; color: var(--muted); text-align: center; }
 .share-result-error { display: flex; flex-direction: column; gap: 5px; color: var(--red); }
 .share-drawer-open { overflow: hidden; }
@@ -1236,7 +1240,7 @@ dialog:not(.product-dialog):not(.catalog-editor-dialog) .dialog-card .form-grid 
 .mapping-option-select { display: flex !important; align-items: flex-start !important; gap: 10px !important; min-width: 0; margin: 0 !important; cursor: pointer; }
 .mapping-option-select > input { flex: 0 0 auto; width: 17px; height: 17px; margin: 3px 0 0; accent-color: var(--orange-dark); }
 .mapping-option-copy { display: grid; gap: 4px; min-width: 0; }
-.mapping-option-code { grid-row: 1; margin: 0; color: var(--muted); font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.mapping-option-code { grid-row: 1; margin: 0; color: var(--muted); font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .mapping-option-copy > strong { grid-row: 2; font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
 .mapping-special-note { grid-row: 3; margin: 4px 0 0; padding: 6px 8px; border-left: 3px solid var(--orange); border-radius: 0 6px 6px 0; background: var(--orange-soft); color: var(--ink); font-size: 13px; font-weight: 700; line-height: 1.45; overflow-wrap: anywhere; }
 .mapping-note-button { align-self: start; min-width: 56px; min-height: 36px; padding: 0 10px; }

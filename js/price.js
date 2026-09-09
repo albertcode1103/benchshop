@@ -23,23 +23,27 @@ function buildSummaryGroups(model, snapshot) {
     if (!selected || (Array.isArray(selected) && selected.length === 0)) return;
 
     if (cat.multiple) {
-      const items = selected
+      const detailItems = selected
         .map((optId) => cat.options.find((o) => o.id === optId))
         .filter(Boolean)
         .map((opt) => {
-          if (cat.id !== "cri" || !opt.description) return opt.name;
-          const description = opt.description
+          const description = cat.id === "cri" && opt.description ? opt.description
             .replace(/<[^>]*>/g, " ")
             .replace(/\s+/g, " ")
-            .trim();
-          return `${opt.name} | ${description}`;
+            .trim() : "";
+          return {
+            code: window.normalizeCatalogCode?.(opt.code) || String(opt.code || "").trim(),
+            name: description ? `${opt.name} | ${description}` : opt.name,
+          };
         });
+      const items = detailItems.map((item) => item.name);
 
       if (items.length > 0) {
         groups.push({
           type: "multi",
           category: cat.name,
           value: items,
+          detailItems,
           count: items.length
         });
       }
@@ -49,7 +53,11 @@ function buildSummaryGroups(model, snapshot) {
         groups.push({
           type: "single",
           category: cat.name,
-          value: getSpecLabel(cat.id, option.name)
+          value: getSpecLabel(cat.id, option.name),
+          detailItems: option.code ? [{
+            code: window.normalizeCatalogCode?.(option.code) || String(option.code).trim(),
+            name: getSpecLabel(cat.id, option.name),
+          }] : []
         });
       }
     }

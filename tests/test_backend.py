@@ -1198,11 +1198,12 @@ class BackendWorkflowTests(unittest.TestCase):
 
                 shared = client.post(
                     "/api/v1/cart/share", headers=customer_headers,
-                    json={"items": refs, "lang": "zh"},
+                    json={"items": refs, "lang": "zh", "note": "请优先查看设备配置"},
                 )
                 self.assertEqual(201, shared.status_code, shared.text)
                 share_id = shared.json()["id"]
                 self.assertEqual(3, shared.json()["item_count"])
+                self.assertEqual("请优先查看设备配置", shared.json()["note"])
                 code = shared.json()["code"]
                 search_result = search_all_shares(query="混合测试工具")
                 self.assertIn(share_id, {item["id"] for item in search_result["items"]})
@@ -1275,6 +1276,7 @@ class BackendWorkflowTests(unittest.TestCase):
                 self.assertEqual(200, preview.status_code, preview.text)
                 preview_json = preview.json()
                 self.assertEqual(2, preview_json["document_version"])
+                self.assertEqual("请优先查看设备配置", preview_json["note"])
                 self.assertEqual({"device_config", "tool", "accessory"}, {item["item_type"] for item in preview_json["items"]})
                 self.assertEqual(["device_config", "tool", "accessory"], [item["item_type"] for item in preview_json["items"]])
                 device_item = next(item for item in preview_json["items"] if item["item_type"] == "device_config")
@@ -2191,6 +2193,7 @@ class BackendWorkflowTests(unittest.TestCase):
         self.assertIn("Configuration List", config_text)
         self.assertIn("Document Code: 123456", config_text)
         self.assertIn("PDF Customer", config_text)
+        self.assertIn("Code", config_text)
         self.assertNotIn("Unit Price", config_text)
         self.assertLess(config_text.index("BOTEN CR1016"), config_text.index("Service Tools"))
         self.assertLess(config_text.index("Service Tools"), config_text.index("Accessories"))
@@ -2234,6 +2237,14 @@ class BackendWorkflowTests(unittest.TestCase):
         self.assertIn("BTQ-20260909-0001", quote_text)
         self.assertLess(quote_text.index("CR1016"), quote_text.index("Service Tools"))
         self.assertLess(quote_text.index("Service Tools"), quote_text.index("Accessories"))
+
+        from backend.pdf_service import _item_table, _styles
+        config_table, _ = _item_table("Service Tools", [{"code": "BT-WB", "name": "Diesel Service Work Bench", "quantity": 2}], _styles(), "en")
+        self.assertEqual(4, len(config_table._colWidths))
+        self.assertEqual("BT-WB", config_table._cellvalues[2][1].getPlainText())
+        self.assertEqual("Diesel Service Work Bench", config_table._cellvalues[2][2].getPlainText())
+        quote_table, _ = _item_table("Service Tools", [{"code": "BT-WB", "name": "Diesel Service Work Bench", "quantity": 2, "price": 100}], _styles(), "en", "USD", True)
+        self.assertEqual(6, len(quote_table._colWidths))
 
         self.assertEqual(
             "CFG-20260909-123456-AB12",
@@ -2354,6 +2365,8 @@ class BackendWorkflowTests(unittest.TestCase):
                 category_columns = {row[1] for row in connection.execute("PRAGMA table_info(categories)")}
                 option_columns = {row[1] for row in connection.execute("PRAGMA table_info(options)")}
                 share_item_columns = {row[1] for row in connection.execute("PRAGMA table_info(config_share_items)")}
+                legacy_share_columns = {row[1] for row in connection.execute("PRAGMA table_info(config_shares)")}
+                commerce_share_columns = {row[1] for row in connection.execute("PRAGMA table_info(commerce_shares)")}
                 quote_columns = {row[1] for row in connection.execute("PRAGMA table_info(commerce_quotes)")}
                 inquiry_columns = {row[1] for row in connection.execute("PRAGMA table_info(customer_inquiries)")}
                 delivery_columns = {row[1] for row in connection.execute("PRAGMA table_info(quote_deliveries)")}
@@ -2363,7 +2376,7 @@ class BackendWorkflowTests(unittest.TestCase):
             finally:
                 connection.close()
             self.assertIsNotNone(version_row, process.stdout + process.stderr)
-            self.assertEqual("20260908_0024", version_row[0])
+            self.assertEqual("20260909_0025", version_row[0])
             self.assertTrue({"products", "options", "users", "quotes", "audit_logs", "product_motor_prices", "product_specifications", "config_share_items", "product_base_option_groups", "product_base_options", "product_price_variants", "saved_catalog_items", "commerce_shares", "commerce_share_items", "commerce_quotes", "share_imports", "quote_deliveries"}.issubset(tables))
             self.assertIn("description_override_en", columns)
             self.assertTrue({"label_en", "display_color", "enabled", "version", "translation_status"}.issubset(color_columns))
@@ -2372,6 +2385,8 @@ class BackendWorkflowTests(unittest.TestCase):
             self.assertTrue({"note_en", "deleted_at", "version", "translation_status"}.issubset(option_columns))
             self.assertTrue({"image_width", "image_height"}.issubset(option_columns))
             self.assertTrue({"item_type", "source_id"}.issubset(share_item_columns))
+            self.assertIn("note", legacy_share_columns)
+            self.assertIn("note", commerce_share_columns)
             self.assertTrue({"source_inquiry_id", "source_type", "source_document_version", "source_document_id", "source_code"}.issubset(quote_columns))
             self.assertTrue({"assigned_at", "first_quoted_at", "latest_quoted_at"}.issubset(inquiry_columns))
             self.assertIn("source_trace_json", saved_config_columns)

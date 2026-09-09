@@ -37,14 +37,18 @@ function savedConfigToCartItem(saved) {
   const colorName = snapshot.color.label || snapshot.color.code;
   const groups = [{ id: "color", type: "single", category: cartText("appearance", "外观颜色", "Appearance"), value: colorName }];
   snapshot.categories.forEach((category) => {
-    const values = category.options.map((option) => {
+    const detailItems = category.options.map((option) => {
       const details = [option.description, option.special_note].map(descriptionText).filter(Boolean);
-      return details.length ? `${option.name} | ${details.join(" | ")}` : getSpecLabel(category.id, option.name);
+      return {
+        code: window.normalizeCatalogCode?.(option.code) || String(option.code || "").trim(),
+        name: details.length ? `${option.name} | ${details.join(" | ")}` : getSpecLabel(category.id, option.name),
+      };
     });
+    const values = detailItems.map((option) => option.name);
     if (!values.length) return;
     groups.push(category.multiple
-      ? { id: category.id, type: "multi", category: category.name, value: values, count: values.length }
-      : { id: category.id, type: "single", category: category.name, value: values[0], count: 1 });
+      ? { id: category.id, type: "multi", category: category.name, value: values, detailItems, count: values.length }
+      : { id: category.id, type: "single", category: category.name, value: values[0], detailItems, count: 1 });
   });
   return {
     itemType: "device_config",
@@ -332,9 +336,10 @@ function showCartDetails(id) {
     dialog.showModal();
     return;
   }
+  const renderDetailItem = (detail) => `<li class="cart-detail-option">${detail.code ? `<strong>${escapeCartHtml(detail.code)}</strong>` : ""}<span>${escapeCartHtml(detail.name)}</span></li>`;
   const groupsHtml = item.groups.map((group) => group.type === "multi"
-    ? `<section class="cart-item-group"><div class="cart-item-group-header"><span>${escapeCartHtml(group.category)}</span><span class="cart-item-count">${group.count}</span></div><ul>${group.value.map((name) => `<li>${escapeCartHtml(name)}</li>`).join("")}</ul></section>`
-    : `<section class="cart-item-group"><div class="cart-item-group-header"><span class="cart-item-category">${escapeCartHtml(group.category)}</span></div><div class="cart-item-value">${escapeCartHtml(group.value)}</div></section>`).join("");
+    ? `<section class="cart-item-group"><div class="cart-item-group-header"><span>${escapeCartHtml(group.category)}</span><span class="cart-item-count">${group.count}</span></div><ul>${(group.detailItems || group.value.map((name) => ({ code: "", name }))).map(renderDetailItem).join("")}</ul></section>`
+    : `<section class="cart-item-group"><div class="cart-item-group-header"><span class="cart-item-category">${escapeCartHtml(group.category)}</span></div>${group.detailItems?.length ? `<ul>${group.detailItems.map(renderDetailItem).join("")}</ul>` : `<div class="cart-item-value">${escapeCartHtml(group.value)}</div>`}</section>`).join("");
   const dialog = document.createElement("dialog");
   dialog.className = "share-dialog cart-detail-dialog";
   dialog.setAttribute("aria-labelledby", "cart-detail-title");
@@ -493,14 +498,44 @@ async function copyShareCode() {
   }
 }
 
+function requestShareNote() {
+  return new Promise((resolve) => {
+    const dialog = document.createElement("dialog");
+    dialog.className = "share-dialog cart-share-note-dialog";
+    dialog.setAttribute("aria-labelledby", "cart-share-note-title");
+    dialog.innerHTML = `<form method="dialog" class="share-dialog-card cart-share-note-card">
+      <header class="share-dialog-header"><div><span class="auth-kicker">SHARE</span><h2 id="cart-share-note-title">${cartText("shareSettings", "创建分享", "Create Share")}</h2><p>${cartText("shareNoteHint", "可以填写一条给接收人的分享备注。", "Add a short note for the recipient.")}</p></div><button class="btn btn-text btn-sm" type="submit" value="cancel" aria-label="${cartText("close", "关闭", "Close")}">✕</button></header>
+      <label class="cart-share-note-field"><span>${cartText("shareNote", "分享备注（选填）", "Share note (optional)")}</span><textarea maxlength="30" rows="3" placeholder="${cartText("shareNotePlaceholder", "最多输入30个字符", "Up to 30 characters")}"></textarea><small><span data-share-note-count>0</span> / 30</small></label>
+      <footer class="cart-share-note-actions"><button class="btn btn-secondary" type="submit" value="cancel">${cartText("cancelAction", "取消", "Cancel")}</button><button class="btn btn-primary" type="submit" value="confirm">${cartText("createShare", "生成分享码", "Create Share Code")}</button></footer>
+    </form>`;
+    document.body.appendChild(dialog);
+    const textarea = dialog.querySelector("textarea");
+    const counter = dialog.querySelector("[data-share-note-count]");
+    textarea.addEventListener("input", () => {
+      const characters = Array.from(textarea.value);
+      if (characters.length > 30) textarea.value = characters.slice(0, 30).join("");
+      counter.textContent = String(Array.from(textarea.value).length);
+    });
+    dialog.addEventListener("close", () => {
+      const note = dialog.returnValue === "confirm" ? textarea.value.trim() : null;
+      dialog.remove();
+      resolve(note);
+    }, { once: true });
+    dialog.showModal();
+    requestAnimationFrame(() => textarea.focus());
+  });
+}
+
 async function shareCart() {
   const items = allCartItems();
   if (!items.length) return;
+  const note = await requestShareNote();
+  if (note === null) return;
   const button = document.getElementById("cart-share"); const original = button.textContent;
   button.disabled = true; button.textContent = cartText("generating", "生成中…", "Generating…");
   try {
     setCartStatus();
-    const share = await authRequest("/cart/share", { method: "POST", body: JSON.stringify({ items, lang: cartLanguage() }) });
+    const share = await authRequest("/cart/share", { method: "POST", body: JSON.stringify({ items, lang: cartLanguage(), note }) });
     showShareResult(share);
   } catch (error) { setCartStatus(`${cartText("shareFailed", "分享失败", "Share failed")}: ${error.message}`, "error"); }
   finally { button.textContent = original; renderCartActions(); }

@@ -644,8 +644,8 @@
     rendererElements.summaryList.innerHTML = groups
       .map((group) => {
         if (group.type === "multi") {
-          const itemsHtml = group.value
-            .map((name) => `<li class="summary-subitem">${name}</li>`)
+          const itemsHtml = (group.detailItems || group.value.map((name) => ({ code: "", name })))
+            .map((item) => `<li class="summary-subitem">${item.code ? `<strong class="summary-option-code">${escapeOptionHtml(item.code)}</strong>` : ""}<span>${escapeOptionHtml(item.name)}</span></li>`)
             .join("");
           return `
             <li class="summary-group">
@@ -657,11 +657,12 @@
             </li>
           `;
         }
+        const detail = group.detailItems?.[0];
         return `
           <li class="summary-item">
-            <div class="summary-item-name">
+            <div class="summary-item-name summary-item-pair">
               <span class="summary-item-category">${group.category}</span>
-              ${group.value}
+              <span class="summary-item-value">${detail?.code ? `<strong class="summary-option-code">${escapeOptionHtml(detail.code)}</strong><span>${escapeOptionHtml(detail.name)}</span>` : escapeOptionHtml(group.value)}</span>
             </div>
           </li>
         `;
