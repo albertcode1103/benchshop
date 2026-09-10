@@ -3,7 +3,9 @@
  * same origin.  Local `py -m http.server 8080` development still reaches the
  * separately started API on port 8001 without requiring a file edit.
  */
-const botenIsLocalStaticServer = ["8080", "8081"].includes(window.location.port);
+const botenIsLoopbackHost = ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname);
+const botenIsLocalStaticServer = window.location.port === "8081"
+  || (window.location.port === "8080" && botenIsLoopbackHost);
 if (typeof window.BOTEN_API_BASE !== "string") {
   window.BOTEN_API_BASE = botenIsLocalStaticServer
     ? `${window.location.protocol}//${window.location.hostname}:8001`
