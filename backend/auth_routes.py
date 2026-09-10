@@ -3,7 +3,7 @@ from datetime import date
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from .user_repository import (
     authenticate,
@@ -27,30 +27,30 @@ router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 
 class RegisterRequest(BaseModel):
     email: Optional[str] = None
-    phone: Optional[str] = None
+    phone: Optional[str] = Field(default=None, max_length=80)
     phone_country: Optional[str] = None
-    password: str
+    password: str = Field(max_length=1024)
     display_name: str = ""
 
 
 class LoginRequest(BaseModel):
-    identifier: Optional[str] = None
-    phone: Optional[str] = None
+    identifier: Optional[str] = Field(default=None, max_length=320)
+    phone: Optional[str] = Field(default=None, max_length=80)
     phone_country: Optional[str] = None
-    password: str
+    password: str = Field(max_length=1024)
 
 
 class ContactUpdateRequest(BaseModel):
-    current_password: str
+    current_password: str = Field(max_length=1024)
     email: Optional[str] = None
-    phone: Optional[str] = None
+    phone: Optional[str] = Field(default=None, max_length=80)
     phone_country: Optional[str] = None
 
 
 class PasswordChangeRequest(BaseModel):
-    current_password: str
-    new_password: str
-    confirm_password: str
+    current_password: str = Field(max_length=1024)
+    new_password: str = Field(max_length=1024)
+    confirm_password: str = Field(max_length=1024)
 
 
 class ProfileDetailsRequest(BaseModel):
@@ -58,6 +58,7 @@ class ProfileDetailsRequest(BaseModel):
     gender: str = ""
     birth_date: Optional[str] = None
     signature: str = ""
+    address: str = Field(default="", max_length=500)
     version: int
 
 
@@ -161,7 +162,7 @@ def update_profile_details(payload: ProfileDetailsRequest, user=Depends(current_
         raise AccountError("ACCOUNT_SIGNATURE_TOO_LONG", field="signature")
     return update_user(
         user["id"],
-        {"display_name": display_name, "gender": gender, "birth_date": birth_date, "signature": signature},
+        {"display_name": display_name, "gender": gender, "birth_date": birth_date, "signature": signature, "address": payload.address.strip()},
         expected_version=payload.version,
     )
 

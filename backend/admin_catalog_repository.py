@@ -1,10 +1,21 @@
 from typing import Any, Dict, List, Optional
 
 from .database import get_connection
+from .catalog_refactor_repository import CatalogValidationError
+from .catalog_identity import normalize_catalog_code, strip_redundant_catalog_code
 import uuid
 
 
 CATALOG_ROOT_IDS = ("catalog-optional", "catalog-tools", "catalog-accessories")
+
+
+def _check_option_code(connection, code: str, option_id: str = "") -> None:
+    duplicate = connection.execute(
+        "SELECT id FROM options WHERE id <> ? AND lower(trim(code)) = lower(trim(?)) LIMIT 1",
+        (option_id, code),
+    ).fetchone()
+    if duplicate is not None:
+        raise CatalogValidationError("CATALOG_CODE_DUPLICATE", "code", {"option_id": duplicate["id"]})
 
 def create_product(values: Dict[str, Any]) -> Dict[str, Any]:
     product_id = values["id"].strip().lower()
@@ -18,7 +29,7 @@ def list_config_categories() -> List[Dict[str, Any]]:
     with get_connection() as connection:
         categories = connection.execute(
             """
-            SELECT id, name, name_en, description, description_en, multiple, sort_order
+            SELECT id, name, name_en, description, description_en, multiple, sort_order, version
             FROM categories
             WHERE id NOT IN (?, ?, ?)
             ORDER BY sort_order, name
@@ -28,22 +39,44 @@ def list_config_categories() -> List[Dict[str, Any]]:
         result = []
         for category in categories:
             item = dict(category); item["multiple"] = bool(item["multiple"])
-            item["options"] = [dict(row) for row in connection.execute("SELECT id, code, name, name_en, image_path, description, description_en, notes, price, price_usd, enabled, sort_order FROM options WHERE category_id = ? ORDER BY sort_order, name", (item["id"],)).fetchall()]
+            item["options"] = [dict(row) for row in connection.execute("SELECT id, code, name, name_en, image_path, description, description_en, notes, price, price_usd, enabled, sort_order, version FROM options WHERE category_id = ? AND deleted_at IS NULL ORDER BY sort_order, name", (item["id"],)).fetchall()]
             for option in item["options"]: option["enabled"] = bool(option["enabled"])
             result.append(item)
     return result
 
 
 def update_config_option(option_id: str, values: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    if values.get("version") is None:
+        raise CatalogValidationError("CATALOG_VERSION_CONFLICT", "version")
+    values = dict(values)
+    with get_connection() as connection:
+        current = connection.execute("SELECT code FROM options WHERE id = ? AND deleted_at IS NULL", (option_id,)).fetchone()
+    if current is None:
+        return None
+    code = normalize_catalog_code(values.get("code") if values.get("code") is not None else current["code"])
+    if "code" in values and values["code"] is not None:
+        values["code"] = code
+    for field in ("name", "name_en"):
+        if field in values and values[field] is not None:
+            values[field] = strip_redundant_catalog_code(values[field], code)
+    if not code:
+        raise CatalogValidationError("CATALOG_CODE_REQUIRED", "code")
+    if values.get("name") == "":
+        raise CatalogValidationError("CATALOG_TRANSLATION_REQUIRED", "name")
     allowed = ("code", "name", "name_en", "image_path", "description", "description_en", "notes", "price", "price_usd", "enabled", "sort_order")
     updates = {key: values[key] for key in allowed if key in values and values[key] is not None}
     if not updates: return None
     assignments = ", ".join("{} = ?".format(key) for key in updates)
-    params = [int(v) if key == "enabled" else v for key, v in updates.items()]; params.append(option_id)
+    params = [int(v) if key == "enabled" else v for key, v in updates.items()]; params.extend((option_id, values["version"]))
     with get_connection() as connection:
-        row = connection.execute("UPDATE options SET {} WHERE id = ?".format(assignments), params)
-        if row.rowcount == 0: return None
-        result = connection.execute("SELECT id, category_id, code, name, name_en, image_path, description, description_en, notes, price, price_usd, enabled, sort_order FROM options WHERE id = ?", (option_id,)).fetchone()
+        connection.execute("BEGIN IMMEDIATE")
+        _check_option_code(connection, code, option_id)
+        row = connection.execute("UPDATE options SET {}, version = version + 1 WHERE id = ? AND version = ? AND deleted_at IS NULL".format(assignments), params)
+        if row.rowcount == 0:
+            exists = connection.execute("SELECT 1 FROM options WHERE id = ? AND deleted_at IS NULL", (option_id,)).fetchone()
+            if exists is None: return None
+            raise CatalogValidationError("CATALOG_VERSION_CONFLICT", "version")
+        result = connection.execute("SELECT id, category_id, code, name, name_en, image_path, description, description_en, notes, price, price_usd, enabled, sort_order, version FROM options WHERE id = ?", (option_id,)).fetchone()
     item = dict(result); item["enabled"] = bool(item["enabled"]); return item
 
 
@@ -52,25 +85,38 @@ def create_config_category(name: str, description: str = "", multiple: bool = Tr
     with get_connection() as connection:
         sort_order = connection.execute("SELECT COALESCE(MAX(sort_order), -1) + 1 FROM categories").fetchone()[0]
         connection.execute("INSERT INTO categories (id, name, name_en, description, description_en, multiple, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?)", (category_id, name.strip(), name_en.strip(), description.strip(), description_en.strip(), int(multiple), sort_order))
-    return {"id": category_id, "name": name.strip(), "name_en": name_en.strip(), "description": description.strip(), "description_en": description_en.strip(), "multiple": bool(multiple), "options": []}
+    return {"id": category_id, "name": name.strip(), "name_en": name_en.strip(), "description": description.strip(), "description_en": description_en.strip(), "multiple": bool(multiple), "options": [], "version": 1}
 
 
 def create_config_option(category_id: str, code: str, name: str, **values: Any) -> Dict[str, Any]:
+    code = normalize_catalog_code(code)
+    name = strip_redundant_catalog_code(name, code)
+    values["name_en"] = strip_redundant_catalog_code(values.get("name_en"), code)
+    if not code:
+        raise CatalogValidationError("CATALOG_CODE_REQUIRED", "code")
+    if not name:
+        raise CatalogValidationError("CATALOG_TRANSLATION_REQUIRED", "name")
     option_id = "opt-" + uuid.uuid4().hex[:16]
     with get_connection() as connection:
+        connection.execute("BEGIN IMMEDIATE")
+        _check_option_code(connection, code)
         sort_order = connection.execute("SELECT COALESCE(MAX(sort_order), -1) + 1 FROM options WHERE category_id = ?", (category_id,)).fetchone()[0]
         enabled = True if values.get("enabled") is None else bool(values["enabled"])
         connection.execute("INSERT INTO options (id, category_id, code, name, name_en, image_path, description, description_en, notes, price, price_usd, enabled, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", (option_id, category_id, code.strip(), name.strip(), values.get("name_en") or "", values.get("image_path"), values.get("description") or "", values.get("description_en") or "", values.get("notes") or "", values.get("price") or 0, values.get("price_usd") or 0, int(enabled), sort_order))
-        result = connection.execute("SELECT id, category_id, code, name, name_en, image_path, description, description_en, notes, price, price_usd, enabled, sort_order FROM options WHERE id = ?", (option_id,)).fetchone()
+        result = connection.execute("SELECT id, category_id, code, name, name_en, image_path, description, description_en, notes, price, price_usd, enabled, sort_order, version FROM options WHERE id = ?", (option_id,)).fetchone()
     item = dict(result); item["enabled"] = bool(item["enabled"]); return item
 
 def update_config_category(category_id: str, values: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    if values.get('version') is None:
+        raise CatalogValidationError('CATALOG_VERSION_CONFLICT', 'version')
     updates = {k: values[k] for k in ("name", "name_en", "description", "description_en", "multiple", "sort_order") if k in values and values[k] is not None}
     if not updates: return None
     assignments = ", ".join(f"{k} = ?" for k in updates)
-    params = [int(v) if k == "multiple" else v for k, v in updates.items()] + [category_id]
+    params = [int(v) if k == "multiple" else v for k, v in updates.items()] + [category_id, values['version']]
     with get_connection() as connection:
-        cur = connection.execute(f"UPDATE categories SET {assignments} WHERE id = ?", params)
+        cur = connection.execute(f"UPDATE categories SET {assignments}, version=version+1 WHERE id = ? AND version = ?", params)
+        if cur.rowcount == 0 and connection.execute('SELECT 1 FROM categories WHERE id=?', (category_id,)).fetchone():
+            raise CatalogValidationError('CATALOG_VERSION_CONFLICT', 'version')
     if cur.rowcount == 0: return None
     return next((x for x in list_config_categories() if x["id"] == category_id), None)
 
@@ -164,7 +210,7 @@ def get_admin_product(product_id: str) -> Optional[Dict[str, Any]]:
             """
             SELECT id, name, name_en, title_name, title_name_en,
                    description, description_en, base_price, price_usd,
-                   enabled, sort_order,
+                   enabled, sort_order, version,
                    created_at, updated_at
             FROM products WHERE id = ?
             """,
@@ -233,20 +279,24 @@ def get_admin_product(product_id: str) -> Optional[Dict[str, Any]]:
 
 
 def update_product(product_id: str, values: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    if values.get('version') is None:
+        raise CatalogValidationError('CATALOG_VERSION_CONFLICT', 'version')
     allowed = ("name", "title_name", "name_en", "title_name_en", "description", "description_en", "base_price", "price_usd", "enabled", "sort_order")
     updates = {key: values[key] for key in allowed if key in values and values[key] is not None}
     if not updates:
         return get_admin_product(product_id)
     assignments = ", ".join("{} = ?".format(key) for key in updates)
     params = [int(value) if key == "enabled" else value for key, value in updates.items()]
-    params.append(product_id)
+    params.extend((product_id, values['version']))
     with get_connection() as connection:
         cursor = connection.execute(
-            "UPDATE products SET {}, updated_at = CURRENT_TIMESTAMP WHERE id = ?".format(assignments),
+            "UPDATE products SET {}, version=version+1, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND version = ?".format(assignments),
             params,
         )
-    if cursor.rowcount == 0:
-        return None
+        if cursor.rowcount == 0:
+            if connection.execute('SELECT 1 FROM products WHERE id=?', (product_id,)).fetchone():
+                raise CatalogValidationError('CATALOG_VERSION_CONFLICT', 'version')
+            return None
     return get_admin_product(product_id)
 
 
@@ -260,6 +310,8 @@ def save_product_configuration(
     specifications: Optional[List[Dict[str, Any]]] = None,
 ) -> Optional[Dict[str, Any]]:
     """Save every editable part of one product in one SQLite transaction."""
+    if values.get('version') is None:
+        raise CatalogValidationError('CATALOG_VERSION_CONFLICT', 'version')
     allowed = ("name", "title_name", "name_en", "title_name_en", "description", "description_en", "base_price", "price_usd", "enabled", "sort_order")
     updates = {key: values[key] for key in allowed if key in values and values[key] is not None}
     option_ids = list(dict.fromkeys(str(option_id).strip() for option_id in option_ids if str(option_id).strip()))
@@ -267,8 +319,14 @@ def save_product_configuration(
         raise ValueError("设备至少需要保留一个电机和一个供电配置")
 
     with get_connection() as connection:
+        connection.execute('BEGIN IMMEDIATE')
         if connection.execute("SELECT 1 FROM products WHERE id = ?", (product_id,)).fetchone() is None:
             return None
+
+        changed = connection.execute('UPDATE products SET version=version+1 WHERE id=? AND version=?',
+                                     (product_id, values['version']))
+        if changed.rowcount != 1:
+            raise CatalogValidationError('CATALOG_VERSION_CONFLICT', 'version')
 
         # A catalog option can be removed while another browser tab is editing
         # this product. Only remove dangling mappings; valid disabled mappings
@@ -389,11 +447,17 @@ def save_product_configuration(
     return get_admin_product(product_id)
 
 
-def replace_colors(product_id: str, colors: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+def replace_colors(product_id: str, colors: List[Dict[str, Any]], version: Optional[int] = None) -> Optional[Dict[str, Any]]:
+    if version is None:
+        raise CatalogValidationError('CATALOG_VERSION_CONFLICT', 'version')
     with get_connection() as connection:
+        connection.execute('BEGIN IMMEDIATE')
         exists = connection.execute("SELECT 1 FROM products WHERE id = ?", (product_id,)).fetchone()
         if exists is None:
             return None
+        changed = connection.execute('UPDATE products SET version=version+1,updated_at=CURRENT_TIMESTAMP WHERE id=? AND version=?', (product_id, version))
+        if changed.rowcount != 1:
+            raise CatalogValidationError('CATALOG_VERSION_CONFLICT', 'version')
         connection.execute("DELETE FROM product_colors WHERE product_id = ?", (product_id,))
         for index, color in enumerate(colors):
             connection.execute(
@@ -415,14 +479,20 @@ def replace_colors(product_id: str, colors: List[Dict[str, Any]]) -> Optional[Di
     return get_admin_product(product_id)
 
 
-def replace_option_mappings(product_id: str, option_ids: List[str]) -> Optional[Dict[str, Any]]:
+def replace_option_mappings(product_id: str, option_ids: List[str], version: Optional[int] = None) -> Optional[Dict[str, Any]]:
+    if version is None:
+        raise CatalogValidationError('CATALOG_VERSION_CONFLICT', 'version')
     option_ids = list(dict.fromkeys(str(option_id).strip() for option_id in option_ids if str(option_id).strip()))
     if not option_ids:
         raise ValueError("设备至少需要保留一个电机和一个供电配置")
     with get_connection() as connection:
+        connection.execute('BEGIN IMMEDIATE')
         exists = connection.execute("SELECT 1 FROM products WHERE id = ?", (product_id,)).fetchone()
         if exists is None:
             return None
+        changed = connection.execute('UPDATE products SET version=version+1,updated_at=CURRENT_TIMESTAMP WHERE id=? AND version=?', (product_id, version))
+        if changed.rowcount != 1:
+            raise CatalogValidationError('CATALOG_VERSION_CONFLICT', 'version')
         placeholders = ",".join("?" for _ in option_ids)
         option_rows = connection.execute(
             "SELECT id, category_id, code FROM options WHERE id IN ({}) AND enabled = 1".format(placeholders),
@@ -476,12 +546,18 @@ def replace_option_mappings(product_id: str, option_ids: List[str]) -> Optional[
             )
     return get_admin_product(product_id)
 
-def update_product_option_override(product_id: str, option_id: str, description: Optional[str] = None, description_en: Optional[str] = None, price: Optional[int] = None) -> Optional[Dict[str, Any]]:
+def update_product_option_override(product_id: str, option_id: str, description: Optional[str] = None, description_en: Optional[str] = None, price: Optional[int] = None, *, version: Optional[int] = None) -> Optional[Dict[str, Any]]:
+    if version is None:
+        raise CatalogValidationError('CATALOG_VERSION_CONFLICT', 'version')
     with get_connection() as db:
+        db.execute('BEGIN IMMEDIATE')
         product_exists = db.execute("SELECT 1 FROM products WHERE id=?", (product_id,)).fetchone()
         option = db.execute("SELECT id, category_id, code FROM options WHERE id=?", (option_id,)).fetchone()
         if product_exists is None or option is None:
             return None
+        changed = db.execute('UPDATE products SET version=version+1,updated_at=CURRENT_TIMESTAMP WHERE id=? AND version=?', (product_id, version))
+        if changed.rowcount != 1:
+            raise CatalogValidationError('CATALOG_VERSION_CONFLICT', 'version')
         mapping_id = "{}-{}-{}".format(product_id.upper(), option["category_id"].upper(), option["code"])
         description = description.strip() if description else None
         description_en = description_en.strip() if description_en else None

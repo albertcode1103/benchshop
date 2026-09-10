@@ -3,7 +3,8 @@ from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Query
 from fastapi.responses import Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+from .media_routes import validate_media_reference
 
 from .auth_routes import require_admin, require_catalog_manager
 from .user_repository import (
@@ -98,19 +99,45 @@ async def preview_catalog_template(request: Request):
         sheets = parse_xlsx(data)
     except Exception as exc:
         raise HTTPException(status_code=400, detail="无法解析 Excel 文件") from exc
+    return _catalog_template_report(sheets)
+
+
+def _catalog_template_report(sheets):
     report=[]
     with get_connection() as db:
         product_ids={r[0] for r in db.execute("SELECT id FROM products").fetchall()}
         option_ids={r[0] for r in db.execute("SELECT id FROM options").fetchall()}
+        motor_pairs = {tuple(r) for r in db.execute("SELECT po.product_id, po.option_id FROM product_options po JOIN options o ON o.id=po.option_id WHERE o.category_id='motor'").fetchall()}
+        specification_pairs = {tuple(r) for r in db.execute("SELECT product_id, id FROM product_specifications").fetchall()}
     for index, rows in enumerate(sheets):
         headers=rows[0] if rows else []
         errors=[]
         if headers != CATALOG_SHEET_HEADERS[index]: errors.append("表头不匹配")
+        seen = set()
         for line, row in enumerate(rows[1:], 2):
+            if len(row) < len(CATALOG_SHEET_HEADERS[index]):
+                errors.append(f"第{line}行：字段不完整")
+                continue
+            key_fields = tuple(row[:2]) if index in (2, 3) else tuple(row[:1])
+            if key_fields in seen:
+                errors.append(f"第{line}行：重复记录")
+            seen.add(key_fields)
+            numeric_columns = (3, 4) if index == 0 else (7, 8) if index == 1 else (2, 3) if index == 2 else (6,)
+            for column in numeric_columns:
+                try:
+                    value = int(row[column] or 0)
+                    if value < (0 if index != 3 else -9223372036854775808) or value > 9223372036854775807:
+                        raise ValueError()
+                except (TypeError, ValueError, OverflowError):
+                    errors.append(f"第{line}行：价格或排序无效")
             key=row[0] if row else ""
             if index in (0,3) and key not in product_ids: errors.append(f"第{line}行：未知设备型号 {key}")
             if index == 1 and key not in option_ids: errors.append(f"第{line}行：未知配置编号 {key}")
             if index == 2 and (key not in product_ids or len(row) < 2 or row[1] not in option_ids): errors.append(f"第{line}行：设备或电机编号无效")
+            if index == 2 and tuple(row[:2]) not in motor_pairs:
+                errors.append(f"第{line}行：设备与电机组合不存在")
+            if index == 3 and tuple(row[:2]) not in specification_pairs:
+                errors.append(f"第{line}行：设备参数不存在或不属于该设备")
         report.append({"rows": max(0,len(rows)-1),"headers":headers,"errors":errors[:50]})
     return {"valid": all(not item["errors"] for item in report), "sheets": report}
 
@@ -125,6 +152,9 @@ async def commit_catalog_template(request: Request, user=Depends(require_catalog
         raise HTTPException(status_code=400, detail="无法解析 Excel 文件") from exc
     if len(sheets) != 4 or any(not sheet or sheet[0] != CATALOG_SHEET_HEADERS[index] for index, sheet in enumerate(sheets)):
         raise HTTPException(status_code=400, detail="Excel 工作表或表头不匹配，请使用最新模板")
+    report = _catalog_template_report(sheets)
+    if not report["valid"]:
+        raise HTTPException(status_code=400, detail="Excel 校验失败，请先预览并修正错误行")
     backup = create_backup(keep=30)
     updates=[]
     with get_connection() as db:
@@ -136,6 +166,7 @@ async def commit_catalog_template(request: Request, user=Depends(require_catalog
             if db.execute("SELECT 1 FROM products WHERE id=?", (row[0],)).fetchone() is None: raise HTTPException(status_code=400, detail=f"未知设备型号 {row[0]}")
             updates.append((row[1],row[2],cny,usd,1 if str(row[5]).lower() not in ("0","false","否") else 0,row[0]))
         db.executemany("UPDATE products SET name=?,name_en=?,base_price=?,price_usd=?,enabled=?,updated_at=CURRENT_TIMESTAMP WHERE id=?", updates)
+        changed_products = {row[-1] for row in updates}
         option_updates=[]
         if len(sheets)>1 and sheets[1] and sheets[1][0] == ["配置编号","分类编号","中文名称","英文名称","中文描述","英文描述","备注","人民币价格","美元价格","启用"]:
             for row in sheets[1][1:]:
@@ -145,7 +176,7 @@ async def commit_catalog_template(request: Request, user=Depends(require_catalog
                 if cny<0 or usd<0: raise HTTPException(status_code=400, detail=f"配置 {row[0]} 价格不能为负")
                 if db.execute("SELECT 1 FROM options WHERE id=?", (row[0],)).fetchone() is None: raise HTTPException(status_code=400, detail=f"未知配置编号 {row[0]}")
                 option_updates.append((row[2],row[3],row[4],row[5],row[6],cny,usd,1 if str(row[9]).lower() not in ("0","false","否") else 0,row[0]))
-            db.executemany("UPDATE options SET name=?,name_en=?,description=?,description_en=?,notes=?,price=?,price_usd=?,enabled=? WHERE id=?", option_updates)
+            db.executemany("UPDATE options SET name=?,name_en=?,description=?,description_en=?,notes=?,price=?,price_usd=?,enabled=?,version=version+1 WHERE id=?", option_updates)
         motor_updates=[]
         if len(sheets)>2:
             for row in sheets[2][1:]:
@@ -157,6 +188,7 @@ async def commit_catalog_template(request: Request, user=Depends(require_catalog
             for product_id, motor_id, cny, usd in motor_updates:
                 if db.execute("SELECT 1 FROM product_options WHERE product_id=? AND option_id=?", (product_id,motor_id)).fetchone() is None: raise HTTPException(status_code=400, detail="电机组合不存在")
                 db.execute("INSERT INTO product_motor_prices(product_id,motor_option_id,base_price_cny,base_price_usd) VALUES(?,?,?,?) ON CONFLICT(product_id,motor_option_id) DO UPDATE SET base_price_cny=excluded.base_price_cny,base_price_usd=excluded.base_price_usd", (product_id,motor_id,cny,usd))
+                changed_products.add(product_id)
         specs_updated=0
         if len(sheets)>3:
             for row in sheets[3][1:]:
@@ -164,6 +196,9 @@ async def commit_catalog_template(request: Request, user=Depends(require_catalog
                 if db.execute("SELECT 1 FROM products WHERE id=?", (row[0],)).fetchone() is None: raise HTTPException(status_code=400, detail=f"未知设备型号 {row[0]}")
                 if row[1] and db.execute("SELECT 1 FROM product_specifications WHERE id=? AND product_id=?", (row[1],row[0])).fetchone() is not None:
                     db.execute("UPDATE product_specifications SET label=?,label_en=?,value=?,value_en=?,sort_order=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND product_id=?", (row[2],row[3],row[4],row[5],int(row[6] or 0),row[1],row[0])); specs_updated+=1
+                    changed_products.add(row[0])
+        db.executemany("UPDATE products SET version=version+1,updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                       [(product_id,) for product_id in sorted(changed_products)])
     counts = {"updated": len(updates), "options_updated": len(option_updates), "motor_prices_updated": len(motor_updates), "specifications_updated": specs_updated}
     write_audit(user["id"], "catalog_import", "catalog", "excel", {**counts, "backup": backup.name})
     return {**counts, "backup": backup.name}
@@ -173,7 +208,7 @@ class CreateStaffRequest(BaseModel):
     email: Optional[str] = None
     phone: Optional[str] = None
     phone_country: Optional[str] = None
-    password: str
+    password: str = Field(max_length=1024)
     display_name: str = ""
     role: str = "sales"
 
@@ -188,7 +223,7 @@ class UserUpdateRequest(BaseModel):
     phone_country: Optional[str] = None
     display_name: Optional[str] = None
     role: Optional[str] = None
-    password: Optional[str] = None
+    password: Optional[str] = Field(default=None, max_length=1024)
     version: int = Field(ge=1)
 
 
@@ -198,7 +233,7 @@ class UserRoleRequest(BaseModel):
 
 
 class UserPasswordResetRequest(BaseModel):
-    password: str
+    password: str = Field(max_length=1024)
     version: int = Field(ge=1)
 
 
@@ -212,16 +247,17 @@ class UserRestoreRequest(BaseModel):
 
 
 class ProductUpdateRequest(BaseModel):
+    version: Optional[int] = Field(default=None, ge=1, le=9223372036854775807)
     name: Optional[str] = None
     title_name: Optional[str] = None
     description: Optional[str] = None
-    base_price: Optional[int] = None
+    base_price: Optional[int] = Field(default=None, ge=0, le=9223372036854775807)
     enabled: Optional[bool] = None
-    sort_order: Optional[int] = None
+    sort_order: Optional[int] = Field(default=None, ge=-9223372036854775808, le=9223372036854775807)
     name_en: Optional[str] = None
     title_name_en: Optional[str] = None
     description_en: Optional[str] = None
-    price_usd: Optional[int] = None
+    price_usd: Optional[int] = Field(default=None, ge=0, le=9223372036854775807)
 
 class ProductCreateRequest(BaseModel):
     id: str
@@ -231,11 +267,20 @@ class ProductCreateRequest(BaseModel):
     title_name_en: str = ""
     description: str = ""
     description_en: str = ""
-    base_price: int = 0
-    price_usd: int = 0
+    base_price: int = Field(default=0, ge=0, le=9223372036854775807)
+    price_usd: int = Field(default=0, ge=0, le=9223372036854775807)
 
 
-class ProductColorRequest(BaseModel):
+class MediaReferenceRequest(BaseModel):
+    @field_validator("image_path", check_fields=False)
+    @classmethod
+    def validate_image_path(cls, value):
+        if not validate_media_reference(value):
+            raise ValueError("Invalid or missing catalog image")
+        return value
+
+
+class ProductColorRequest(MediaReferenceRequest):
     code: str
     label: str
     label_en: str = ""
@@ -243,7 +288,7 @@ class ProductColorRequest(BaseModel):
     is_default: bool = False
 
 
-class ProductColorEditorRequest(BaseModel):
+class ProductColorEditorRequest(MediaReferenceRequest):
     id: Optional[str] = Field(default=None, max_length=100)
     name_zh: str = Field(max_length=200)
     name_en: str = Field(max_length=200)
@@ -258,15 +303,17 @@ class ProductColorEditorRequest(BaseModel):
 
 
 class ProductColorsRequest(BaseModel):
+    version: Optional[int] = Field(default=None, ge=1, le=9223372036854775807)
     colors: List[ProductColorRequest]
 
 
 class ProductMappingsRequest(BaseModel):
+    version: Optional[int] = Field(default=None, ge=1, le=9223372036854775807)
     option_ids: List[str]
 
 class MotorBasePriceRequest(BaseModel):
-    base_price_cny: int = 0
-    base_price_usd: int = 0
+    base_price_cny: int = Field(default=0, ge=0, le=9223372036854775807)
+    base_price_usd: int = Field(default=0, ge=0, le=9223372036854775807)
 
 class ProductSpecificationRequest(BaseModel):
     id: Optional[str] = None
@@ -286,12 +333,14 @@ class ProductSpecificationEditorRequest(BaseModel):
     sort_order: int = 0
 
 class ProductOptionOverrideRequest(BaseModel):
-    description_override: Optional[str] = None
-    description_override_en: Optional[str] = None
-    price_override: Optional[int] = None
+    version: Optional[int] = Field(default=None, ge=1, le=9223372036854775807)
+    description_override: Optional[str] = Field(default=None, max_length=10000)
+    description_override_en: Optional[str] = Field(default=None, max_length=10000)
+    price_override: Optional[int] = Field(default=None, ge=0, le=9223372036854775807)
 
 
 class ProductSaveRequest(ProductUpdateRequest):
+    version: int = Field(ge=1, le=9223372036854775807)
     colors: List[ProductColorRequest]
     option_ids: List[str]
     option_overrides: Dict[str, ProductOptionOverrideRequest] = Field(default_factory=dict)
@@ -299,40 +348,42 @@ class ProductSaveRequest(ProductUpdateRequest):
     specifications: List[ProductSpecificationRequest] = Field(default_factory=list)
 
 
-class ConfigOptionUpdateRequest(BaseModel):
-    code: Optional[str] = None
-    name: Optional[str] = None
-    image_path: Optional[str] = None
-    description: Optional[str] = None
-    notes: Optional[str] = None
-    price: Optional[int] = None
+class ConfigOptionUpdateRequest(MediaReferenceRequest):
+    version: Optional[int] = Field(default=None, ge=1, le=9223372036854775807)
+    code: Optional[str] = Field(default=None, max_length=200)
+    name: Optional[str] = Field(default=None, max_length=300)
+    image_path: Optional[str] = Field(default=None, max_length=1000)
+    description: Optional[str] = Field(default=None, max_length=10000)
+    notes: Optional[str] = Field(default=None, max_length=5000)
+    price: Optional[int] = Field(default=None, ge=0, le=9223372036854775807)
     enabled: Optional[bool] = None
-    sort_order: Optional[int] = None
-    name_en: Optional[str] = None
-    description_en: Optional[str] = None
-    price_usd: Optional[int] = None
+    sort_order: Optional[int] = Field(default=None, ge=-9223372036854775808, le=9223372036854775807)
+    name_en: Optional[str] = Field(default=None, max_length=300)
+    description_en: Optional[str] = Field(default=None, max_length=10000)
+    price_usd: Optional[int] = Field(default=None, ge=0, le=9223372036854775807)
 
 
 class ConfigCategoryCreateRequest(BaseModel):
-    name: str
-    name_en: str = ""
-    description: str = ""
-    description_en: str = ""
+    name: str = Field(max_length=200)
+    name_en: str = Field(default="", max_length=200)
+    description: str = Field(default="", max_length=5000)
+    description_en: str = Field(default="", max_length=5000)
     multiple: bool = True
 
 class ConfigCategoryUpdateRequest(BaseModel):
-    name: Optional[str] = None
-    description: Optional[str] = None
+    version: Optional[int] = Field(default=None, ge=1, le=9223372036854775807)
+    name: Optional[str] = Field(default=None, max_length=200)
+    description: Optional[str] = Field(default=None, max_length=5000)
     multiple: Optional[bool] = None
-    sort_order: Optional[int] = None
-    name_en: Optional[str] = None
-    description_en: Optional[str] = None
+    sort_order: Optional[int] = Field(default=None, ge=-9223372036854775808, le=9223372036854775807)
+    name_en: Optional[str] = Field(default=None, max_length=200)
+    description_en: Optional[str] = Field(default=None, max_length=5000)
 
 
 class ConfigOptionCreateRequest(ConfigOptionUpdateRequest):
-    category_id: str
-    code: str
-    name: str
+    category_id: str = Field(max_length=100)
+    code: str = Field(max_length=200)
+    name: str = Field(max_length=300)
 
 
 class CatalogCategoryCreateV2Request(BaseModel):
@@ -351,7 +402,7 @@ class CatalogCategoryUpdateV2Request(CatalogCategoryCreateV2Request):
     version: int = Field(ge=1)
 
 
-class CatalogItemV2Request(BaseModel):
+class CatalogItemV2Request(MediaReferenceRequest):
     category_id: str = Field(max_length=100)
     code: str = Field(max_length=200)
     name_zh: str = Field(max_length=300)
@@ -625,7 +676,10 @@ def edit_config_option(option_id: str, payload: ConfigOptionUpdateRequest):
     values = payload.model_dump(exclude_unset=True)
     if any(values.get(field) is not None and values[field] < 0 for field in ("price", "price_usd")):
         raise HTTPException(status_code=422, detail="Price cannot be negative")
-    result = update_config_option(option_id, values)
+    try:
+        result = update_config_option(option_id, values)
+    except CatalogValidationError as error:
+        raise _catalog_error(error)
     if result is None: raise HTTPException(status_code=404, detail="Configuration option not found")
     return result
 
@@ -652,7 +706,10 @@ def add_config_category(payload: ConfigCategoryCreateRequest):
 
 @router.patch("/config-catalog/categories/{category_id}")
 def edit_config_category(category_id: str, payload: ConfigCategoryUpdateRequest):
-    result = update_config_category(category_id, payload.model_dump(exclude_unset=True))
+    try:
+        result = update_config_category(category_id, payload.model_dump(exclude_unset=True))
+    except CatalogValidationError as error:
+        raise _catalog_error(error)
     if result is None: raise HTTPException(status_code=404, detail="Configuration category not found")
     return result
 
@@ -677,7 +734,10 @@ def add_config_option(payload: ConfigOptionCreateRequest):
     if not payload.code.strip() or not payload.name.strip(): raise HTTPException(status_code=422, detail="Option code and name are required")
     if any(value is not None and value < 0 for value in (payload.price, payload.price_usd)): raise HTTPException(status_code=422, detail="Price cannot be negative")
     values = payload.model_dump(exclude={"category_id", "code", "name"})
-    return create_config_option(payload.category_id, payload.code, payload.name, **values)
+    try:
+        return create_config_option(payload.category_id, payload.code, payload.name, **values)
+    except CatalogValidationError as error:
+        raise _catalog_error(error)
 
 
 @router.get("/products/{product_id}")
@@ -743,7 +803,10 @@ def edit_product(product_id: str, payload: ProductUpdateRequest):
     values = payload.model_dump(exclude_unset=True)
     if any(values.get(field) is not None and values[field] < 0 for field in ("base_price", "price_usd")):
         raise HTTPException(status_code=422, detail="Price cannot be negative")
-    result = update_product(product_id, values)
+    try:
+        result = update_product(product_id, values)
+    except CatalogValidationError as error:
+        raise _catalog_error(error)
     if result is None:
         raise HTTPException(status_code=404, detail="Product not found")
     return result
@@ -765,6 +828,8 @@ def save_product(product_id: str, payload: ProductSaveRequest):
     overrides = {option_id: item.model_dump() for option_id, item in payload.option_overrides.items()}
     try:
         result = save_product_configuration(product_id, values, colors, payload.option_ids, overrides, {key: value.model_dump() for key, value in payload.motor_prices.items()}, [item.model_dump() for item in payload.specifications])
+    except CatalogValidationError as error:
+        raise _catalog_error(error)
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error))
     if result is None:
@@ -786,7 +851,10 @@ def edit_product_colors(product_id: str, payload: ProductColorsRequest):
         colors[0]["is_default"] = True
     elif sum(1 for color in colors if color["is_default"]) > 1:
         raise HTTPException(status_code=422, detail="Only one default color is allowed")
-    result = replace_colors(product_id, colors)
+    try:
+        result = replace_colors(product_id, colors, payload.version)
+    except CatalogValidationError as error:
+        raise _catalog_error(error)
     if result is None:
         raise HTTPException(status_code=404, detail="Product not found")
     return result
@@ -795,7 +863,9 @@ def edit_product_colors(product_id: str, payload: ProductColorsRequest):
 @router.put("/products/{product_id}/options")
 def edit_product_options(product_id: str, payload: ProductMappingsRequest):
     try:
-        result = replace_option_mappings(product_id, payload.option_ids)
+        result = replace_option_mappings(product_id, payload.option_ids, payload.version)
+    except CatalogValidationError as error:
+        raise _catalog_error(error)
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error))
     if result is None:
@@ -804,7 +874,10 @@ def edit_product_options(product_id: str, payload: ProductMappingsRequest):
 
 @router.patch("/products/{product_id}/options/{option_id}")
 def edit_product_option_override(product_id: str, option_id: str, payload: ProductOptionOverrideRequest):
-    result = update_product_option_override(product_id, option_id, payload.description_override, payload.description_override_en, payload.price_override)
+    try:
+        result = update_product_option_override(product_id, option_id, payload.description_override, payload.description_override_en, payload.price_override, version=payload.version)
+    except CatalogValidationError as error:
+        raise _catalog_error(error)
     if result is None: raise HTTPException(status_code=404, detail="Product option mapping not found")
     return result
 

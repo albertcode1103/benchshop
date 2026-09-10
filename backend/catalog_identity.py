@@ -18,7 +18,7 @@ def normalize_catalog_code(value: Any) -> str:
 
 
 def strip_redundant_catalog_code(name: Any, code: Any, aliases: Iterable[Any] = ()) -> str:
-    text = str(name or "").strip()
+    text = re.sub(r"\s+", " ", str(name or "")).strip()
     if not text:
         return ""
     candidates = {str(code or "").strip(), normalize_catalog_code(code)}

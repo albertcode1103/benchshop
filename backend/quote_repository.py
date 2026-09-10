@@ -11,6 +11,17 @@ from .database import get_connection
 from .security import to_iso, utc_now
 
 
+QUOTE_ITEM_FIELDS = frozenset({
+    'kind', 'line_id', 'source_id', 'id', 'name', 'name_en', 'display_name', 'code',
+    'device_label', 'device_key', 'parent_device_key', 'device_sequence',
+    'quantity', 'price', 'quoted_price', 'reference_price', 'price_cny', 'price_usd',
+    'price_overridden', 'locked', 'configuration_role', 'device_specifications',
+    'category_id', 'category_name', 'category_label', 'category_sort_order',
+    'catalog_category_sort_order', 'sort_order', 'catalog_sort_order',
+    'availability', 'captured_availability', 'availability_details',
+})
+
+
 def _normalize_quote_items(items: Any, currency: str = "CNY") -> List[Dict[str, Any]]:
     if not isinstance(items, list) or not items:
         raise ValueError("报价单至少需要一条项目")
@@ -22,7 +33,7 @@ def _normalize_quote_items(items: Any, currency: str = "CNY") -> List[Dict[str, 
     def safe_non_negative_int(value: Any, fallback: int = 0) -> int:
         try:
             return max(0, int(value))
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             return fallback
 
     for index, item in enumerate(items, start=1):
@@ -31,13 +42,13 @@ def _normalize_quote_items(items: Any, currency: str = "CNY") -> List[Dict[str, 
         try:
             quantity = int(float(item.get("quantity", 1)))
             price = float(item.get("price", 0))
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             raise ValueError("第 {} 条报价的数量或单价格式不正确".format(index))
         if quantity < 1:
             raise ValueError("第 {} 条报价数量至少为 1".format(index))
         if not math.isfinite(price) or price < 0:
             raise ValueError("第 {} 条报价单价必须为非负数字".format(index))
-        normalized_item = dict(item)
+        normalized_item = {key: value for key, value in item.items() if key in QUOTE_ITEM_FIELDS}
         kind = str(normalized_item.get("kind") or "option").strip().lower()
         if kind not in allowed_kinds:
             raise ValueError("第 {} 条报价项目类型不正确".format(index))
@@ -64,7 +75,7 @@ def _normalize_quote_items(items: Any, currency: str = "CNY") -> List[Dict[str, 
             reference_price = normalized_item.get("price_usd" if currency == "USD" else "price_cny", price)
         try:
             clean_reference_price = float(reference_price or 0)
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             clean_reference_price = 0
         if not math.isfinite(clean_reference_price) or clean_reference_price < 0:
             clean_reference_price = 0
@@ -109,7 +120,7 @@ def _canonical_quote_items(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     def safe_order(value: Any) -> int:
         try:
             return int(value)
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             return 2147483647
 
     indexed = list(enumerate(items))
@@ -118,8 +129,8 @@ def _canonical_quote_items(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         ranks[item_type(pair[1])],
         safe_order(pair[1].get("device_sequence")) if item_type(pair[1]) == "device_config" else safe_order(pair[1].get("category_sort_order", pair[1].get("catalog_category_sort_order"))),
         0 if pair[1].get("kind") == "product" else 1 if item_type(pair[1]) == "device_config" else safe_order(pair[1].get("sort_order", pair[1].get("catalog_sort_order"))),
-        safe_order(pair[1].get("category_sort_order")) if item_type(pair[1]) == "device_config" else str(pair[1].get("code") or ""),
-        safe_order(pair[1].get("sort_order")) if item_type(pair[1]) == "device_config" else pair[0],
+        safe_order(pair[1].get("category_sort_order", pair[1].get("catalog_category_sort_order"))) if item_type(pair[1]) == "device_config" else str(pair[1].get("code") or ""),
+        safe_order(pair[1].get("sort_order", pair[1].get("catalog_sort_order"))) if item_type(pair[1]) == "device_config" else pair[0],
         pair[0],
     ))
     return [item for _, item in indexed]
@@ -217,17 +228,23 @@ def save_quote(
     language: str = "zh",
     allow_any_owner: bool = False,
     expected_version: Optional[int] = None,
+    customer_address: str = "",
 ) -> Dict[str, Any]:
     if currency not in ("CNY", "USD"):
         raise ValueError("报价货币仅支持人民币或美元")
     normalized_items = _normalize_quote_items(items, currency)
     try:
         requested_total = float(total_price)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         raise ValueError("报价总价格式不正确")
     if not math.isfinite(requested_total) or requested_total < 0:
         raise ValueError("报价总价格式不正确")
-    calculated_total = round(sum(item["quantity"] * item["price"] for item in normalized_items), 2)
+    try:
+        calculated_total = round(sum(item["quantity"] * item["price"] for item in normalized_items), 2)
+    except OverflowError:
+        raise ValueError("报价计算总额超出支持范围")
+    if not math.isfinite(calculated_total):
+        raise ValueError("报价计算总额超出支持范围")
     selected_language = "en" if language == "en" else "zh"
     clean_config_id = _optional_text(config_id, 100) or None
     clean_source_share_id = _optional_text(source_share_id, 100) or None
@@ -280,7 +297,7 @@ def save_quote(
                         UPDATE commerce_quotes
                         SET quote_number = ?, config_id = ?, source_share_id = ?, source_inquiry_id = ?,
                             source_type = ?, source_document_version = ?, source_document_id = ?, source_code = ?, title = ?,
-                            customer_name = ?, customer_email = ?, customer_phone = ?, language = ?,
+                            customer_name = ?, customer_email = ?, customer_phone = ?, customer_address = ?, language = ?,
                             items_json = ?, total_price = ?, currency = ?,
                             version = version + 1, updated_at = CURRENT_TIMESTAMP
                         WHERE id = ? AND version = ?
@@ -298,6 +315,7 @@ def save_quote(
                             _optional_text(customer_name, 200),
                             _optional_text(customer_email, 320),
                             _optional_text(customer_phone, 80),
+                            _optional_text(customer_address, 500),
                             selected_language,
                             json.dumps(normalized_items, ensure_ascii=False, allow_nan=False),
                             calculated_total,
@@ -350,9 +368,9 @@ def save_quote(
                     (id, quote_number, config_id, source_share_id, source_inquiry_id,
                      source_type, source_document_version, source_document_id, source_code,
                      user_id, title,
-                     customer_name, customer_email, customer_phone, language, items_json,
+                     customer_name, customer_email, customer_phone, customer_address, language, items_json,
                      total_price, currency)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     new_quote_id,
@@ -369,6 +387,7 @@ def save_quote(
                     _optional_text(customer_name, 200),
                     _optional_text(customer_email, 320),
                     _optional_text(customer_phone, 80),
+                    _optional_text(customer_address, 500),
                     selected_language,
                     json.dumps(normalized_items, ensure_ascii=False, allow_nan=False),
                     calculated_total,
@@ -408,6 +427,7 @@ def _decode(row, document_version: int = 2):
     result.setdefault("customer_name", "")
     result.setdefault("customer_email", "")
     result.setdefault("customer_phone", "")
+    result.setdefault("customer_address", "")
     result.setdefault("language", "zh")
     result["document_version"] = document_version
     return result

@@ -3,6 +3,7 @@
 from http.client import HTTPConnection
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+import argparse
 
 
 PROJECT_DIR = Path(__file__).resolve().parents[1]
@@ -24,15 +25,54 @@ class DevelopmentHandler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(PROJECT_DIR), **kwargs)
 
+    def send_head(self):
+        path = Path(self.translate_path(self.path)).resolve()
+        try:
+            relative = path.relative_to(PROJECT_DIR.resolve())
+        except ValueError:
+            self.send_error(404)
+            return None
+        if path.is_dir():
+            path = (path / 'index.html').resolve()
+        if not path.is_relative_to(PROJECT_DIR.resolve()):
+            self.send_error(404)
+            return None
+        allowed_roots = {'admin', 'account', 'css', 'js', 'assets', 'tb'}
+        allowed_extensions = {'.html', '.css', '.js', '.png', '.jpg', '.jpeg', '.webp',
+                              '.svg', '.ico', '.woff', '.woff2', '.ttf', '.otf'}
+        if (any(part.startswith('.') for part in relative.parts)
+                or (relative.parts and relative.parts[0] not in allowed_roots and str(relative) != 'index.html')
+                or path.suffix.lower() not in allowed_extensions or not path.is_file()):
+            self.send_error(404)
+            return None
+        return super().send_head()
+
+    def list_directory(self, path):
+        self.send_error(404)
+        return None
+
     def _proxy_api(self):
-        content_length = int(self.headers.get("Content-Length", "0") or 0)
+        if self.headers.get('Transfer-Encoding'):
+            self.send_error(400, 'Transfer encoding unsupported by local proxy')
+            return
+        try:
+            content_length = int(self.headers.get("Content-Length", "0") or 0)
+        except ValueError:
+            self.send_error(400)
+            return
+        if content_length < 0 or content_length > 10 * 1024 * 1024:
+            self.send_error(413)
+            return
         body = self.rfile.read(content_length) if content_length else None
         headers = {
             name: value
             for name, value in self.headers.items()
-            if name.lower() not in HOP_BY_HOP_HEADERS and name.lower() != "host"
+            if name.lower() not in HOP_BY_HOP_HEADERS
+            and name.lower() not in {'host', 'forwarded', 'x-forwarded-for', 'x-forwarded-proto', 'x-real-ip'}
         }
         headers["Host"] = f"{API_HOST}:{API_PORT}"
+        headers['X-Forwarded-For'] = self.client_address[0]
+        headers['X-Forwarded-Proto'] = 'http'
 
         connection = HTTPConnection(API_HOST, API_PORT, timeout=120)
         try:
@@ -89,6 +129,9 @@ class DevelopmentHandler(SimpleHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    server = ThreadingHTTPServer(("0.0.0.0", 8080), DevelopmentHandler)
-    print("BOTEN local site: http://0.0.0.0:8080", flush=True)
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--port', type=int, default=8080)
+    args = parser.parse_args()
+    server = ThreadingHTTPServer(("0.0.0.0", args.port), DevelopmentHandler)
+    print(f"BOTEN local site: http://0.0.0.0:{args.port}", flush=True)
     server.serve_forever()

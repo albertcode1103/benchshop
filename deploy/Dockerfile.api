@@ -11,11 +11,15 @@ WORKDIR /app
 # builds so deployment does not depend on Debian mirror connectivity.
 
 COPY backend/requirements.txt /app/backend/requirements.txt
-RUN pip install --no-cache-dir -r /app/backend/requirements.txt
+COPY backend/constraints-py312.txt /app/backend/constraints-py312.txt
+RUN python -m pip install --no-cache-dir pip==26.2.1 \
+    && python -m pip install --no-cache-dir -r /app/backend/requirements.txt -c /app/backend/constraints-py312.txt \
+    && python -m pip check
 
 COPY alembic.ini /app/alembic.ini
 COPY backend /app/backend
 COPY assets/fonts /app/assets/fonts
+COPY tb/site/BOTEN.png /app/tb/site/BOTEN.png
 COPY deploy/api-entrypoint.sh /app/deploy/api-entrypoint.sh
 RUN chmod 755 /app/deploy/api-entrypoint.sh
 

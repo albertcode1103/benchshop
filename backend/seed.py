@@ -229,9 +229,17 @@ def seed() -> None:
                         ),
                     )
 
-    # Product/motor mappings are inserted above; run the compatibility backfill
-    # afterwards so every mapped motor receives its initial dual-currency price.
-    initialize_database()
+        # Seed data is inserted after schema migrations. Initialize new motor
+        # prices in the same transaction, without overwriting existing prices.
+        connection.execute("""
+            INSERT OR IGNORE INTO product_motor_prices
+                (product_id, motor_option_id, base_price_cny, base_price_usd)
+            SELECT po.product_id, po.option_id, p.base_price, p.price_usd
+            FROM product_options po
+            JOIN options o ON o.id = po.option_id AND o.category_id = 'motor'
+            JOIN products p ON p.id = po.product_id
+            WHERE po.enabled = 1
+        """)
     print("Seeded {} products and {} shared options.".format(len(products), len(option_lookup)))
 
 

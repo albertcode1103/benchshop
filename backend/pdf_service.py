@@ -5,7 +5,7 @@ import logging
 import os
 import uuid
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
@@ -146,6 +146,20 @@ def pdf_generated_at(moment: Optional[datetime] = None) -> str:
     return current.astimezone(PDF_TIMEZONE).strftime("%Y-%m-%d %H:%M:%S")
 
 
+def _business_timestamp(value: Any) -> str:
+    text = _clean(value)
+    if not text:
+        return ""
+    try:
+        moment = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        # SQLite CURRENT_TIMESTAMP stores naive UTC values.
+        if moment.tzinfo is None:
+            moment = moment.replace(tzinfo=timezone.utc)
+        return pdf_generated_at(moment)
+    except ValueError:
+        return text
+
+
 def temporary_configuration_code(moment: Optional[datetime] = None, token: str = "") -> str:
     current = moment or datetime.now(PDF_TIMEZONE)
     if current.tzinfo is None:
@@ -278,7 +292,14 @@ def _status_label(value: Any, language: str) -> str:
 def _intro_story(context: PdfDocumentContext, styles: Dict[str, ParagraphStyle]) -> List[Any]:
     copy = PDF_COPY[context.language]
     story: List[Any] = [_paragraph(_title_for(context), styles["title"])]
-    customer_card = _info_card(copy["customer_info"], _party_values(context.customer or {}, copy), styles, 82 * mm)
+    customer_values = _party_values(context.customer or {}, copy)
+    if context.kind == "quote":
+        party = context.customer or {}
+        customer_values = [(copy["name"], party.get("display_name") or "-"),
+                           (copy["phone"], party.get("phone") or "-"),
+                           (copy["email"], party.get("email") or "-"),
+                           ("地址" if context.language == "zh" else "Address", party.get("address") or "-")]
+    customer_card = _info_card(copy["customer_info"], customer_values, styles, 82 * mm)
     salesperson_card = _info_card(copy["salesperson_info"], _party_values(context.salesperson or {}, copy), styles, 82 * mm) if context.kind == "quote" else None
     party_row = _card_row(customer_card, salesperson_card)
     if party_row:
@@ -290,7 +311,7 @@ def _intro_story(context: PdfDocumentContext, styles: Dict[str, ParagraphStyle])
         details.extend([(copy["status"], context.status), (copy["created"], context.created_at)])
     details.extend(context.extra_fields or [])
     detail_card = _info_card(copy["document_info"], details, styles, 170 * mm)
-    if detail_card:
+    if detail_card and context.kind not in ("inquiry", "quote"):
         story.extend([detail_card, Spacer(1, 3 * mm)])
     if context.kind == "inquiry":
         story.extend([_note_card(copy["note"], context.note or copy["no_note"], styles, 170 * mm), Spacer(1, 2 * mm)])
@@ -354,6 +375,10 @@ class _UnifiedDocument(BaseDocTemplate):
         canvas.setFont(FONT_NAME, 7.5)
         canvas.setFillColor(TEXT_MAIN)
         canvas.drawRightString(A4[0] - self.rightMargin, A4[1] - 12.5 * mm, COMPANY_NAME)
+        if self.context.kind in ("inquiry", "quote"):
+            canvas.setFont(FONT_NAME, 7)
+            canvas.drawRightString(A4[0] - self.rightMargin, A4[1] - 16 * mm, _business_timestamp(self.context.created_at))
+            canvas.drawRightString(A4[0] - self.rightMargin, A4[1] - 19.5 * mm, self.context.code or "")
         canvas.setStrokeColor(ACCENT_BLUE)
         canvas.setLineWidth(0.8)
         canvas.line(self.leftMargin, A4[1] - 22 * mm, A4[0] - self.rightMargin, A4[1] - 22 * mm)
@@ -362,10 +387,22 @@ class _UnifiedDocument(BaseDocTemplate):
         canvas.line(self.leftMargin, 14 * mm, A4[0] - self.rightMargin, 14 * mm)
         canvas.setFont(FONT_NAME, 7.1)
         canvas.setFillColor(TEXT_GRAY)
-        if self.context.code:
-            canvas.drawString(self.leftMargin, 7.2 * mm, "{}: {}".format(copy["file_code"], self.context.code))
-        canvas.drawRightString(A4[0] - self.rightMargin, 9 * mm, "{}: {}".format(copy["generated"], self.context.generated_at))
-        canvas.drawRightString(A4[0] - self.rightMargin, 5.8 * mm, WEBSITE)
+        if self.context.kind == "inquiry":
+            canvas.drawString(self.leftMargin, 7.2 * mm, WEBSITE)
+            canvas.drawRightString(A4[0] - self.rightMargin, 7.2 * mm, self.context.generated_at)
+        elif self.context.kind == "quote":
+            address = ("江苏省昆山开发区马塘路108号" if self.context.language == "zh" else
+                       "No.108 Matang RD, Kunshan Development Zone, Suzhou, Jiangsu, China 215333")
+            address_style = ParagraphStyle("CompanyAddress", fontName=FONT_NAME, fontSize=6.5, leading=8, textColor=TEXT_GRAY)
+            address_paragraph = Paragraph(escape(address), address_style)
+            _, height = address_paragraph.wrap(75 * mm, 12 * mm)
+            address_paragraph.drawOn(canvas, self.leftMargin, max(2 * mm, 12 * mm - height))
+            canvas.drawRightString(A4[0] - self.rightMargin, 7.2 * mm, WEBSITE)
+        else:
+            if self.context.code:
+                canvas.drawString(self.leftMargin, 7.2 * mm, "{}: {}".format(copy["file_code"], self.context.code))
+            canvas.drawRightString(A4[0] - self.rightMargin, 9 * mm, "{}: {}".format(copy["generated"], self.context.generated_at))
+            canvas.drawRightString(A4[0] - self.rightMargin, 5.8 * mm, WEBSITE)
         canvas.restoreState()
 
 
@@ -476,14 +513,11 @@ def _item_table(title: str, items: Sequence[Dict[str, Any]], styles: Dict[str, P
             row.extend([_paragraph("{} {:,.2f}".format(currency, price), styles["money"]), _paragraph("{} {:,.2f}".format(currency, line_total), styles["money"])])
         rows.append(row)
     if include_prices:
-        rows.append(["", _paragraph(copy["group_subtotal"], styles["card_value"]), "", "", "", _paragraph("{} {:,.2f}".format(currency, subtotal), styles["money"])])
         if grand_total is not None:
             rows.append(["", _paragraph(copy["total"], styles["total_label"]), "", "", "", _paragraph("{} {:,.2f}".format(currency, grand_total), styles["total_money"])])
     table = Table(rows, colWidths=widths, repeatRows=2, hAlign="LEFT", splitByRow=1)
     table.setStyle(_table_style(right_columns=right_columns, title_row=True))
     if include_prices:
-        subtotal_row = -2 if grand_total is not None else -1
-        table.setStyle(TableStyle([("BACKGROUND", (0, subtotal_row), (-1, subtotal_row), LIGHT_BLUE), ("LINEABOVE", (0, subtotal_row), (-1, subtotal_row), 0.6, ACCENT_BLUE), ("SPAN", (1, subtotal_row), (4, subtotal_row))]))
         if grand_total is not None:
             table.setStyle(TableStyle([
                 ("BACKGROUND", (0, -1), (-1, -1), BRAND_BLUE),
@@ -497,7 +531,11 @@ def _guarded_table(table: Table, keep_whole: bool) -> List[Any]:
     if not keep_whole:
         return [table]
     _, height = table.wrap(170 * mm, 250 * mm)
-    return [CondPageBreak(min(height, 220 * mm)), table]
+    # A group taller than a page cannot stay whole. Let ReportLab split it
+    # into the current remaining space rather than leaving that space blank.
+    if height > 220 * mm:
+        return [table]
+    return [CondPageBreak(height), table]
 
 
 def _device_story(snapshot: Dict[str, Any], device_index: int, styles: Dict[str, ParagraphStyle], language: str) -> List[Any]:
@@ -620,7 +658,10 @@ def commerce_bundle_pdf(entries: List[Dict[str, Any]], customer: Dict[str, Any],
 
 
 def _quote_item_sort(items: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    indexed = list(enumerate(items))
+    indexed = list(enumerate([
+        dict(item, category_sort_order=item.get("category_sort_order", item.get("catalog_category_sort_order")))
+        for item in items
+    ]))
     ranks = {"product": 0, "option": 1, "surcharge": 1, "tool": 2, "accessory": 3}
     indexed.sort(key=lambda pair: (0 if pair[1].get("kind") in ("product", "option", "surcharge") else ranks.get(_clean(pair[1].get("kind")), 4), _sort_value(pair[1].get("device_sequence")) if pair[1].get("kind") in ("product", "option", "surcharge") else _sort_value(pair[1].get("category_sort_order", pair[1].get("catalog_category_sort_order"))), 0 if pair[1].get("kind") == "product" else 1, _sort_value(pair[1].get("category_sort_order")), _sort_value(pair[1].get("sort_order", pair[1].get("catalog_sort_order"))), _clean(pair[1].get("code")), pair[0]))
     return [dict(item) for _, item in indexed]
@@ -716,7 +757,7 @@ def quote_pdf(quote: Dict[str, Any]) -> bytes:
     quote_id = _clean(quote.get("id"))
     code = _clean(quote.get("quote_number")) or "DRAFT-{}".format((quote_id[:8] or uuid.uuid4().hex[:8]).upper())
     salesperson = quote.get("quoted_by") or quote.get("sender") or {"display_name": quote.get("display_name"), "email": quote.get("email"), "phone": quote.get("phone")}
-    context = PdfDocumentContext(kind="quote", language=language, code=code, customer={"display_name": quote.get("customer_name"), "email": quote.get("customer_email"), "phone": quote.get("customer_phone")}, salesperson=salesperson, subject=_clean(quote.get("title")), currency=currency, status=_clean(quote.get("lifecycle_status") or "draft"), created_at=_clean(quote.get("created_at")), valid_until=_clean(quote.get("valid_until")))
+    context = PdfDocumentContext(kind="quote", language=language, code=code, customer={"display_name": quote.get("customer_name"), "email": quote.get("customer_email"), "phone": quote.get("customer_phone"), "address": quote.get("customer_address")}, salesperson=salesperson, subject=_clean(quote.get("title")), currency=currency, status=_clean(quote.get("lifecycle_status") or "draft"), created_at=_clean(quote.get("created_at")), valid_until=_clean(quote.get("valid_until")))
     styles = _styles()
     copy = PDF_COPY[language]
     story = _intro_story(context, styles)

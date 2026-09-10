@@ -566,6 +566,7 @@ function applyCatalogLanguage(lang) { state.catalogLanguage=lang; $$(".catalog-l
 function addCatalogLanguageSwitches(){[["products","设备目录"],["config-catalog","配置目录"]].forEach(([view])=>{const header=$(`[data-view-panel="${view}"] .panel-header`);if(!header||$(".catalog-language",header))return;const box=document.createElement("div");box.className="catalog-language";box.innerHTML='<button type="button" class="active" data-catalog-lang="zh">中文</button><button type="button" data-catalog-lang="en">EN</button>';header.appendChild(box);box.addEventListener("click",e=>{const b=e.target.closest("[data-catalog-lang]");if(b)applyCatalogLanguage(b.dataset.catalogLang);});});}
 function openConfigOptionEditor(option) {
   const form = $("#config-option-form");
+  form.dataset.optionVersion = String(option.version || 1);
   const zhButton = $(`.lang-toggle[data-lang="${state.catalogLanguage}"]`, $("#config-option-dialog")); if (zhButton) toggleDialogLanguage(zhButton);
   form.elements.option_id.value = option.id; form.elements.code.value = option.code || ""; form.elements.name.value = option.name || ""; form.elements.name_en.value = option.name_en || ""; form.elements.image_path.value = option.image_path || ""; form.elements.description.value = option.description || ""; form.elements.description_en.value = option.description_en || ""; form.elements.notes.value = option.notes || ""; form.elements.price.value = option.price || 0; if (form.elements.price_usd) form.elements.price_usd.value = option.price_usd || 0; form.elements.enabled.checked = option.enabled;
   $("#config-option-error").hidden = true; $("#config-option-dialog").showModal();
@@ -800,6 +801,7 @@ async function saveProduct(event) {
     await api(`/api/v1/admin/products/${productId}/configuration`, {
       method: "PUT",
       body: JSON.stringify({
+        version: state.editingProduct.version,
         name: form.elements.name.value.trim(), name_en: form.elements.name_en.value.trim(), title_name: form.elements.title_name.value.trim(), title_name_en: form.elements.title_name_en.value.trim(),
         description: form.elements.description.value.trim(), description_en: form.elements.description_en.value.trim(), base_price: Math.max(0, toFiniteNumber(form.elements.base_price.value)), price_usd: Math.max(0, toFiniteNumber(form.elements.price_usd?.value)),
         sort_order: Math.max(0, Math.floor(toFiniteNumber(form.elements.sort_order.value))), enabled: form.elements.enabled.checked,
@@ -910,6 +912,17 @@ function inquiryStatusLabel(status) {
   return { new: "新询价", assigned: "已分配", contacted: "已联系", quoted: "已转报价", closed: "已完成", cancelled: "客户已取消" }[status] || status || "—";
 }
 
+function inquiryListStatusLabel(item) {
+  const name = String(item.assignee_name || "").trim();
+  return item.status === "assigned" && name ? `已分配：${name}` : inquiryStatusLabel(item.status);
+}
+
+function renderInquiryQuoteStatus(item) {
+  const count = Number(item.quote_count || 0);
+  if (count > 0) return `<span class="badge good">已报价 · ${count} 份</span>`;
+  return item.historical_quote_count ? '<span class="badge off">历史报价已归档</span>' : '<span class="badge inquiry-unquoted">未报价</span>';
+}
+
 function renderQuoteSourceStatus(item) {
   const count = Number(item.quote_count || 0);
   if (!count) return item.historical_quote_count ? '<span class="badge off">历史报价已归档</span>' : '<span class="badge">未报价</span>';
@@ -1016,14 +1029,14 @@ function renderInquiries() {
   if (!target) return;
   target.innerHTML = state.inquiries.map((item) => {
     const canTake = !item.assigned_to && item.status === "new";
-    const stateClass = item.status === "new" ? "good" : item.status === "cancelled" ? "off" : "";
+    const stateClass = item.status === "quoted" ? "inquiry-converted" : ["cancelled", "closed"].includes(item.status) ? "off" : "warn";
     const quoteAction = item.status !== "cancelled"
       ? item.own_latest_quote_id
         ? `<button class="table-action" data-open-inquiry-quote="${escapeHtml(item.own_latest_quote_id)}">查看我的报价</button>`
         : `<button class="table-action" data-quote-inquiry="${escapeHtml(item.id)}">${Number(item.quote_count || 0) ? "再次报价" : "转报价"}</button>`
       : "";
     const actions = `<span class="table-actions"><button class="table-action" data-view-inquiry="${escapeHtml(item.id)}">查看</button>${canTake ? `<button class="table-action" data-take-inquiry="${escapeHtml(item.id)}">接手</button>` : ""}<details class="table-actions-menu"><summary aria-label="更多询价操作">更多</summary><div><button class="table-action" data-export-inquiry="${escapeHtml(item.id)}" data-inquiry-number="${escapeHtml(item.inquiry_number)}">导出 PDF</button>${quoteAction}</div></details></span>`;
-    return `<tr><td><strong translate="no">${escapeHtml(item.inquiry_number)}</strong><small class="business-cell-meta">${escapeHtml(inquirySourceSummary(item))}</small></td><td>${renderCustomerLines(item.customer_name_snapshot || item.customer_display_name, item.customer_email_snapshot || item.customer_email_current, item.customer_phone_snapshot || item.customer_phone_current)}</td><td>${renderInquirySummary(item)}</td><td><span class="badge ${stateClass}">${escapeHtml(inquiryStatusLabel(item.status))}</span></td><td>${renderQuoteSourceStatus(item)}</td><td>${escapeHtml(formatDateTime(item.created_at))}</td><td class="align-right">${actions}</td></tr>`;
+    return `<tr><td><strong translate="no">${escapeHtml(item.inquiry_number)}</strong><small class="business-cell-meta">${escapeHtml(inquirySourceSummary(item))}</small></td><td>${renderCustomerLines(item.customer_name_snapshot || item.customer_display_name, item.customer_email_snapshot || item.customer_email_current, item.customer_phone_snapshot || item.customer_phone_current)}</td><td>${renderInquirySummary(item)}</td><td><span class="badge ${stateClass}">${escapeHtml(inquiryListStatusLabel(item))}</span></td><td>${renderInquiryQuoteStatus(item)}</td><td>${escapeHtml(formatDateTime(item.created_at))}</td><td class="align-right">${actions}</td></tr>`;
   }).join("") || '<tr><td colspan="7" class="empty">暂无询价记录</td></tr>';
   const pages = Math.max(1, Math.ceil(state.inquiryTotal / state.inquiryPageSize));
   if ($("#inquiry-page-summary")) $("#inquiry-page-summary").textContent = `共 ${state.inquiryTotal} 条 · 第 ${state.inquiryPage}/${pages} 页`;
@@ -1103,7 +1116,7 @@ async function viewInquiry(inquiryId) {
     const summary = [[inquiryCounts.device, "台设备"], [inquiryCounts.tool, "件工具"], [inquiryCounts.accessory, "件附件"]].filter(([count]) => count > 0).map(([count, label]) => `${formatNumber(count)} ${label}`).join(" · ") || "未包含有效项目";
     const customer = renderCustomerLines(inquiry.customer_name_snapshot || inquiry.customer_display_name, inquiry.customer_email_snapshot || inquiry.customer_email_current, inquiry.customer_phone_snapshot || inquiry.customer_phone_current);
     const processing = `<strong>${escapeHtml(inquiryStatusLabel(inquiry.status))}</strong>${inquiry.assignee_name ? `<small>负责人：${escapeHtml(inquiry.assignee_name)}</small>` : ""}${quotedBy ? `<small>报价人：${escapeHtml(quotedBy)}</small>` : '<small>尚未报价</small>'}`;
-    body.innerHTML = `<div class="inquiry-share-layout"><header class="share-result-header"><div><h3>${summary}</h3></div><span class="badge ${inquiry.status === "new" ? "good" : ""}">${escapeHtml(inquiryStatusLabel(inquiry.status))}</span></header><div class="share-device-summary"><div><span>询价客户</span>${customer}</div><div><span>处理状态</span>${processing}</div></div>${inquiry.message ? `<section class="inquiry-message-module"><span>客户备注</span><p>${escapeHtml(inquiry.message)}</p></section>` : ""}<section class="inquiry-source-section share-detail-group"><header><span>关联分享码</span><small>${(inquiry.sources || []).length} 项</small></header><div class="inquiry-source-chips">${sources}</div></section>${devices}${catalogSections}${timeline ? `<section class="inquiry-timeline-section share-detail-group"><header><span>处理时间线</span><small>业务跟进记录</small></header><ol class="inquiry-timeline">${timeline}</ol></section>` : ""}</div>`;
+    body.innerHTML = `<div class="inquiry-share-layout"><header class="share-result-header"><div><h3>${summary}</h3></div><span class="badge ${inquiry.status === "new" ? "good" : ""}">${escapeHtml(inquiryStatusLabel(inquiry.status))}</span></header><div class="share-device-summary"><div><span>询价客户</span>${customer}</div><div><span>处理状态</span>${processing}</div></div>${inquiry.message ? `<section class="inquiry-message-module"><span>客户备注</span><p>${escapeHtml(inquiry.message)}</p></section>` : ""}${devices}${catalogSections}${timeline ? `<section class="inquiry-timeline-section share-detail-group"><header><span>处理时间线</span><small>业务跟进记录</small></header><ol class="inquiry-timeline">${timeline}</ol></section>` : ""}</div>`;
     footer.innerHTML = `<div class="inquiry-linked-quotes">${quoteLinks}</div><button class="button button-secondary" type="button" data-inquiry-drawer-close>关闭</button>`;
   } catch (failure) {
     if (failure.code === "INQUIRY_STATUS_CONFLICT") {
@@ -1175,7 +1188,8 @@ async function quoteInquiry(button) {
     await runButtonAction(button, "创建中…", async () => {
       const result = await api(`/api/v1/staff/inquiries/${encodeURIComponent(inquiry.id)}/convert-to-quote`, { method: "POST", body: JSON.stringify({ version: inquiry.version, currency: "CNY", idempotency_key: crypto.randomUUID?.() || `${Date.now()}-inquiry-quote` }) });
       await loadData();
-      openQuoteEditor({ quoteId: result.quote.id, quoteVersion: result.quote.version, sourceInquiryId: result.quote.source_inquiry_id || inquiry.id, sourceType: "inquiry", sourceDocumentVersion: result.quote.source_document_version || inquiry.document_version || 1, sourceDocumentId: inquiry.id, sourceCode: inquiry.inquiry_number, title: result.quote.title, items: result.quote.items, currency: result.quote.currency || "CNY", customerName: result.quote.customer_name || inquiry.customer_name_snapshot || inquiry.customer_display_name || "", customerEmail: result.quote.customer_email || inquiry.customer_email_snapshot || inquiry.customer_email_current || "", customerPhone: inquiry.customer_phone_snapshot || inquiry.customer_phone_current || "", language: result.quote.language || "zh", recipientUserId: inquiry.created_by || "", recipientLabel: inquiry.customer_name_snapshot || inquiry.customer_display_name || "客户账号" });
+      const customer = quoteCustomerContext(result.quote, inquiry);
+      openQuoteEditor({ quoteId: result.quote.id, quoteVersion: result.quote.version, sourceInquiryId: result.quote.source_inquiry_id || inquiry.id, sourceType: "inquiry", sourceDocumentVersion: result.quote.source_document_version || inquiry.document_version || 1, sourceDocumentId: inquiry.id, sourceCode: inquiry.inquiry_number, title: result.quote.title, items: result.quote.items, currency: result.quote.currency || "CNY", ...customer, language: result.quote.language || "zh" });
       showToast(result.reused ? "已打开你的现有报价" : "报价草稿已创建，请填写价格后保存或发送");
     });
   } catch (failure) {
@@ -1186,17 +1200,18 @@ async function quoteInquiry(button) {
   }
 }
 
-function quoteCustomerContext(quote = {}) {
+function quoteCustomerContext(quote = {}, fallbackInquiry = null) {
   const inquiry = state.inquiries.find((item) =>
     item.id === quote.source_inquiry_id
     || item.id === quote.source_document_id
     || item.own_latest_quote_id === quote.id
-  );
+  ) || fallbackInquiry;
   const recipientUserId = inquiry?.created_by || "";
   return {
-    customerName: quote.customer_name || inquiry?.customer_name_snapshot || inquiry?.customer_display_name || "",
-    customerEmail: quote.customer_email || inquiry?.customer_email_snapshot || inquiry?.customer_email_current || "",
-    customerPhone: quote.customer_phone || inquiry?.customer_phone_snapshot || inquiry?.customer_phone_current || "",
+    customerName: quote.customer_name ?? inquiry?.customer_name_snapshot ?? inquiry?.customer_display_name ?? "",
+    customerEmail: quote.customer_email ?? inquiry?.customer_email_snapshot ?? inquiry?.customer_email_current ?? "",
+    customerPhone: quote.customer_phone ?? inquiry?.customer_phone_snapshot ?? inquiry?.customer_phone_current ?? "",
+    customerAddress: quote.customer_address || "",
     recipientUserId,
     recipientLabel: inquiry?.customer_name_snapshot || inquiry?.customer_display_name || inquiry?.customer_email_snapshot || (recipientUserId ? "客户账号" : "")
   };
@@ -1224,7 +1239,7 @@ async function openInquiryQuote(button) {
         sourceCode: quote.source_code,
         customerName: customer.customerName,
         customerEmail: customer.customerEmail,
-        customerPhone: customer.customerPhone,
+        customerPhone: customer.customerPhone, customerAddress: customer.customerAddress || "",
         language: quote.language || "zh",
         recipientUserId: customer.recipientUserId,
         recipientLabel: customer.recipientLabel,
@@ -1473,7 +1488,7 @@ async function exportQuote(quote) {
   }
 }
 
-function openQuoteEditor({ quoteId = null, quoteVersion = null, configId = null, title, items, currency = "CNY", sourceShareId = null, sourceInquiryId = null, sourceType = "direct", sourceDocumentVersion = null, sourceDocumentId = null, sourceCode = "", customerName = "", customerEmail = "", customerPhone = "", language = "zh", recipientUserId = "", recipientLabel = "" }) {
+function openQuoteEditor({ quoteId = null, quoteVersion = null, configId = null, title, items, currency = "CNY", sourceShareId = null, sourceInquiryId = null, sourceType = "direct", sourceDocumentVersion = null, sourceDocumentId = null, sourceCode = "", customerName = "", customerEmail = "", customerPhone = "", customerAddress = "", language = "zh", recipientUserId = "", recipientLabel = "" }) {
   const opener = document.activeElement;
   let currentDeviceKey = null;
   let deviceSequence = 0;
@@ -1514,6 +1529,7 @@ function openQuoteEditor({ quoteId = null, quoteVersion = null, configId = null,
         <input name="customer_name" type="hidden" value="${escapeHtml(customerName)}" />
         <input name="customer_email" type="hidden" value="${escapeHtml(customerEmail)}" />
         <input name="customer_phone" type="hidden" value="${escapeHtml(customerPhone)}" />
+        <label class="quote-customer-address"><span>客户地址</span><textarea name="customer_address" maxlength="500" rows="2" autocomplete="street-address">${escapeHtml(customerAddress)}</textarea></label>
         <select name="recipient_user_id" hidden><option value="${escapeHtml(recipientUserId)}" selected>${escapeHtml(recipientLabel || customerName || customerEmail || "未选择客户")}</option></select>
         <span class="quote-customer-summary-label">接收客户</span>
         <div class="quote-customer-summary-value"><strong>${escapeHtml(customerName || recipientLabel || "尚未选择客户")}</strong>${customerEmail ? `<small>${escapeHtml(customerEmail)}</small>` : ""}${customerPhone ? `<small>${escapeHtml(customerPhone)}</small>` : ""}</div>
@@ -1658,6 +1674,7 @@ function openQuoteEditor({ quoteId = null, quoteVersion = null, configId = null,
     $("[name=customer_name]", dialog).value = name;
     $("[name=customer_email]", dialog).value = customer.email || "";
     $("[name=customer_phone]", dialog).value = customer.phone || "";
+    $("[name=customer_address]", dialog).value = customer.address || "";
     $(".quote-customer-summary", dialog).classList.remove("is-manual");
     $(".quote-customer-summary-value", dialog).innerHTML = `<strong>${escapeHtml(name)}</strong>${customer.email ? `<small>${escapeHtml(customer.email)}</small>` : ""}${customer.phone ? `<small>${escapeHtml(customer.phone)}</small>` : ""}`;
     updateDeliveryAvailability();
@@ -1697,6 +1714,9 @@ function openQuoteEditor({ quoteId = null, quoteVersion = null, configId = null,
     const editor = document.createElement("dialog");
     editor.className = "share-dialog quote-customer-picker quote-customer-manual-dialog";
     editor.innerHTML = `<form method="dialog" class="share-dialog-card quote-customer-picker-card quote-customer-manual-card"><header><div><span class="eyebrow">CUSTOMER</span><h2>手动填写客户资料</h2><p>仅用于保存报价和 PDF，不会发送到账户。</p></div><button class="icon-button" value="cancel" aria-label="关闭">×</button></header><div class="quote-customer-manual-fields"><label><span>客户姓名</span><input name="manual_name" autocomplete="name" value="${escapeHtml($("[name=customer_name]", dialog).value)}" required /></label><label><span>客户邮箱</span><input name="manual_email" type="email" autocomplete="email" value="${escapeHtml($("[name=customer_email]", dialog).value)}" /></label><label><span>客户电话</span><input name="manual_phone" type="tel" autocomplete="tel" value="${escapeHtml($("[name=customer_phone]", dialog).value)}" /></label></div><footer><button class="button button-quiet" value="cancel">取消</button><button class="button button-primary" value="apply">应用资料</button></footer></form>`;
+    $("header p", editor).textContent = $("[name=recipient_user_id]", dialog).value
+      ? "修改仅用于本次报价和 PDF，不修改客户账户资料；接收客户保持不变。"
+      : "仅用于保存报价和 PDF，不会发送到账户。";
     document.body.appendChild(editor);
     editor.addEventListener("close", () => editor.remove(), { once: true });
     $("form", editor).addEventListener("submit", (event) => {
@@ -1709,9 +1729,10 @@ function openQuoteEditor({ quoteId = null, quoteVersion = null, configId = null,
       $("[name=customer_name]", dialog).value = name;
       $("[name=customer_email]", dialog).value = email;
       $("[name=customer_phone]", dialog).value = phone;
-      $("[name=recipient_user_id]", dialog).innerHTML = '<option value="" selected>手动填写客户</option>';
-      $(".quote-customer-summary", dialog).classList.add("is-manual");
-      $(".quote-customer-summary-value", dialog).innerHTML = `<strong>${escapeHtml(name)} <em>手动客户</em></strong>${email ? `<small>${escapeHtml(email)}</small>` : ""}${phone ? `<small>${escapeHtml(phone)}</small>` : ""}`;
+      // Editing PDF contact details must preserve the selected delivery account.
+      const isManual = !$("[name=recipient_user_id]", dialog).value;
+      $(".quote-customer-summary", dialog).classList.toggle("is-manual", isManual);
+      $(".quote-customer-summary-value", dialog).innerHTML = `<strong>${escapeHtml(name)}${isManual ? " <em>手动客户</em>" : ""}</strong>${email ? `<small>${escapeHtml(email)}</small>` : ""}${phone ? `<small>${escapeHtml(phone)}</small>` : ""}`;
       updateDeliveryAvailability();
       setQuoteError();
       editor.close();
@@ -1806,6 +1827,24 @@ function openQuoteEditor({ quoteId = null, quoteVersion = null, configId = null,
   }, { passive: false });
   $(".quote-customer-search", dialog).addEventListener("click", () => openRecipientPicker().catch((error) => setQuoteError(error.message)));
   $(".quote-customer-manual", dialog).addEventListener("click", openManualCustomerEditor);
+  const fillCustomer = document.createElement("button");
+  fillCustomer.type = "button";
+  fillCustomer.className = "button button-secondary quote-customer-fill";
+  fillCustomer.textContent = "一键填充客户资料";
+  $(".quote-customer-summary", dialog).appendChild(fillCustomer);
+  fillCustomer.addEventListener("click", async () => {
+    const id = $("[name=recipient_user_id]", dialog).value;
+    if (!id) { await openRecipientPicker(); return; }
+    fillCustomer.disabled = true;
+    try {
+      const result = await api(`/api/v1/staff/customers?customer_id=${encodeURIComponent(id)}`);
+      const customer = (result.items || []).find((item) => item.id === id);
+      if (!customer) throw new Error("客户资料不可用，请重新选择客户");
+      selectRecipient(customer);
+      setQuoteError();
+    } catch (error) { setQuoteError(error.message); }
+    finally { fillCustomer.disabled = false; }
+  });
   $(".quote-auto-price", dialog).addEventListener("click", async (event) => {
     const button = event.currentTarget;
     const originalText = button.textContent;
@@ -1865,7 +1904,7 @@ function openQuoteEditor({ quoteId = null, quoteVersion = null, configId = null,
       if (!confirmed) return;
     }
     try { await runButtonAction(event.submitter, "正在保存…", async () => {
-      const savedQuote = await api("/api/v1/quotes", { method: "POST", body: JSON.stringify({ quote_id: quoteId, version: quoteId ? quoteVersion : null, config_id: configId, title: quoteTitle, items: finalItems, total_price: total, currency: $("[name=currency]", dialog).value, source_share_id: sourceShareId, source_inquiry_id: sourceInquiryId, source_type: sourceType, source_document_version: sourceDocumentVersion, source_document_id: sourceDocumentId, source_code: sourceCode, customer_name: $("[name=customer_name]", dialog).value.trim(), customer_email: $("[name=customer_email]", dialog).value.trim(), customer_phone: $("[name=customer_phone]", dialog).value.trim(), language }) });
+      const savedQuote = await api("/api/v1/quotes", { method: "POST", body: JSON.stringify({ quote_id: quoteId, version: quoteId ? quoteVersion : null, config_id: configId, title: quoteTitle, items: finalItems, total_price: total, currency: $("[name=currency]", dialog).value, source_share_id: sourceShareId, source_inquiry_id: sourceInquiryId, source_type: sourceType, source_document_version: sourceDocumentVersion, source_document_id: sourceDocumentId, source_code: sourceCode, customer_name: $("[name=customer_name]", dialog).value.trim(), customer_email: $("[name=customer_email]", dialog).value.trim(), customer_phone: $("[name=customer_phone]", dialog).value.trim(), customer_address: $("[name=customer_address]", dialog).value.trim(), language }) });
       const exported = action === "saveAndExport" ? await exportQuote(savedQuote) : false;
       if (action === "saveAndExport" && !exported) {
         quoteId = savedQuote.id; quoteVersion = savedQuote.version;
@@ -1897,7 +1936,7 @@ function openQuoteEditor({ quoteId = null, quoteVersion = null, configId = null,
 
 async function editQuote(quote) {
   const customer = quoteCustomerContext(quote);
-  openQuoteEditor({ quoteId: quote.id, quoteVersion: quote.version, configId: quote.config_id, title: quote.title, items: quote.items, currency: quote.currency || "CNY", sourceShareId: quote.source_share_id, sourceInquiryId: quote.source_inquiry_id, sourceType: quote.source_type, sourceDocumentVersion: quote.source_document_version, sourceDocumentId: quote.source_document_id, sourceCode: quote.source_code, customerName: customer.customerName, customerEmail: customer.customerEmail, customerPhone: customer.customerPhone, language: quote.language || "zh", recipientUserId: customer.recipientUserId, recipientLabel: customer.recipientLabel });
+  openQuoteEditor({ quoteId: quote.id, quoteVersion: quote.version, configId: quote.config_id, title: quote.title, items: quote.items, currency: quote.currency || "CNY", sourceShareId: quote.source_share_id, sourceInquiryId: quote.source_inquiry_id, sourceType: quote.source_type, sourceDocumentVersion: quote.source_document_version, sourceDocumentId: quote.source_document_id, sourceCode: quote.source_code, customerName: customer.customerName, customerEmail: customer.customerEmail, customerPhone: customer.customerPhone, customerAddress: customer.customerAddress || "", language: quote.language || "zh", recipientUserId: customer.recipientUserId, recipientLabel: customer.recipientLabel });
 }
 
 function plainDescription(value) {
@@ -2381,7 +2420,7 @@ function catalogEditorCard({ title, fields, onSave, onDelete = null, size = "med
   form.addEventListener("submit", async event => { event.preventDefault(); if (event.submitter?.value === "cancel") { dialog.close(); dialog.remove(); return; } const data = Object.fromEntries(new FormData(form)); const missing = fields.find(field => field.required && !String(data[field.name] || "").trim()); if (missing) { showToast(`请填写${missing.label}`); form.querySelector(`[name="${missing.name}"]`)?.focus(); return; } try { await runButtonAction(event.submitter, "正在保存…", async () => { await onSave(data); dialog.close(); dialog.remove(); await loadData(); }); } catch (error) { showToast(error.message); } }); dialog.showModal(); dialog.querySelector("input, textarea, select")?.focus();
 }
 
-function categoryCard(category = null) { catalogEditorCard({ title: category ? "编辑配置分类" : "添加配置分类", size:"small", fields: [{name:"name",label:"分类标题",lang:"zh",value:category?.name,placeholder:"例如：CRI 共轨套件",required:true},{name:"description",label:"分类描述",lang:"zh",type:"textarea",value:category?.description,placeholder:"例如：适用于共轨喷油器测试"},{name:"name_en",label:"分类标题",lang:"en",value:category?.name_en,placeholder:"例如：CRI Common Rail Kits"},{name:"description_en",label:"分类描述",lang:"en",type:"textarea",value:category?.description_en,placeholder:"例如：Kits for common rail injector testing"}], onSave: data => api(category ? `/api/v1/admin/config-catalog/categories/${category.id}` : "/api/v1/admin/config-catalog/categories", {method:category?"PATCH":"POST",body:JSON.stringify({...data,multiple:true})}), onDelete: category ? () => deleteConfigCategory(category) : null }); }
+function categoryCard(category = null) { catalogEditorCard({ title: category ? "编辑配置分类" : "添加配置分类", size:"small", fields: [{name:"name",label:"分类标题",lang:"zh",value:category?.name,placeholder:"例如：CRI 共轨套件",required:true},{name:"description",label:"分类描述",lang:"zh",type:"textarea",value:category?.description,placeholder:"例如：适用于共轨喷油器测试"},{name:"name_en",label:"分类标题",lang:"en",value:category?.name_en,placeholder:"例如：CRI Common Rail Kits"},{name:"description_en",label:"分类描述",lang:"en",type:"textarea",value:category?.description_en,placeholder:"例如：Kits for common rail injector testing"}], onSave: data => api(category ? `/api/v1/admin/config-catalog/categories/${category.id}` : "/api/v1/admin/config-catalog/categories", {method:category?"PATCH":"POST",body:JSON.stringify({...data,multiple:true,...(category ? {version:category.version} : {})})}), onDelete: category ? () => deleteConfigCategory(category) : null }); }
 
 async function addConfigOption(categoryId) { catalogEditorCard({ title:"添加配置", size:"medium", fields:[{name:"code",label:"配置编号",lang:"all",placeholder:"例如：BTK-1019",required:true},{name:"name",label:"配置名称",lang:"zh",placeholder:"例如：共轨喷油器测试套件",required:true},{name:"description",label:"配置描述",lang:"zh",type:"textarea",placeholder:"例如：适用于 Bosch CRIN4.2"},{name:"name_en",label:"配置名称",lang:"en",placeholder:"例如：Injector Test Kit"},{name:"description_en",label:"配置描述",lang:"en",type:"textarea",placeholder:"例如：For Bosch CRIN4.2"},{name:"image_path",label:"配置图片",lang:"all",placeholder:"上传图片或填写现有路径"},{name:"price",label:"人民币单价",lang:"all",type:"number",placeholder:"例如：1500"},{name:"price_usd",label:"美元单价",lang:"all",type:"number",placeholder:"例如：210"}], onSave:data=>api("/api/v1/admin/config-catalog/options",{method:"POST",body:JSON.stringify({...data,category_id:categoryId,price:Number(data.price||0),price_usd:Number(data.price_usd||0),enabled:true})}) }); }
 
@@ -2408,7 +2447,8 @@ function addProductButton() {
 async function saveConfigOption(event) {
   event.preventDefault(); const form=event.currentTarget; if(event.submitter?.value==="cancel"){form.closest("dialog")?.close();return;}
   const payload={code:form.elements.code.value.trim(),name:form.elements.name.value.trim(),name_en:form.elements.name_en.value.trim(),image_path:form.elements.image_path.value.trim()||null,description:form.elements.description.value.trim(),description_en:form.elements.description_en.value.trim(),notes:form.elements.notes.value.trim(),price:Number(form.elements.price.value||0),price_usd:Number(form.elements.price_usd?.value||0),enabled:form.elements.enabled.checked};
-  try{await runButtonAction(event.submitter,"正在保存…",async()=>{await api(`/api/v1/admin/config-catalog/options/${form.elements.option_id.value}`,{method:"PATCH",body:JSON.stringify(payload)});$("#config-option-dialog").close();showToast("配置条目已保存");await loadData();});}catch(failure){const error=$("#config-option-error");error.textContent=failure.message;error.hidden=false;}
+  payload.version = Number(form.dataset.optionVersion);
+  try{await runButtonAction(event.submitter,"正在保存…",async()=>{await api(`/api/v1/admin/config-catalog/options/${form.elements.option_id.value}`,{method:"PATCH",body:JSON.stringify(payload)});$("#config-option-dialog").close();showToast("配置条目已保存");await loadData();});}catch(failure){const error=$("#config-option-error");error.textContent=failure.code === "CATALOG_VERSION_CONFLICT" ? "该配置已更新，请关闭编辑窗口并刷新目录后重新编辑；本次修改未保存。" : failure.message;error.hidden=false;}
 }
 
 document.addEventListener("DOMContentLoaded", async () => {

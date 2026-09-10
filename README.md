@@ -4,7 +4,7 @@
 
 ## 当前成果
 
-截至 2026-09-09，项目已经具备可本地运行和联调的完整主流程：
+截至 2026-09-11，项目已经具备可本地运行和联调的主流程；本机实现不等于 NAS 部署已完成。最新进展和未完成项见 [工作计划](docs/2026-09-11-task-plan.md)。
 
 - 用户端支持 7 个设备型号，按机型独立映射颜色、电机、供电和可选工装。
 - 配置目录包含 CRI、HEUI、EUI/EUP、CRP、Cambox Extension 等分类；当前示例数据库有 8 个分类、75 个配置项和 175 条机型映射。
@@ -20,8 +20,9 @@
 - 管理员可查看全部报价和账号，业务员只可管理自己的报价。
 - 管理后台新增操作审计，记录管理员和业务员成功的写入操作，但不记录密码和表单正文。
 - 已提供数据库在线备份、完整性检查、确认式恢复和目录数据质量审计命令。
-- 已建立 101 项自动化测试，覆盖迁移、认证、账号生命周期、客户价格边界、配置覆盖、多设备及混合商品分享、仅工具/附件流程、多来源追踪、询价协作、报价版本、PDF 数量边界、操作审计、图片接口、安全引用清理、双语无障碍名称和备份恢复。
-- PDF 在服务端重新执行“设备 → 维修工具 → 设备附件 → 其他项目”的统一聚合排序。配置清单与询价单不显示价格；报价单显示单价、小计、分组小计和总计，并支持中英文标题及上海时区文件编码。
+- 自动化测试覆盖迁移、认证、账号生命周期、价格边界、多设备分享、三角色询价报价发送、历史快照、PDF、Excel 解析资源限制、版本冲突及静态文件保护；最新实测数量见工作计划，仍须独立完成浏览器和 NAS 验收。
+- PDF 在服务端执行“设备 → 维修工具 → 设备附件 → 其他项目”的统一聚合排序。配置清单与询价单不显示价格；报价单保留单价、行小计和总计，隐藏分组小计。
+- 报价客户信息包含姓名、电话、邮箱、地址，支持读取客户资料及手动修改；已发送版本保留独立快照。询价和报价 PDF 隐藏文档信息模块，业务时间和编号位于页眉右侧，页脚分别使用对应网址、地址、页码和生成时间规则。
 - 后台分享记录支持分页、全字段模糊搜索和状态筛选，后台预览不增加客户查看次数，并支持关闭或重新启用未过期分享。
 - 客户提交分享不会自动变成报价；“联系销售获取报价”会单独创建可追踪询价。管理员和业务员可协作查看询价，按负责人接手、联系并转换为各自独立的报价。
 - 个人中心包含“我的分享记录”“我的询价”和“我的报价单”；报价发送、查看、撤回、归档和恢复均保留版本与审计记录。
@@ -37,7 +38,7 @@
 
 数据库文件由 `BOTEN_DATABASE_PATH` 指定；未设置时使用 `backend/boten.db`。`js/data.js` 只保留初始化导入资料和用户端本地相册资源，不再作为产品文字的离线回退；API 不可用时页面会明确报错，避免显示过期或语言错误的数据。
 
-用户端不显示或接收任何设备、配置、工具和附件价格；用户端及后台导出的配置清单、分享配置 PDF、询价 PDF 同样不含价格。价格数据继续保存在数据库和历史快照中，仅供管理员/业务员在报价编辑和报价 PDF 中使用。当前执行状态见 [`docs/2026-09-09-development-checkpoint.md`](docs/2026-09-09-development-checkpoint.md)。
+用户端不显示或接收任何设备、配置、工具和附件价格；用户端及后台导出的配置清单、分享配置 PDF、询价 PDF 同样不含价格。价格数据继续保存在数据库和历史快照中，仅供管理员/业务员在报价编辑和报价 PDF 中使用。当前执行状态见 [2026-09-11 工作计划](docs/2026-09-11-task-plan.md)，旧检查点仅作历史记录。
 
 ## 角色权限
 
@@ -59,20 +60,21 @@
 
 ## 本地运行
 
-本地开发最低支持 Python 3.8，推荐 Python 3.12；Docker API 镜像固定使用 Python 3.12。所有命令都应在项目根目录执行。
+当前依赖与回归基线为 Python 3.12，Docker API 镜像同样使用 Python 3.12；不再使用旧 Python 3.8 环境安装本批依赖。所有命令都应在项目根目录执行。
 
 首次安装：
 
 ```powershell
 Set-Location E:\Project\CC-Project\benchshop
-py -3.8 -m venv backend\.venv
-.\backend\.venv\Scripts\python.exe -m pip install -r .\backend\requirements-dev.txt
+py -3.12 -m venv backend\.venv312
+.\backend\.venv312\Scripts\python.exe -m pip install -r .\backend\requirements-dev.txt -c .\backend\constraints-py312.txt
+.\backend\.venv312\Scripts\python.exe -m pip check
 ```
 
 仅当创建全新的空数据库时，才执行初始化导入：
 
 ```powershell
-.\backend\.venv\Scripts\python.exe -m backend.seed
+.\backend\.venv312\Scripts\python.exe -m backend.seed
 ```
 
 > `backend.seed` 会读取 `js/data.js` 并覆盖同编号的基础目录字段。已经通过后台维护过 `backend/boten.db` 后，不要把它当作日常启动命令反复执行。部署或迁移前应先备份数据库。
@@ -80,7 +82,7 @@ py -3.8 -m venv backend\.venv
 如数据库中还没有管理员账号：
 
 ```powershell
-.\backend\.venv\Scripts\python.exe -m backend.create_admin --email admin@example.com --name Administrator
+.\backend\.venv312\Scripts\python.exe -m backend.create_admin --email admin@example.com --name Administrator
 ```
 
 日常启动需要两个 PowerShell 窗口。
@@ -89,22 +91,25 @@ py -3.8 -m venv backend\.venv
 
 ```powershell
 Set-Location E:\Project\CC-Project\benchshop
-.\backend\.venv\Scripts\python.exe -m uvicorn backend.main:app --host 127.0.0.1 --port 8001
+.\backend\.venv312\Scripts\python.exe -m uvicorn backend.main:app --host 127.0.0.1 --port 8001
 ```
 
-窗口 2，启动静态网站（8080）：
+窗口 2，启动带静态白名单和同源 API 代理的网站（8081）：
 
 ```powershell
 Set-Location E:\Project\CC-Project\benchshop
-py -m http.server 8080
+.\backend\.venv312\Scripts\python.exe -m deploy.local_dev_server --port 8081
 ```
 
 访问地址：
 
-- 用户选配页：`http://127.0.0.1:8080/`
-- 管理后台：`http://127.0.0.1:8080/admin/`
+- 用户选配页：`http://127.0.0.1:8081/`
+- 管理后台：`http://127.0.0.1:8081/admin/`
 - API 文档：`http://127.0.0.1:8001/docs`
 - 健康检查：`http://127.0.0.1:8001/api/v1/health`
+- 数据库就绪：`http://127.0.0.1:8081/api/v1/ready`
+
+不要在项目根目录使用通用 `http.server`：它可能公开数据库和源资料。本地代理监听所有网卡；局域网访问使用本机 IP 和 8081 端口，并按需设置防火墙。API 可保持仅监听回环地址。此开发服务不代替 NAS 的 Nginx 部署。
 
 不要直接双击 `index.html` 以 `file://` 方式运行。用户端目录必须从 API 获取。
 
@@ -112,17 +117,17 @@ py -m http.server 8080
 
 ```powershell
 # 运行自动化测试
-.\backend\.venv\Scripts\python.exe -m unittest discover -s tests -v
+.\backend\.venv312\Scripts\python.exe -m pytest -q
 
 # 备份并保留最近 30 份
-.\backend\.venv\Scripts\python.exe -m backend.database_maintenance backup --keep 30
+.\backend\.venv312\Scripts\python.exe -m backend.database_maintenance backup --keep 30
 
 # 检查目录翻译、价格、图片和映射
-.\backend\.venv\Scripts\python.exe -m backend.audit_catalog
+.\backend\.venv312\Scripts\python.exe -m backend.audit_catalog
 
 # 预览孤立上传图片（默认不删除）；核对后增加 --apply 执行清理
-.\backend\.venv\Scripts\python.exe -m backend.media_maintenance cleanup
-.\backend\.venv\Scripts\python.exe -m backend.media_maintenance cleanup --apply
+.\backend\.venv312\Scripts\python.exe -m backend.media_maintenance cleanup
+.\backend\.venv312\Scripts\python.exe -m backend.media_maintenance cleanup --apply
 ```
 
 ## 项目结构

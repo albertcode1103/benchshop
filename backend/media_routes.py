@@ -3,6 +3,7 @@ import uuid
 from io import BytesIO
 from pathlib import Path
 from typing import Dict, Optional, Union
+from urllib.parse import unquote, urlsplit
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import FileResponse
@@ -37,15 +38,16 @@ def image_extension(content: bytes) -> str:
 
 def inspect_image(content: bytes) -> Dict[str, Union[int, str]]:
     extension = image_extension(content)
+    expected_format = "jpeg" if extension == "jpg" else extension
+    formats = [expected_format.upper()]
     try:
-        with Image.open(BytesIO(content)) as image:
+        with Image.open(BytesIO(content), formats=formats) as image:
             image.verify()
-        with Image.open(BytesIO(content)) as image:
+        with Image.open(BytesIO(content), formats=formats) as image:
             width, height = image.size
             image_format = (image.format or "").lower()
     except (UnidentifiedImageError, OSError, SyntaxError) as error:
         raise ValueError("The uploaded file is not a valid image") from error
-    expected_format = "jpeg" if extension == "jpg" else extension
     if image_format != expected_format:
         raise ValueError("The image content does not match its file type")
     if width <= 0 or height <= 0 or width > MAX_IMAGE_DIMENSION or height > MAX_IMAGE_DIMENSION:
@@ -71,10 +73,27 @@ def store_image(content: bytes, upload_dir: Path = UPLOAD_DIR) -> str:
 
 def validate_media_reference(path: Optional[str], upload_dir: Path = UPLOAD_DIR) -> bool:
     value = str(path or "").strip()
-    if not value or not value.startswith("/api/v1/media/"):
+    if not value:
         return True
-    filename = value.rsplit("/", 1)[-1]
-    return bool(MEDIA_NAME.fullmatch(filename) and (upload_dir.resolve() / filename).is_file())
+    if len(value) > 2048 or any(ord(char) < 32 for char in value) or "\\" in value:
+        return False
+    try:
+        parsed = urlsplit(value)
+        if parsed.scheme:
+            return bool(parsed.scheme.lower() in ("http", "https") and parsed.hostname
+                        and parsed.username is None and parsed.password is None)
+        if parsed.netloc or value.startswith("//"):
+            return False
+        decoded = unquote(parsed.path)
+        if "\\" in decoded or any(part in (".", "..") for part in decoded.split("/")):
+            return False
+        if decoded.startswith("/api/v1/media/"):
+            filename = decoded[len("/api/v1/media/"):]
+            return bool(MEDIA_NAME.fullmatch(filename) and (upload_dir.resolve() / filename).is_file())
+        return decoded.lstrip("/").startswith(("tb/", "assets/", "images/")) and Path(decoded).suffix.lower() in (
+            ".png", ".jpg", ".jpeg", ".webp", ".svg", ".gif", ".ico")
+    except ValueError:
+        return False
 
 
 async def _limited_request_body(request: Request) -> bytes:

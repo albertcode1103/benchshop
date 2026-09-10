@@ -6,6 +6,24 @@ from backend.excel_service import catalog_template, parse_xlsx
 
 
 class ExcelTemplateTests(unittest.TestCase):
+    def test_rejects_unsafe_workbooks(self):
+        def workbook(sheet, compression=zipfile.ZIP_STORED):
+            payload = io.BytesIO()
+            with zipfile.ZipFile(payload, "w", compression) as archive:
+                for index in range(1, 5):
+                    archive.writestr(f"xl/worksheets/sheet{index}.xml", sheet)
+            return payload.getvalue()
+
+        unsafe = [
+            ('<!DOCTYPE worksheet [<!ENTITY x "text">]><worksheet/>', zipfile.ZIP_STORED),
+            ('<worksheet><sheetData><row><c r="XFD1"><v>1</v></c></row></sheetData></worksheet>', zipfile.ZIP_STORED),
+            ('<worksheet><sheetData><row><c r="A1" t="inlineStr"><is><t>' + "a" * 10001 + '</t></is></c></row></sheetData></worksheet>', zipfile.ZIP_STORED),
+            ("a" * 100000, zipfile.ZIP_DEFLATED),
+        ]
+        for sheet, compression in unsafe:
+            with self.subTest(prefix=sheet[:50]), self.assertRaises(ValueError):
+                parse_xlsx(workbook(sheet, compression))
+
     def test_four_sheets_round_trip(self):
         data = catalog_template(
             [{"id": "CR1", "name": "设备", "name_en": "Bench", "base_price": 1, "price_usd": 2, "enabled": True}],

@@ -1,10 +1,34 @@
 """Dependency-free XLSX reader/writer for catalog maintenance workbooks."""
 from io import BytesIO
+import re
 from zipfile import ZIP_DEFLATED, ZipFile
 from xml.etree import ElementTree as ET
 from xml.sax.saxutils import escape
 
 MAIN = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+
+
+def _allowed_workbook_part(name):
+    if name in {'[Content_Types].xml', '_rels/.rels', 'xl/workbook.xml',
+                'xl/_rels/workbook.xml.rels', 'xl/styles.xml', 'xl/sharedStrings.xml',
+                'xl/calcChain.xml', 'xl/metadata.xml',
+                'docProps/core.xml', 'docProps/app.xml', 'docProps/custom.xml'}:
+        return True
+    if name in {'_rels/', 'xl/', 'xl/_rels/', 'xl/worksheets/',
+                'xl/worksheets/_rels/', 'xl/theme/', 'docProps/'}:
+        return True
+    return bool(re.fullmatch(r'xl/(?:worksheets/sheet[1-9][0-9]*\.xml|'
+                             r'worksheets/_rels/sheet[1-9][0-9]*\.xml\.rels|'
+                             r'theme/theme[1-9][0-9]*\.xml)', name))
+
+
+class _WorkbookTreeBuilder(ET.TreeBuilder):
+    def doctype(self, name, pubid, system):
+        raise ValueError("XML document types and entities are not supported")
+
+
+def _parse_xml(data):
+    return ET.fromstring(data, parser=ET.XMLParser(target=_WorkbookTreeBuilder()))
 
 
 def _column_name(index):
@@ -16,8 +40,11 @@ def _column_name(index):
 
 
 def _column_index(reference):
+    match = re.fullmatch(r"([A-Za-z]+)[1-9][0-9]*", reference)
+    if match is None:
+        raise ValueError("Invalid worksheet cell reference")
     value = 0
-    for char in (char for char in reference if char.isalpha()):
+    for char in match.group(1):
         value = value * 26 + ord(char.upper()) - 64
     return value
 
@@ -62,7 +89,7 @@ def catalog_template(products, categories, motor_prices=(), specifications=()):
 def _shared_strings(archive):
     if "xl/sharedStrings.xml" not in archive.namelist():
         return []
-    root = ET.fromstring(archive.read("xl/sharedStrings.xml"))
+    root = _parse_xml(archive.read("xl/sharedStrings.xml"))
     return ["".join(node.itertext()) for node in root.findall("{*}si")]
 
 
@@ -73,29 +100,69 @@ def _cell_value(cell, strings):
         return "".join(node.itertext()) if node is not None else ""
     raw = cell.findtext("{*}v", default="")
     if kind == "s":
-        return strings[int(raw)] if raw and int(raw) < len(strings) else ""
+        try:
+            index = int(raw)
+        except (TypeError, ValueError):
+            raise ValueError("Invalid shared string reference")
+        if index < 0 or index >= len(strings):
+            raise ValueError("Shared string reference is out of range")
+        return strings[index]
     if kind == "b":
         return raw in ("1", "true", "TRUE")
     return raw
 
 
+def _row_values(row, strings):
+    cells = {}
+    previous_position = 0
+    for cell in row.findall("{*}c"):
+        reference = cell.get("r")
+        position = _column_index(reference) if reference else previous_position + 1
+        if position < 1 or position > 128 or len(cells) >= 128:
+            raise ValueError("Too many worksheet columns")
+        if position in cells:
+            raise ValueError("Duplicate worksheet cell reference")
+        value = _cell_value(cell, strings)
+        if len(str(value)) > 10000:
+            raise ValueError("Cell text exceeds limits")
+        cells[position] = value
+        previous_position = position
+    return [cells.get(position, "") for position in range(1, max(cells, default=0) + 1)]
+
+
 def parse_xlsx(data):
     """Read exported and Excel/WPS-resaved files, preserving empty columns."""
+    if len(data) > 10 * 1024 * 1024:
+        raise ValueError("Workbook is too large")
     with ZipFile(BytesIO(data)) as archive:
+        entries = archive.infolist()
+        if len(entries) > 256 or len({entry.filename for entry in entries}) != len(entries):
+            raise ValueError("Too many or duplicate ZIP entries")
+        total_size = 0
+        for entry in entries:
+            if entry.orig_filename != entry.filename or not _allowed_workbook_part(entry.filename):
+                raise ValueError("Unsupported workbook ZIP entry")
+            total_size += entry.file_size
+            if (entry.file_size > 16 * 1024 * 1024 or total_size > 32 * 1024 * 1024
+                    or entry.file_size > max(entry.compress_size, 1) * 200
+                    or entry.flag_bits & 1):
+                raise ValueError("Unsafe workbook expansion")
+            if entry.filename.endswith(".xml"):
+                xml = archive.read(entry)
+                if b"<!DOCTYPE" in xml.upper() or b"<!ENTITY" in xml.upper():
+                    raise ValueError("XML entities are not supported")
         strings = _shared_strings(archive)
+        if len(strings) > 100000 or any(len(value) > 10000 for value in strings):
+            raise ValueError("Shared strings exceed limits")
         paths = sorted((name for name in archive.namelist() if name.startswith("xl/worksheets/") and name.endswith(".xml")), key=lambda name: int("".join(char for char in name if char.isdigit()) or 0))
-        if len(paths) < 4:
+        if len(paths) < 4 or len(paths) > 16:
             raise ValueError("Workbook must contain four worksheets")
         sheets = []
         for path in paths[:4]:
-            root = ET.fromstring(archive.read(path)); rows = []
+            root = _parse_xml(archive.read(path)); rows = []
             for row in root.findall("{*}sheetData/{*}row"):
-                values = []
-                for cell in row.findall("{*}c"):
-                    position = _column_index(cell.get("r", "A1"))
-                    while len(values) < position - 1:
-                        values.append("")
-                    values.append(_cell_value(cell, strings))
-                rows.append(values)
+                if len(rows) >= 10000:
+                    raise ValueError("Too many worksheet rows")
+                rows.append(_row_values(row, strings))
             sheets.append(rows)
     return sheets

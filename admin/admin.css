@@ -381,6 +381,9 @@ select { color: var(--ink); background-color: #fff; }
 .button-primary:hover { background: #843000; }
 .avatar, .metric-card.accent { background: var(--orange-action); border-color: var(--orange-action); }
 .nav-item, .model-mark, .badge { font-weight: 700; }
+.badge.inquiry-converted { color: #175a96; background: #e8f2fc; }
+.badge.inquiry-unquoted { color: #795900; background: #fff6cc; }
+#inquiries-table .badge { white-space: normal; overflow-wrap: anywhere; }
 .admin-profile span, .login-status { font-size: 12px; }
 .share-device-summary span, .share-device-summary small, .share-detail-group small, .quote-currency-field > span, .quote-edit-head, .quote-item-name small, .color-image-preview { font-size: 12px; }
 .login-brand::after, .share-detail-group header, .share-code-button { font-weight: 700; }
@@ -553,6 +556,9 @@ td small, .badge { font-size: 12px; }
 .quote-customer-summary { display: grid; grid-template-columns: 96px minmax(0, 1fr) 38px 38px; align-items: center; gap: 8px; min-height: 46px; padding: 7px 9px 7px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
 .quote-customer-summary > input,
 .quote-customer-summary > select { display: none; }
+.quote-customer-summary .quote-customer-address { grid-column: 1 / -1; grid-row: 2; }
+.quote-customer-address textarea { width: 100%; min-width: 0; }
+.quote-customer-fill { grid-column: 2 / -1; justify-self: start; }
 .quote-customer-summary-label { color: var(--muted); font-size: 12px; font-weight: 700; }
 .quote-customer-summary-value { display: flex; min-width: 0; align-items: baseline; gap: 10px; }
 .quote-customer-summary-value strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

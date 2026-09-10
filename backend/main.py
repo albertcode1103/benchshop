@@ -32,6 +32,8 @@ app = FastAPI(
     lifespan=lifespan,
 )
 logger = logging.getLogger(__name__)
+from .request_limits import RequestSizeLimit
+app.add_middleware(RequestSizeLimit)
 
 app.add_middleware(
     CORSMiddleware,
@@ -77,7 +79,11 @@ async def request_validation_error_handler(request: Request, error: RequestValid
         code = "ACCOUNT_VALIDATION_FAILED" if path.startswith(("/api/v1/auth/", "/api/v1/admin/users")) else "CATALOG_VALIDATION_FAILED"
         domain_error = AccountError(code, field=field)
         return await account_error_handler(request, domain_error)
-    return JSONResponse(status_code=422, content={"detail": error.errors()})
+    # Validator contexts can contain ValueError objects, and input can contain
+    # credentials or a large payload. Return only stable, serializable details.
+    details = [{key: item[key] for key in ("type", "loc", "msg") if key in item}
+               for item in error.errors()]
+    return JSONResponse(status_code=422, content={"detail": details})
 
 
 @app.exception_handler(Exception)
@@ -92,6 +98,8 @@ async def request_context(request: Request, call_next):
     request.state.request_id = request.headers.get("x-request-id", "").strip()[:64] or uuid.uuid4().hex[:12]
     response = await call_next(request)
     response.headers["X-Request-ID"] = request.state.request_id
+    if request.url.path.startswith(("/api/v1/auth/", "/api/v1/customer/", "/api/v1/staff/", "/api/v1/admin/", "/api/v1/quotes", "/api/v1/cart/", "/api/v1/configs", "/api/v1/config-shares", "/api/v1/shares")) or response.headers.get("content-type", "").startswith("application/pdf"):
+        response.headers["Cache-Control"] = "no-store"
     return response
 
 
@@ -144,6 +152,12 @@ app.include_router(public_media_router)
 def health():
     return {"status": "ok"}
 
+
+@app.get("/api/v1/ready")
+def ready():
+    from .readiness import database_ready
+    available = database_ready()
+    return JSONResponse({"status": "ready" if available else "unavailable"}, status_code=200 if available else 503, headers={"Cache-Control": "no-store"})
 
 @app.get("/api/v1/products")
 def products(lang: str = Query("zh")):

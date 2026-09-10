@@ -38,12 +38,16 @@ cp deploy/.env.example deploy/.env
 # 数据卷位置；可使用绝对路径，例如 /vol1/docker/Benchshop/data
 BOTEN_DATA_DIR=./data
 
-# LAN 阶段可保留本地地址；公网部署时替换为唯一的正式 HTTPS 域名。
-BOTEN_CORS_ORIGINS=http://127.0.0.1:8080,http://localhost:8080
+# LAN 阶段填写浏览器实际访问的 NAS 来源；公网部署时替换为正式 HTTPS 来源。
+BOTEN_CORS_ORIGINS=http://192.168.31.69:8080
 
 # 默认使用随镜像内嵌的 HarmonyOS Sans SC；仅在需要替换 PDF 字体时修改。
 BOTEN_PDF_FONT_PATH=/app/assets/fonts/harmonyos-sans/HarmonyOS_Sans_SC.ttf
 ```
+
+Compose 明确设置 `BOTEN_ENV=production`。必须替换示例域名；空值、`null`、通配符、含路径或凭据的地址会拒绝启动。来源不带末尾斜杠。NAS IP 改变时同步更新此配置。本机直接运行且不设置生产环境时保留开发规则。
+
+启动统一执行 Alembic 升级，已有数据库升级前自动在线备份至数据目录中的 `migration-backups/`；就绪检查验证迁移版本和目录表可读。无迁移版本的历史库会拒绝自动升级，需要先确认基线，不能直接 stamp 跳过。请将备份目录纳入 NAS 备份策略。
 
 确认 `data/boten.db` 已就位后启动：
 

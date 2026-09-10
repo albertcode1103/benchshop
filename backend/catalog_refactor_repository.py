@@ -460,7 +460,7 @@ def update_catalog_item(
         )
         if chinese_changed and english_unchanged and status == "reviewed":
             status = "machine_draft"
-        db.execute(
+        updated = db.execute(
             """
             UPDATE options
             SET category_id = ?, code = ?, name = ?, name_en = ?,
@@ -491,6 +491,8 @@ def update_catalog_item(
                 version,
             ),
         )
+        if updated.rowcount != 1:
+            raise CatalogValidationError("CATALOG_VERSION_CONFLICT", "version")
         result = _catalog_item_row(db, option_id)
     item = dict(result)
     item["enabled"] = bool(item["enabled"])

@@ -81,6 +81,7 @@ async function profileRequest(path, options = {}) {
 
 function applyProfileCopy() {
   document.documentElement.lang = profileLanguage === "en" ? "en" : "zh-CN";
+  document.getElementById("profile-address-label").textContent = profileLanguage === "en" ? "Address" : "地址";
   document.title = `${pc.pageTitle} | BOTEN`;
   document.getElementById("profile-skip-link").textContent = pc.skip;
   document.getElementById("profile-brand-link").setAttribute("aria-label", pc.backHome);
@@ -131,6 +132,7 @@ function renderProfileUser() {
   document.getElementById("profile-gender").value = profileUser.gender || "";
   document.getElementById("profile-birth-date").value = profileUser.birth_date || "";
   document.getElementById("profile-signature").value = profileUser.signature || "";
+  document.getElementById("profile-address").value = profileUser.address || "";
   document.getElementById("profile-email").value = profileUser.email || "";
   document.getElementById("profile-country").value = profileUser.phone_country || "CN";
   document.getElementById("profile-phone").value = profileUser.phone || "";
@@ -153,7 +155,7 @@ async function saveProfileDetails(event) {
   if (!name) { setFormStatus("profile-details-status", pc.nameRequired, "error"); document.getElementById("profile-display-name").focus(); return; }
   const button = document.getElementById("profile-details-submit"); button.disabled = true;
   try {
-    profileUser = await profileRequest("/auth/profile/details", { method: "PATCH", body: JSON.stringify({ display_name: name, gender: document.getElementById("profile-gender").value, birth_date: document.getElementById("profile-birth-date").value || null, signature: document.getElementById("profile-signature").value.trim(), version: profileUser.version }) });
+    profileUser = await profileRequest("/auth/profile/details", { method: "PATCH", body: JSON.stringify({ display_name: name, gender: document.getElementById("profile-gender").value, birth_date: document.getElementById("profile-birth-date").value || null, signature: document.getElementById("profile-signature").value.trim(), address: document.getElementById("profile-address").value.trim(), version: profileUser.version }) });
     renderProfileUser(); setFormStatus("profile-details-status", pc.saved, "success");
   } catch (error) { setFormStatus("profile-details-status", error.message || pc.requestFailed, "error"); focusProfileError(error, "profile-display-name"); }
   finally { button.disabled = false; }

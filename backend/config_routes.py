@@ -1,8 +1,9 @@
-from typing import Any, Dict, List, Optional
+from typing import Annotated, Any, Dict, List, Optional
 from fastapi.responses import Response
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, model_validator, field_validator
+from .payload_bounds import validate_tree
 
 from .auth_routes import current_user
 from .config_repository import (
@@ -18,6 +19,7 @@ from .config_repository import (
 )
 from .rate_limit import enforce
 from .quote_repository import (
+    QUOTE_ITEM_FIELDS,
     save_quote, list_quotes, get_quote, delete_quote, list_reference_prices,
     deliver_quote, withdraw_quote_delivery, list_customer_quotes, get_customer_quote,
     archive_quote, restore_quote, quote_history,
@@ -49,7 +51,7 @@ from .commerce_repository import (
     share_lookup_status,
 )
 from .customer_payload import without_prices
-from .user_repository import list_users
+from .user_repository import list_users, get_user_by_id
 from .inquiry_repository import (
     InquiryError,
     cancel_customer_inquiry,
@@ -68,7 +70,15 @@ from .inquiry_repository import (
 router = APIRouter(prefix="/api/v1", tags=["configurations"])
 
 
-class SaveConfigRequest(BaseModel):
+class CommerceRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    @model_validator(mode="before")
+    @classmethod
+    def bounded_payload(cls, value):
+        return validate_tree(value)
+
+
+class SaveConfigRequest(CommerceRequest):
     name: str = ""
     product_id: str
     color: str
@@ -80,39 +90,64 @@ class UpdateConfigRequest(SaveConfigRequest):
     version: int
 
 
-class ConfigBatchRequest(BaseModel):
+class ConfigBatchRequest(CommerceRequest):
     config_ids: List[str]
     lang: str = "zh"
 
 
 class CartItemRef(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     item_type: str = Field(max_length=30)
     id: str = Field(min_length=1, max_length=100)
 
 
-class CartBatchRequest(BaseModel):
+class CartBatchRequest(CommerceRequest):
     items: List[CartItemRef] = Field(default_factory=list)
     lang: str = Field(default="zh", max_length=5)
     note: str = Field(default="", max_length=30)
 
-class QuoteRequest(BaseModel):
-    config_id: Optional[str] = None
-    title: str = "配置报价单"
-    items: list = Field(default_factory=list)
-    total_price: float = 0.0
-    quote_id: Optional[str] = None
+class QuoteDeviceSpecification(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    key: str = Field(default='', max_length=100)
+    label: str = Field(default='', max_length=1000)
+    value: str = Field(default='', max_length=10000)
+
+
+_quote_specifications = TypeAdapter(Annotated[List[QuoteDeviceSpecification], Field(max_length=1000)])
+_quote_availability_details = TypeAdapter(Annotated[List[Annotated[str, Field(max_length=1000)]], Field(max_length=1000)])
+
+
+class QuoteRequest(CommerceRequest):
+    config_id: Optional[str] = Field(default=None, max_length=100)
+    title: str = Field(default="配置报价单", max_length=200)
+    items: List[Dict[str, Any]] = Field(default_factory=list, max_length=1000)
+    total_price: float = Field(default=0.0, allow_inf_nan=False)
+    quote_id: Optional[str] = Field(default=None, max_length=100)
     currency: str = "CNY"
-    source_share_id: Optional[str] = None
-    source_inquiry_id: Optional[str] = None
+    source_share_id: Optional[str] = Field(default=None, max_length=100)
+    source_inquiry_id: Optional[str] = Field(default=None, max_length=100)
     source_type: Optional[str] = Field(default=None, pattern="^(direct|share|inquiry)$")
     source_document_version: Optional[int] = Field(default=None, ge=1)
     source_document_id: Optional[str] = Field(default=None, max_length=100)
     source_code: Optional[str] = Field(default=None, max_length=100)
-    customer_name: str = ""
-    customer_email: str = ""
-    customer_phone: str = ""
+    customer_name: str = Field(default="", max_length=200)
+    customer_email: str = Field(default="", max_length=200)
+    customer_phone: str = Field(default="", max_length=80)
+    customer_address: str = Field(default="", max_length=500)
     language: str = "zh"
     version: Optional[int] = Field(default=None, ge=1)
+
+    @field_validator('items')
+    @classmethod
+    def known_item_fields(cls, items):
+        for item in items:
+            if set(item) - QUOTE_ITEM_FIELDS:
+                raise ValueError('报价项目包含不支持的字段')
+            if 'device_specifications' in item:
+                _quote_specifications.validate_python(item['device_specifications'])
+            if 'availability_details' in item:
+                _quote_availability_details.validate_python(item['availability_details'])
+        return items
 
 
 class PricePreviewRequest(BaseModel):
@@ -158,7 +193,7 @@ class QuoteLifecycleRequest(BaseModel):
     version: int = Field(ge=1)
 
 
-class CurrentDeviceInquiryRequest(BaseModel):
+class CurrentDeviceInquiryRequest(CommerceRequest):
     product_id: str = Field(min_length=1, max_length=100)
     color: str = Field(min_length=1, max_length=100)
     selections: Dict[str, Any] = Field(default_factory=dict)
@@ -167,7 +202,7 @@ class CurrentDeviceInquiryRequest(BaseModel):
     idempotency_key: str = Field(min_length=8, max_length=80)
 
 
-class CartInquiryRequest(BaseModel):
+class CartInquiryRequest(CommerceRequest):
     lang: str = Field(default="zh", max_length=5)
     message: str = Field(default="", max_length=1000)
     idempotency_key: str = Field(min_length=8, max_length=80)
@@ -807,11 +842,14 @@ def reference_prices(user=Depends(staff_user)):
 
 
 @router.get("/staff/customers")
-def staff_customers(query: str = "", user=Depends(staff_user)):
+def staff_customers(query: str = "", customer_id: Optional[str] = None, user=Depends(staff_user)):
     items = list_users(query=query, role="customer", enabled=True, limit=50)
+    if customer_id:
+        customer = get_user_by_id(customer_id)
+        items = [customer] if customer and customer.get("role") == "customer" and customer.get("enabled") and not customer.get("deleted_at") else []
     return {
         "items": [
-            {"id": item["id"], "display_name": item.get("display_name") or "", "email": item.get("email"), "phone": item.get("phone")}
+            {"id": item["id"], "display_name": item.get("display_name") or "", "email": item.get("email"), "phone": item.get("phone"), "address": item.get("address") or ""}
             for item in items
         ]
     }
@@ -848,6 +886,7 @@ def add_quote(payload: QuoteRequest, response: Response, user=Depends(staff_user
             source_type=source_type, source_document_version=source_document_version,
             source_document_id=source_document_id, source_code=source_code,
             customer_name=payload.customer_name, customer_email=payload.customer_email, customer_phone=payload.customer_phone,
+            customer_address=payload.customer_address,
             language=payload.language,
             allow_any_owner=user["role"] == "admin",
             expected_version=payload.version,

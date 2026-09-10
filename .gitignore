@@ -1,5 +1,6 @@
 # Python
 backend/.venv/
+backend/.venv312/
 __pycache__/
 *.py[cod]
 .pytest_cache/
@@ -11,6 +12,7 @@ backend/*.db
 backend/*.db-*
 backend/*.db.backup-*
 backups/
+**/migration-backups/
 uploads/
 data/
 output/
