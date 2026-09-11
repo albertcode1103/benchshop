@@ -13,14 +13,14 @@ const profileCopy = {
   zh: {
     pageTitle: "个人中心", backHome: "返回主页", myProfile: "我的资料", myAccount: "我的账号", contact: "联系方式", security: "密码与安全", signOut: "退出登录",
     profileDesc: "维护用于识别和联系您的基本资料。", name: "姓名", gender: "性别", unset: "未设置", male: "男", female: "女", other: "其他", birth: "生日", signature: "个性签名", saveProfile: "保存资料",
-    contactDesc: "修改登录邮箱、国家和手机号。保存后需要重新登录。", email: "邮箱", country: "国家", phone: "手机号", currentPassword: "当前密码", saveRelogin: "保存并重新登录",
+    contactDesc: "修改登录邮箱、国家或手机号后需重新登录；联系地址可独立保存。", email: "邮箱", country: "国家", phone: "手机号", currentPassword: "当前密码", saveRelogin: "保存并重新登录",
     securityDesc: "设置至少 8 个字符的新密码。修改后需要重新登录。", newPassword: "新密码", confirmPassword: "确认新密码", changeRelogin: "修改密码并重新登录",
     loading: "正在加载账号资料…", saved: "资料已保存。", redirecting: "修改已保存，即将返回登录页面。", nameRequired: "请填写姓名。", passwordRequired: "请输入当前密码。", passwordLength: "新密码至少需要 8 个字符。", passwordMismatch: "两次输入的新密码不一致。", requestFailed: "操作失败，请检查填写内容后重试。", networkError: "无法连接服务，请稍后重试。", selectCountry: "请选择国家", skip: "跳到主要内容", profileNav: "个人中心导航", phoneInvalid: "请输入有效手机号。", countryRequired: "请选择国家。", loadErrorTitle: "暂时无法加载个人中心", loadErrorMessage: "登录状态仍会保留，请检查服务状态后重试。", retry: "重新加载", myBusiness: "我的业务", myShares: "我的分享记录", myQuotes: "我的报价单", sharesDesc: "查看当前账号生成过的配置分享码及有效状态。", quotesDesc: "查看业务员发送给您的正式报价和 PDF。", active: "有效", expired: "已过期", closed: "已关闭", items: "项内容", views: "次查看", quoteCount: "份报价", createdAt: "创建于", expiresAt: "有效期至", details: "查看详情", copyCode: "复制分享码", copied: "分享码已复制", emptyShares: "当前账号还没有分享记录。", emptyQuotes: "当前账号还没有收到报价单。", previous: "上一页", next: "下一页", page: "第 {page} 页", newQuote: "新报价", viewed: "已查看", updated: "已更新", archivedQuote: "已撤回（仅历史记录）", sentAt: "发送于", quotationDetails: "报价详情", shareDetails: "分享详情", downloadPdf: "下载 PDF", unavailable: "当前已失效", total: "合计", quantity: "数量", unitPrice: "单价", loadingBusiness: "正在加载…", close: "关闭"
   },
   en: {
     pageTitle: "Profile", backHome: "Back to Home", myProfile: "My Profile", myAccount: "My Account", contact: "Contact Details", security: "Password & Security", signOut: "Sign Out",
     profileDesc: "Maintain the personal details used to identify your account.", name: "Name", gender: "Gender", unset: "Not set", male: "Male", female: "Female", other: "Other", birth: "Birthday", signature: "Signature", saveProfile: "Save Profile",
-    contactDesc: "Update your sign-in email, country, and phone number. You will need to sign in again.", email: "Email", country: "Country", phone: "Phone", currentPassword: "Current Password", saveRelogin: "Save and Sign In Again",
+    contactDesc: "Changing your sign-in email, country, or phone requires signing in again. Save your address separately.", email: "Email", country: "Country", phone: "Phone", currentPassword: "Current Password", saveRelogin: "Save and Sign In Again",
     securityDesc: "Set a new password with at least 8 characters. You will need to sign in again.", newPassword: "New Password", confirmPassword: "Confirm New Password", changeRelogin: "Change Password and Sign In Again",
     loading: "Loading account details…", saved: "Profile saved.", redirecting: "Changes saved. Returning to sign in.", nameRequired: "Enter your name.", passwordRequired: "Enter your current password.", passwordLength: "The new password must contain at least 8 characters.", passwordMismatch: "The new passwords do not match.", requestFailed: "The request failed. Check the entered information and try again.", networkError: "Unable to reach the service. Try again later.", selectCountry: "Select country", skip: "Skip to main content", profileNav: "Profile navigation", phoneInvalid: "Enter a valid phone number.", countryRequired: "Select a country.", loadErrorTitle: "Unable to load your profile", loadErrorMessage: "Your sign-in is still saved. Check the service and try again.", retry: "Try Again", myBusiness: "My Business", myShares: "My Shares", myQuotes: "My Quotations", sharesDesc: "View configuration share codes created by this account and their current status.", quotesDesc: "View formal quotations sent to your account by the sales team.", active: "Active", expired: "Expired", closed: "Closed", items: "items", views: "views", quoteCount: "quotations", createdAt: "Created", expiresAt: "Expires", details: "View Details", copyCode: "Copy Code", copied: "Share code copied", emptyShares: "This account has no share records yet.", emptyQuotes: "This account has not received any quotations yet.", previous: "Previous", next: "Next", page: "Page {page}", newQuote: "New", viewed: "Viewed", updated: "Updated", archivedQuote: "Withdrawn (history only)", sentAt: "Sent", quotationDetails: "Quotation Details", shareDetails: "Share Details", downloadPdf: "Download PDF", unavailable: "Currently unavailable", total: "Total", quantity: "Quantity", unitPrice: "Unit Price", loadingBusiness: "Loading…", close: "Close"
   }
@@ -81,7 +81,9 @@ async function profileRequest(path, options = {}) {
 
 function applyProfileCopy() {
   document.documentElement.lang = profileLanguage === "en" ? "en" : "zh-CN";
-  document.getElementById("profile-address-label").textContent = profileLanguage === "en" ? "Address" : "地址";
+  document.getElementById("profile-address-label").textContent = profileLanguage === "en" ? "Contact Address" : "联系地址";
+  document.getElementById("profile-address-help").textContent = profileLanguage === "en" ? "Additional contact information. Saving your address does not require signing in again." : "附加联系信息，保存地址无需重新登录。";
+  document.getElementById("profile-address-submit").textContent = profileLanguage === "en" ? "Save Address" : "保存地址";
   document.title = `${pc.pageTitle} | BOTEN`;
   document.getElementById("profile-skip-link").textContent = pc.skip;
   document.getElementById("profile-brand-link").setAttribute("aria-label", pc.backHome);
@@ -123,7 +125,8 @@ function showProfilePanel(name) {
   if (location.hash !== `#${panel}`) history.replaceState(null, "", `#${panel}`);
 }
 
-function renderProfileUser() {
+function renderProfileUser(savedFormId = "") {
+  const pending = [...document.querySelectorAll('.profile-form[data-dirty="true"]')].filter((form) => form.id !== savedFormId).map((form) => [form, [...new FormData(form)]]);
   const name = profileUser.display_name || profileUser.email || profileUser.phone || pc.pageTitle;
   document.getElementById("profile-initial").textContent = name.charAt(0).toUpperCase();
   document.getElementById("profile-sidebar-name").textContent = name;
@@ -131,13 +134,18 @@ function renderProfileUser() {
   document.getElementById("profile-display-name").value = profileUser.display_name || "";
   document.getElementById("profile-gender").value = profileUser.gender || "";
   document.getElementById("profile-birth-date").value = profileUser.birth_date || "";
-  document.getElementById("profile-signature").value = profileUser.signature || "";
   document.getElementById("profile-address").value = profileUser.address || "";
   document.getElementById("profile-email").value = profileUser.email || "";
   document.getElementById("profile-country").value = profileUser.phone_country || "CN";
   document.getElementById("profile-phone").value = profileUser.phone || "";
   updateProfileCallingCode();
-  updateSignatureCount();
+  pending.forEach(([form, fields]) => fields.forEach(([key, value]) => { if (form.elements[key]) form.elements[key].value = value; }));
+  document.querySelectorAll(".profile-form").forEach((form) => { if (form.id === savedFormId || form.dataset.dirty !== "true") rememberProfileForm(form); });
+}
+
+function rememberProfileForm(form) {
+  form.dataset.baseline = JSON.stringify([...new FormData(form)]);
+  form.dataset.dirty = "false";
 }
 
 function setFormStatus(id, message, type = "") {
@@ -155,8 +163,8 @@ async function saveProfileDetails(event) {
   if (!name) { setFormStatus("profile-details-status", pc.nameRequired, "error"); document.getElementById("profile-display-name").focus(); return; }
   const button = document.getElementById("profile-details-submit"); button.disabled = true;
   try {
-    profileUser = await profileRequest("/auth/profile/details", { method: "PATCH", body: JSON.stringify({ display_name: name, gender: document.getElementById("profile-gender").value, birth_date: document.getElementById("profile-birth-date").value || null, signature: document.getElementById("profile-signature").value.trim(), address: document.getElementById("profile-address").value.trim(), version: profileUser.version }) });
-    renderProfileUser(); setFormStatus("profile-details-status", pc.saved, "success");
+    profileUser = await profileRequest("/auth/profile/details", { method: "PATCH", body: JSON.stringify({ display_name: name, gender: document.getElementById("profile-gender").value, birth_date: document.getElementById("profile-birth-date").value || null, version: profileUser.version }) });
+    renderProfileUser("profile-details-form"); setFormStatus("profile-details-status", pc.saved, "success");
   } catch (error) { setFormStatus("profile-details-status", error.message || pc.requestFailed, "error"); focusProfileError(error, "profile-display-name"); }
   finally { button.disabled = false; }
 }
@@ -210,7 +218,22 @@ function updateProfileCallingCode() {
   document.getElementById("profile-calling-code").textContent = country?.calling_code || "-";
 }
 
-function updateSignatureCount() { document.getElementById("profile-signature-count").textContent = `${document.getElementById("profile-signature").value.length} / 160`; }
+async function saveProfileAddress(event) {
+  event.preventDefault();
+  const button = document.getElementById("profile-address-submit");
+  const field = document.getElementById("profile-address");
+  button.disabled = true;
+  field.removeAttribute("aria-invalid");
+  try {
+    profileUser = await profileRequest("/auth/profile/details", { method: "PATCH", body: JSON.stringify({ address: field.value.trim(), version: profileUser.version }) });
+    field.value = profileUser.address || "";
+    rememberProfileForm(document.getElementById("profile-address-form"));
+    setFormStatus("profile-address-status", pc.saved, "success");
+  } catch (error) {
+    setFormStatus("profile-address-status", error.message || pc.requestFailed, "error");
+    field.setAttribute("aria-invalid", "true"); field.focus();
+  } finally { button.disabled = false; }
+}
 
 function escapeProfileHtml(value) {
   return String(value ?? "").replace(/[&<>'"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[character]));
@@ -288,7 +311,9 @@ async function loadProfileInquiries(page = profileInquiryPage) {
   const status = document.getElementById("profile-inquiries-status");
   status.textContent = pc.loadingBusiness;
   try {
-    const result = await profileRequest(`/customer/me/inquiries?page=${page}&page_size=${PROFILE_INQUIRY_PAGE_SIZE}`);
+    const requestId = ++businessRequests.inquiries;
+    const result = await profileRequest(`/customer/me/inquiries?page=${page}&page_size=${PROFILE_INQUIRY_PAGE_SIZE}${businessFilterQuery("inquiries")}`);
+    if (requestId !== businessRequests.inquiries) return;
     profileInquiryPage = Number(result.page || 1);
     profileInquiryTotal = Number(result.total || 0);
     const list = document.getElementById("profile-inquiries-list");
@@ -299,6 +324,7 @@ async function loadProfileInquiries(page = profileInquiryPage) {
         <div class="profile-business-card-meta"><span class="profile-status-badge${inquiry.status === "new" ? " is-new" : inquiry.status === "cancelled" ? " is-off" : ""}">${escapeProfileHtml(inquiryStatusLabel(inquiry.status))}</span><span>${Number(inquiry.item_count || 0)} ${pc.submittedItems}</span><span>${pc.createdAt} ${profileDate(inquiry.created_at)}</span>${inquiry.updated_at && inquiry.updated_at !== inquiry.created_at ? `<span>${pc.updated} ${profileDate(inquiry.updated_at)}</span>` : ""}</div>
       </article>`).join("") : `<div class="profile-list-empty">${pc.emptyInquiries}</div>`;
     const pages = Math.max(1, Math.ceil(profileInquiryTotal / PROFILE_INQUIRY_PAGE_SIZE));
+    decorateBusinessRecords("inquiries", result.items);
     document.getElementById("profile-inquiries-page").textContent = pc.page.replace("{page}", String(profileInquiryPage));
     document.getElementById("profile-inquiries-prev").disabled = profileInquiryPage <= 1;
     document.getElementById("profile-inquiries-next").disabled = profileInquiryPage >= pages;
@@ -314,7 +340,9 @@ async function loadProfileShares(page = profileSharePage) {
   const status = document.getElementById("profile-shares-status");
   status.textContent = pc.loadingBusiness;
   try {
-    const result = await profileRequest(`/customer/me/shares?page=${page}&page_size=${PROFILE_SHARE_PAGE_SIZE}`);
+    const requestId = ++businessRequests.shares;
+    const result = await profileRequest(`/customer/me/shares?page=${page}&page_size=${PROFILE_SHARE_PAGE_SIZE}${businessFilterQuery("shares")}`);
+    if (requestId !== businessRequests.shares) return;
     profileSharePage = Number(result.page || 1);
     profileShareTotal = Number(result.total || 0);
     const list = document.getElementById("profile-shares-list");
@@ -325,6 +353,7 @@ async function loadProfileShares(page = profileSharePage) {
         <div class="profile-business-card-meta"><span class="profile-status-badge${share.status === "active" ? "" : " is-off"}">${shareStatusLabel(share.status)}</span><span>${Number(share.item_count || 0)} ${pc.items}</span><span>${Number(share.view_count || 0)} ${pc.views}</span><span>${Number(share.quote_count || 0)} ${pc.quoteCount}</span><span>${pc.createdAt} ${profileDate(share.created_at)}</span><span>${pc.expiresAt} ${profileDate(share.expires_at)}</span></div>
       </article>`).join("") : `<div class="profile-list-empty">${pc.emptyShares}</div>`;
     const pages = Math.max(1, Math.ceil(profileShareTotal / PROFILE_SHARE_PAGE_SIZE));
+    decorateBusinessRecords("shares", result.items);
     document.getElementById("profile-shares-page").textContent = pc.page.replace("{page}", String(profileSharePage));
     document.getElementById("profile-shares-prev").disabled = profileSharePage <= 1;
     document.getElementById("profile-shares-next").disabled = profileSharePage >= pages;
@@ -332,11 +361,14 @@ async function loadProfileShares(page = profileSharePage) {
   } catch (error) { status.textContent = error.message || pc.requestFailed; status.className = "profile-form-status is-error"; }
 }
 
-async function loadProfileQuotes() {
+async function loadProfileQuotes(page = profileQuotePage) {
   const status = document.getElementById("profile-quotes-status");
   status.textContent = pc.loadingBusiness;
   try {
-    const result = await profileRequest("/customer/me/quotes");
+    const requestId = ++businessRequests.quotes;
+    const result = await profileRequest(`/customer/me/quotes?page=${page}&page_size=20${businessFilterQuery("quotes")}`);
+    if (requestId !== businessRequests.quotes) return;
+    profileQuotePage = result.page || 1;
     const unreadBadge = document.getElementById("profile-quote-unread");
     unreadBadge.textContent = String(result.unread_count || 0);
     unreadBadge.hidden = !result.unread_count;
@@ -352,8 +384,97 @@ async function loadProfileQuotes() {
         <div class="profile-business-card-meta"><span class="profile-status-badge${quote.unread ? " is-new" : ""}">${state}</span>${archived ? "" : `<span>${profileMoney(quote.total_price, quote.currency)}</span>`}<span>${pc.sentAt} ${profileDate(delivery.delivered_at)}</span></div>
       </article>`;
     }).join("") : `<div class="profile-list-empty">${pc.emptyQuotes}</div>`;
+    decorateBusinessRecords("quotes", result.items);
+    document.getElementById("profile-quotes-page").textContent = pc.page.replace("{page}", String(profileQuotePage));
+    document.getElementById("profile-quotes-prev").disabled = profileQuotePage <= 1;
+    document.getElementById("profile-quotes-next").disabled = profileQuotePage * 20 >= result.total;
     status.textContent = ""; status.className = "profile-form-status";
   } catch (error) { status.textContent = error.message || pc.requestFailed; status.className = "profile-form-status is-error"; }
+}
+
+const businessRequests = { shares: 0, inquiries: 0, quotes: 0 };
+let profileQuotePage = 1;
+const businessLoaders = { shares: loadProfileShares, inquiries: loadProfileInquiries, quotes: loadProfileQuotes };
+const businessText = (zh, en) => profileLanguage === "en" ? en : zh;
+
+function businessFilterQuery(kind) {
+  const form = document.getElementById(`profile-${kind}-filters`);
+  if (!form) return "";
+  const data = new FormData(form);
+  return `&${new URLSearchParams(data)}`;
+}
+
+function initBusinessFilters() {
+  const statuses = {
+    shares: [["active", pc.active], ["closed", pc.closed], ["expired", pc.expired]],
+    inquiries: ["new", "assigned", "contacted", "quoted", "closed", "cancelled"].map((key) => [key, inquiryStatusLabel(key)]),
+    quotes: [["unread", pc.newQuote], ["viewed", pc.viewed], ["archived", pc.archivedQuote]],
+  };
+  Object.entries(statuses).forEach(([kind, options]) => {
+    const form = document.createElement("form");
+    form.id = `profile-${kind}-filters`; form.className = "profile-business-filters";
+    form.innerHTML = `<label><span>${businessText("搜索", "Search")}</span><input name="query" type="search" maxlength="200" autocomplete="off" placeholder="${businessText("标题或编号…", "Title or number…")}" /></label><label><span>${businessText("状态", "Status")}</span><select name="status"><option value="">${businessText("全部", "All")}</option>${options.map(([value, label]) => `<option value="${value}">${escapeProfileHtml(label)}</option>`).join("")}</select></label><label><span>${businessText("记录", "Records")}</span><select name="hidden"><option value="false">${businessText("当前记录", "Current")}</option><option value="true">${businessText("已删除", "Deleted")}</option></select></label><button type="submit" class="btn btn-secondary">${businessText("筛选", "Filter")}</button>`;
+    const url = new URL(location.href);
+    ["query", "status", "hidden"].forEach((key) => { if (url.searchParams.has(`${kind}_${key}`)) form.elements[key].value = url.searchParams.get(`${kind}_${key}`); });
+    document.getElementById(`profile-${kind}-status`).before(form);
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const next = new URL(location.href);
+      new FormData(form).forEach((value, key) => { if (value && value !== "false") next.searchParams.set(`${kind}_${key}`, value); else next.searchParams.delete(`${kind}_${key}`); });
+      history.replaceState(null, "", next);
+      businessLoaders[kind](1);
+    });
+  });
+  const pagination = document.createElement("div"); pagination.className = "profile-list-pagination";
+  pagination.innerHTML = `<span id="profile-quotes-page"></span><div><button id="profile-quotes-prev" type="button" class="btn btn-secondary">${pc.previous}</button><button id="profile-quotes-next" type="button" class="btn btn-secondary">${pc.next}</button></div>`;
+  document.getElementById("profile-quotes-list").after(pagination);
+  document.getElementById("profile-quotes-prev").addEventListener("click", () => loadProfileQuotes(profileQuotePage - 1));
+  document.getElementById("profile-quotes-next").addEventListener("click", () => loadProfileQuotes(profileQuotePage + 1));
+}
+
+function decorateBusinessRecords(kind, records) {
+  document.querySelectorAll(`#profile-${kind}-list .profile-business-card`).forEach((card, index) => {
+    const record = records[index];
+    const actions = card.querySelector(".profile-business-card-actions");
+    const action = (operation, label) => `<button type="button" class="btn btn-secondary btn-sm" data-personal-operation="${operation}" data-record-kind="${kind}" data-record-id="${escapeProfileHtml(record.id)}" data-record-version="${Number(record.customer_version || 1)}">${label}</button>`;
+    if (record.hidden) {
+      actions.innerHTML = action("restore", businessText("恢复", "Restore"));
+      return;
+    }
+    if (kind === "shares") {
+      if (record.active) actions.insertAdjacentHTML("beforeend", action("close", businessText("关闭", "Close")));
+      else if (record.can_reopen) actions.insertAdjacentHTML("beforeend", action("reopen", businessText("开启", "Reopen")));
+    }
+    actions.insertAdjacentHTML("beforeend", action("hide", businessText("删除", "Delete")));
+    if (actions.children.length > 3) {
+      const extra = [...actions.children].slice(2);
+      const more = document.createElement("details"); more.className = "profile-record-more";
+      const summary = document.createElement("summary"); summary.textContent = businessText("更多", "More"); more.appendChild(summary);
+      const menu = document.createElement("div"); extra.forEach((button) => menu.appendChild(button)); more.appendChild(menu); actions.appendChild(more);
+      more.addEventListener("keydown", (event) => { if (event.key === "Escape") { more.open = false; summary.focus(); event.stopPropagation(); } });
+    }
+  });
+}
+
+async function handlePersonalOperation(button, confirmed = false) {
+  const { personalOperation: operation, recordKind: kind, recordId: id, recordVersion: version } = button.dataset;
+  if (!confirmed && ["hide", "close"].includes(operation)) {
+    const message = operation === "hide" ? businessText("仅从你的列表隐藏，可在已删除中恢复；不会删除业务历史或改变处理状态。", "Hide only from your list. Restore it from Deleted; business history and status remain unchanged.") : businessText("关闭后他人不能继续使用此分享码。", "Others can no longer use this share code after closing.");
+    openProfileBusinessDialog(button.textContent, pc.myBusiness, `<p class="profile-inquiry-confirm">${message}</p>`, `<button type="button" class="btn btn-secondary" data-close-business-dialog>${businessText("取消", "Cancel")}</button><button type="button" class="btn btn-primary" data-personal-confirm data-personal-operation="${operation}" data-record-kind="${kind}" data-record-id="${escapeProfileHtml(id)}" data-record-version="${version}">${businessText("确认", "Confirm")}</button>`);
+    return;
+  }
+  button.disabled = true;
+  try {
+    const lifecycle = ["close", "reopen"].includes(operation);
+    await profileRequest(lifecycle ? `/customer/me/shares/${encodeURIComponent(id)}/status` : `/customer/me/records/${kind}/${encodeURIComponent(id)}/visibility`, {
+      method: "PATCH", body: JSON.stringify(lifecycle ? { active: operation === "reopen", version: Number(version) } : { hidden: operation === "hide" }),
+    });
+    document.getElementById("profile-business-dialog").close();
+    await businessLoaders[kind]();
+  } catch (error) {
+    if (confirmed) document.getElementById("profile-business-dialog").close();
+    setFormStatus(`profile-${kind}-status`, error.message || pc.requestFailed, "error");
+  } finally { button.disabled = false; }
 }
 
 function openProfileBusinessDialog(title, kicker, body, actions = "") {
@@ -481,6 +602,8 @@ async function downloadOwnQuote(quoteId) {
 }
 
 async function handleProfileBusinessAction(event) {
+  const personalButton = event.target.closest("[data-personal-operation]");
+  if (personalButton) { await handlePersonalOperation(personalButton, personalButton.hasAttribute("data-personal-confirm")); return; }
   const copyButton = event.target.closest("[data-copy-share]");
   if (copyButton) {
     try { await copyProfileText(copyButton.dataset.copyShare, copyButton, "profile-shares-status", pc.copied); }
@@ -542,6 +665,7 @@ async function initProfilePage() {
   document.getElementById("profile-birth-date").max = new Date().toISOString().slice(0, 10);
   renderProfileUser();
   showProfilePanel(location.hash.slice(1));
+  initBusinessFilters();
   loadProfileShares().catch(() => {});
   loadProfileInquiries().catch(() => {});
   loadProfileQuotes().catch(() => {});
@@ -550,7 +674,7 @@ async function initProfilePage() {
   document.getElementById("profile-contact-form").addEventListener("submit", saveProfileContact);
   document.getElementById("profile-password-form").addEventListener("submit", saveProfilePassword);
   document.getElementById("profile-country").addEventListener("change", updateProfileCallingCode);
-  document.getElementById("profile-signature").addEventListener("input", updateSignatureCount);
+  document.getElementById("profile-address-form").addEventListener("submit", saveProfileAddress);
   document.getElementById("profile-sign-out").addEventListener("click", signOutProfile);
   document.getElementById("profile-shares-prev").addEventListener("click", () => { if (profileSharePage > 1) loadProfileShares(profileSharePage - 1); });
   document.getElementById("profile-shares-next").addEventListener("click", () => { if (profileSharePage * PROFILE_SHARE_PAGE_SIZE < profileShareTotal) loadProfileShares(profileSharePage + 1); });
@@ -564,6 +688,8 @@ async function initProfilePage() {
   document.getElementById("profile-language-switcher").addEventListener("click", (event) => { const button = event.target.closest("[data-language]"); if (!button || button.dataset.language === profileLanguage) return; localStorage.setItem("boten-language", button.dataset.language); location.reload(); });
   window.addEventListener("hashchange", () => showProfilePanel(location.hash.slice(1)));
   document.querySelectorAll("input, select, textarea").forEach((field) => field.addEventListener("input", () => field.removeAttribute("aria-invalid")));
+  document.querySelectorAll(".profile-form").forEach((form) => form.addEventListener("input", () => { form.dataset.dirty = String(JSON.stringify([...new FormData(form)]) !== form.dataset.baseline); }));
+  window.addEventListener("beforeunload", (event) => { if (document.querySelector('.profile-form[data-dirty="true"]')) { event.preventDefault(); event.returnValue = ""; } });
 }
 
 if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", initProfilePage);

@@ -565,24 +565,31 @@ def get_any_share(code: str, lang: str = "zh", increment_view: bool = True) -> O
     return legacy
 
 
-def list_customer_shares(user_id: str, page: int = 1, page_size: int = 20) -> Dict[str, Any]:
+def list_customer_shares(user_id: str, page: int = 1, page_size: int = 20, query: str = "", status: str = "", hidden: bool = False) -> Dict[str, Any]:
     safe_page = max(int(page), 1)
     safe_page_size = min(max(int(page_size), 1), 50)
     offset = (safe_page - 1) * safe_page_size
     union = """
         SELECT id, code, title, item_count, view_count, last_viewed_at,
-               expires_at, active, created_at, 1 AS document_version
+               expires_at, active, created_at, owner_closed, customer_version, 1 AS document_version
         FROM config_shares WHERE created_by = ?
         UNION ALL
         SELECT id, code, title, item_count, view_count, last_viewed_at,
-               expires_at, active, created_at, 2 AS document_version
+               expires_at, active, created_at, owner_closed, customer_version, 2 AS document_version
         FROM commerce_shares WHERE created_by = ?
     """
     with get_connection() as db:
-        total = int(db.execute("SELECT COUNT(*) FROM ({})".format(union), (user_id, user_id)).fetchone()[0])
+        now = to_iso(utc_now())
+        where = """COALESCE((SELECT hidden FROM personal_business_visibility v WHERE v.user_id=? AND v.resource_type='shares' AND v.resource_id=s.id),0)=?
+            AND (?='' OR instr(lower(s.title || ' ' || s.code),lower(?))>0)
+            AND (?='' OR CASE WHEN active=0 THEN 'closed' WHEN expires_at<=? THEN 'expired' ELSE 'active' END=?)"""
+        params = (user_id, user_id, user_id, int(hidden), query, query, status, now, status)
+        total = int(db.execute(f"SELECT COUNT(*) FROM ({union}) s WHERE {where}", params).fetchone()[0])
+        safe_page = min(safe_page, max(1, (total + safe_page_size - 1) // safe_page_size))
+        offset = (safe_page - 1) * safe_page_size
         rows = db.execute(
-            "SELECT * FROM ({}) ORDER BY created_at DESC LIMIT ? OFFSET ?".format(union),
-            (user_id, user_id, safe_page_size, offset),
+            f"SELECT * FROM ({union}) s WHERE {where} ORDER BY created_at DESC,id LIMIT ? OFFSET ?",
+            (*params, safe_page_size, offset),
         ).fetchall()
         quote_counts = {
             row["source_share_id"]: int(row["count"])
@@ -598,6 +605,8 @@ def list_customer_shares(user_id: str, page: int = 1, page_size: int = 20) -> Di
         item["active"] = bool(item["active"])
         item["status"] = "closed" if not item["active"] else "expired" if item["expires_at"] <= now else "active"
         item["quote_count"] = quote_counts.get(item["id"], 0)
+        item["hidden"] = hidden
+        item["can_reopen"] = bool(item["owner_closed"] and item["expires_at"] > now and not item["active"])
         items.append(item)
     return {"items": items, "total": total, "page": safe_page, "page_size": safe_page_size}
 
@@ -673,10 +682,10 @@ def archive_cart_items(items: Sequence[Dict[str, Any]], user_id: str) -> int:
 
 def deactivate_any_share(share_id: str) -> bool:
     with get_connection() as db:
-        cursor = db.execute("UPDATE commerce_shares SET active = 0 WHERE id = ?", (share_id,))
+        cursor = db.execute("UPDATE commerce_shares SET active = 0, owner_closed=0, customer_version=customer_version+1 WHERE id = ?", (share_id,))
         if cursor.rowcount:
             return True
-        cursor = db.execute("UPDATE config_shares SET active = 0 WHERE id = ?", (share_id,))
+        cursor = db.execute("UPDATE config_shares SET active = 0, owner_closed=0, customer_version=customer_version+1 WHERE id = ?", (share_id,))
     return cursor.rowcount > 0
 
 
@@ -684,10 +693,10 @@ def set_any_share_active(share_id: str, active: bool) -> bool:
     """Update legacy or commerce share state without changing its snapshot."""
     enabled = 1 if active else 0
     with get_connection() as db:
-        cursor = db.execute("UPDATE commerce_shares SET active = ? WHERE id = ?", (enabled, share_id))
+        cursor = db.execute("UPDATE commerce_shares SET active = ?, owner_closed=0, customer_version=customer_version+1 WHERE id = ?", (enabled, share_id))
         if cursor.rowcount:
             return True
-        cursor = db.execute("UPDATE config_shares SET active = ? WHERE id = ?", (enabled, share_id))
+        cursor = db.execute("UPDATE config_shares SET active = ?, owner_closed=0, customer_version=customer_version+1 WHERE id = ?", (enabled, share_id))
     return cursor.rowcount > 0
 
 

@@ -16,6 +16,8 @@ backups/
 uploads/
 data/
 output/
+outputs/
+tmp/
 *.log
 
 # Local configuration and editor state

@@ -536,6 +536,58 @@ class BackendWorkflowTests(unittest.TestCase):
             self.assertEqual("other", profile.json()["gender"])
             self.assertEqual("1990-05-06", profile.json()["birth_date"])
             self.assertEqual("柴油测试设备", profile.json()["signature"])
+            address = client.patch("/api/v1/auth/profile/details", headers=profile_headers,
+                                   json={"address": "联系地址 108 号", "version": profile.json()["version"]})
+            self.assertEqual(200, address.status_code, address.text)
+            for key in ("display_name", "gender", "birth_date", "signature"):
+                self.assertEqual(profile.json()[key], address.json()[key])
+            renamed = client.patch("/api/v1/auth/profile/details", headers=profile_headers,
+                                   json={"display_name": "新姓名", "version": address.json()["version"]})
+            self.assertEqual(200, renamed.status_code, renamed.text)
+            self.assertEqual("联系地址 108 号", renamed.json()["address"])
+            self.assertEqual("柴油测试设备", renamed.json()["signature"])
+            conflict = client.patch("/api/v1/auth/profile/details", headers=profile_headers,
+                                    json={"address": "stale", "version": address.json()["version"]})
+            self.assertEqual(409, conflict.status_code)
+            self.assertEqual(200, client.get("/api/v1/auth/profile", headers=profile_headers).status_code)
+
+    def test_personal_share_visibility_and_lifecycle_preserve_history(self) -> None:
+        from backend.commerce_repository import set_any_share_active
+        owner = create_user("personal-owner@example.com", None, "password123", display_name="Owner")
+        outsider = create_user("personal-outsider@example.com", None, "password123", display_name="Other")
+        headers = {"Authorization": "Bearer " + create_session(owner)["token"]}
+        other_headers = {"Authorization": "Bearer " + create_session(outsider)["token"]}
+        product = get_product("cr1016")
+        selections = {c["id"]: c["options"][0]["id"] for c in product["categories"] if not c["multiple"] and c["options"]}
+        saved = save_config(owner["id"], "Personal record", product["id"], build_snapshot(product["id"], product["colors"][0]["code"], selections))
+        share = create_share(saved["id"], owner["id"])
+        path = f"/api/v1/customer/me/records/shares/{share['id']}/visibility"
+        lifecycle = f"/api/v1/customer/me/shares/{share['id']}/status"
+        with TestClient(app) as client:
+            self.assertEqual(404, client.patch(path, headers=other_headers, json={"hidden": True}).status_code)
+            for _ in range(2):
+                self.assertEqual(200, client.patch(path, headers=headers, json={"hidden": True}).status_code)
+            self.assertEqual(0, client.get("/api/v1/customer/me/shares", headers=headers).json()["total"])
+            hidden = client.get("/api/v1/customer/me/shares?hidden=true", headers=headers).json()
+            self.assertEqual(share["id"], hidden["items"][0]["id"])
+            self.assertIsNotNone(get_share(share["code"]))
+            self.assertEqual(200, client.patch(path, headers=headers, json={"hidden": False}).status_code)
+            listed = client.get("/api/v1/customer/me/shares?query=" + share["code"], headers=headers).json()["items"][0]
+            version = listed["customer_version"]
+            self.assertEqual(404, client.patch(lifecycle, headers=other_headers, json={"active": False, "version": version}).status_code)
+            closed = client.patch(lifecycle, headers=headers, json={"active": False, "version": version})
+            self.assertEqual(200, closed.status_code, closed.text)
+            self.assertIsNone(get_share(share["code"]))
+            self.assertEqual(200, client.patch(lifecycle, headers=headers, json={"active": False, "version": version}).status_code)
+            self.assertEqual(409, client.patch(lifecycle, headers=headers, json={"active": True, "version": version}).status_code)
+            reopened = client.patch(lifecycle, headers=headers, json={"active": True, "version": closed.json()["version"]})
+            self.assertEqual(200, reopened.status_code, reopened.text)
+            client.patch(lifecycle, headers=headers, json={"active": False, "version": reopened.json()["version"]})
+            set_any_share_active(share["id"], False)
+            state = client.get("/api/v1/customer/me/shares", headers=headers).json()["items"][0]
+            self.assertFalse(state["can_reopen"])
+            self.assertEqual(409, client.patch(lifecycle, headers=headers, json={"active": True, "version": state["customer_version"]}).status_code)
+            self.assertEqual(200, client.get(f"/api/v1/customer/me/shares/{share['id']}", headers=headers).status_code)
 
     def test_save_and_share_configuration(self) -> None:
         user = create_user("share@example.com", None, "password123", display_name="Share User")
@@ -2661,7 +2713,7 @@ class BackendWorkflowTests(unittest.TestCase):
             finally:
                 connection.close()
             self.assertIsNotNone(version_row, process.stdout + process.stderr)
-            self.assertEqual("20260911_0026", version_row[0])
+            self.assertEqual("20260911_0027", version_row[0])
             self.assertIn("address", user_columns)
             self.assertIn("customer_address", quote_columns)
             self.assertTrue({"products", "options", "users", "quotes", "audit_logs", "product_motor_prices", "product_specifications", "config_share_items", "product_base_option_groups", "product_base_options", "product_price_variants", "saved_catalog_items", "commerce_shares", "commerce_share_items", "commerce_quotes", "share_imports", "quote_deliveries"}.issubset(tables))

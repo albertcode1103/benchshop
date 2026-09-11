@@ -1,11 +1,31 @@
 # Docker / NAS 部署指南
 
+当前执行约定以 [项目执行规则](../docs/project-execution-rules.md) 为准；以下历史路径示例必须与实际目标核对。
+
 本目录用于将 BOTEN 配置与报价系统部署到支持 Docker Compose 的 NAS 或 Linux 服务器。当前部署由两个容器组成：
 
 - `web`：Nginx，提供用户页面、管理后台和同域 `/api/` 反向代理；默认映射宿主机 `8080` 端口。
 - `api`：FastAPI、SQLite、图片上传和 PDF 生成服务；仅在 Docker 内部网络暴露 `8001`，不会直接映射到宿主机。
 
 业务数据不在镜像内：数据库和后台上传的图片均存放在持久化的 `data/` 目录。升级或重建容器不会删除这些数据。
+
+## 开发阶段每次发布的同步要求
+
+每次发布必须同时核对代码、静态资源、目录数据和上传图片；仅 Git 更新或容器重建不代表数据已同步。
+
+| 内容 | 长期保存与同步方式 |
+| --- | --- |
+| Logo、字体、页面使用的产品静态图 | 纳入 Git/Git LFS；目标机拉取 LFS 实体文件，重建 web 和 api |
+| PSD、Excel、原图压缩包等设计源资料 | 独立备份，不作为网站发布资源；不因扩展名是 PNG 就自动把原图目录全部发布 |
+| 设备、颜色、配置类别、工具、附件、映射、价格及图片引用 | 开发发布必须进行数据同步核验；不是 Git 文件，不能依靠拉代码更新 |
+| 后台上传的图片 | 随目录数据同步至 data/uploads/catalog，保留相对路径并核对文件哈希；不得只复制数据库 |
+| 用户、分享、询价、报价等业务记录 | 开发阶段已确认随本机全库覆盖远端；远端独有记录仅保留在覆盖前备份中，不自动合并 |
+
+已确认开发阶段以本机为唯一权威数据源，每次发布采用全库覆盖，包括账号、分享、询价和报价；远端独有记录不会自动合并。此规则不等于已经完成同步，目前没有自动同步任务，也不进行双向 SQLite 文件同步。
+实际执行须先确认目标主机和运行中的数据卷、停止目标写入、备份目标数据库及图片，再恢复本机一致性备份。源库引用的图片缺失时必须中止，不能发布断链数据。生产阶段启用真实业务前必须重新制定同步规则，不能继续默认覆盖。
+发布应先比较目标库版本及差异、备份目标数据库与上传目录，再传输本机全库一致性备份及对应图片，最后验证引用、数量、数据库完整性及页面/PDF。
+NAS 与 ECS 必须分别有目标配置、备份和同步结果，不得把服务器私有 .env 或数据库放入 Git。
+任何上传或验证失败均不得报告发布完成；远端独有图片不自动删除。涉及全库替换时停止写入并通过确认式恢复工具操作，禁止直接复制运行中的 SQLite 文件覆盖。
 
 ## 部署前准备
 
@@ -85,7 +105,7 @@ git fetch --ipv4 origin
 git merge --ff-only origin/main
 git lfs pull
 sudo docker compose exec api python -m backend.database_maintenance backup --output-dir /data/backups --keep 30
-sudo docker compose build --progress=plain api
+sudo docker compose build --progress=plain web api
 sudo docker compose up -d --force-recreate
 sudo docker compose ps
 ```
@@ -102,7 +122,7 @@ sudo docker compose ps
 ```sh
 git log --oneline -10
 git checkout <已确认的提交或标签>
-sudo docker compose build --progress=plain api
+sudo docker compose build --progress=plain web api
 sudo docker compose up -d --force-recreate
 ```
 
@@ -129,17 +149,15 @@ cd "$PROJECT_DIR"
 sudo docker compose up -d --build
 ```
 
-## 从本机迁移已确认的数据库（暂缓执行）
+## 从本机发布全库备份（开发阶段）
 
-本机开发数据库不通过 Git 迁移。待项目验收确认后，使用 SQLite 在线备份文件迁移；
-这会以本机数据库替换 NAS 当前业务数据库，因此迁移前须确认 NAS 没有需要保留的新账号、
-分享记录或报价。Git 更新代码与数据库迁移是两件独立的事。
+本机开发数据库不通过 Git 迁移。用户已确认用本机全库一致性备份替换远端库，远端新账号、分享及报价不合并，必须先独立备份。目标连接和运行数据卷核实后按维护流程执行；Git 更新代码与数据库迁移是两件独立的事。
 
 ### 1. 本机 E 盘创建一致性备份
 
 ```powershell
 cd E:\Project\CC-Project\benchshop
-.\backend\.venv\Scripts\python.exe -m backend.database_maintenance backup --output-dir .\backups --keep 30
+.\backend\.venv312\Scripts\python.exe -m backend.database_maintenance backup --output-dir .\backups --keep 30
 ```
 
 命令会输出新备份文件，例如 `backups\boten-20260901-120000-000000.db`。通过 File

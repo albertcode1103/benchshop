@@ -54,8 +54,8 @@ class PasswordChangeRequest(BaseModel):
 
 
 class ProfileDetailsRequest(BaseModel):
-    display_name: str
-    gender: str = ""
+    display_name: Optional[str] = None
+    gender: Optional[str] = None
     birth_date: Optional[str] = None
     signature: str = ""
     address: str = Field(default="", max_length=500)
@@ -145,7 +145,10 @@ def profile(user=Depends(current_user)):
 
 @router.patch("/profile/details")
 def update_profile_details(payload: ProfileDetailsRequest, user=Depends(current_user)):
-    display_name = validate_display_name(payload.display_name)
+    fields = payload.model_fields_set
+    changes = {}
+    if "display_name" in fields:
+        changes["display_name"] = validate_display_name(payload.display_name or "")
     gender = (payload.gender or "").strip().lower()
     if gender not in ("", "male", "female", "other"):
         raise AccountError("ACCOUNT_GENDER_INVALID", field="gender")
@@ -160,11 +163,10 @@ def update_profile_details(payload: ProfileDetailsRequest, user=Depends(current_
     signature = (payload.signature or "").strip()
     if len(signature) > 160:
         raise AccountError("ACCOUNT_SIGNATURE_TOO_LONG", field="signature")
-    return update_user(
-        user["id"],
-        {"display_name": display_name, "gender": gender, "birth_date": birth_date, "signature": signature, "address": payload.address.strip()},
-        expected_version=payload.version,
-    )
+    for key, value in {"gender": gender, "birth_date": birth_date, "signature": signature, "address": payload.address.strip()}.items():
+        if key in fields:
+            changes[key] = value
+    return update_user(user["id"], changes, expected_version=payload.version)
 
 
 @router.get("/countries")

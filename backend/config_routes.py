@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, model_validator,
 from .payload_bounds import validate_tree
 
 from .auth_routes import current_user
+from .personal_business import set_visibility, set_owner_share_status, hidden_ids
 from .config_repository import (
     build_snapshot,
     archive_saved_configs,
@@ -442,8 +443,8 @@ def create_cart_inquiry_request(payload: CartInquiryRequest, request: Request, u
 
 
 @router.get("/customer/me/inquiries")
-def customer_own_inquiries(page: int = 1, page_size: int = 20, user=Depends(registered_user)):
-    return without_prices(list_customer_inquiries(user["id"], page, page_size))
+def customer_own_inquiries(page: int = 1, page_size: int = 20, query: str = Query(default="", max_length=200), status: str = "", hidden: bool = False, user=Depends(registered_user)):
+    return without_prices(list_customer_inquiries(user["id"], page, page_size, query.strip(), status, hidden))
 
 
 @router.get("/customer/me/inquiries/{inquiry_id}")
@@ -592,8 +593,33 @@ def convert_inquiry_to_quote(inquiry_id: str, payload: InquiryQuoteRequest, resp
 
 
 @router.get("/customer/me/shares")
-def customer_own_shares(page: int = 1, page_size: int = 20, user=Depends(registered_user)):
-    return list_customer_shares(user["id"], page, page_size)
+def customer_own_shares(page: int = 1, page_size: int = 20, query: str = Query(default="", max_length=200), status: str = "", hidden: bool = False, user=Depends(registered_user)):
+    return list_customer_shares(user["id"], page, page_size, query.strip(), status, hidden)
+
+
+class PersonalVisibilityRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    hidden: bool
+
+
+class OwnerShareStatusRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    active: bool
+    version: int = Field(ge=1)
+
+
+@router.patch("/customer/me/records/{resource_type}/{resource_id}/visibility")
+def personal_record_visibility(resource_type: str, resource_id: str, payload: PersonalVisibilityRequest, user=Depends(registered_user)):
+    result = set_visibility(user["id"], resource_type, resource_id, payload.hidden)
+    write_audit(user["id"], "personal_record_hide" if payload.hidden else "personal_record_restore", resource_type, resource_id, {})
+    return result
+
+
+@router.patch("/customer/me/shares/{share_id}/status")
+def own_share_status(share_id: str, payload: OwnerShareStatusRequest, user=Depends(registered_user)):
+    result = set_owner_share_status(user["id"], share_id, payload.active, payload.version)
+    write_audit(user["id"], "share_owner_reopen" if payload.active else "share_owner_close", "shares", share_id, {})
+    return result
 
 
 @router.get("/customer/me/shares/{share_id}")
@@ -605,9 +631,16 @@ def customer_own_share(share_id: str, lang: str = "zh", user=Depends(registered_
 
 
 @router.get("/customer/me/quotes")
-def customer_own_quotes(user=Depends(registered_user)):
+def customer_own_quotes(page: int = 1, page_size: int = 20, query: str = Query(default="", max_length=200), status: str = "", hidden: bool = False, user=Depends(registered_user)):
     items = list_customer_quotes(user["id"])
-    return {"items": items, "total": len(items), "unread_count": sum(1 for item in items if item.get("unread"))}
+    hidden_records = hidden_ids(user["id"], "quotes")
+    unread = sum(1 for item in items if item.get("unread") and item["id"] not in hidden_records)
+    items = [dict(item, hidden=hidden) for item in items if (item["id"] in hidden_records) == hidden
+             and query.strip().casefold() in f"{item.get('title','')} {item.get('quote_number','')}".casefold()
+             and (not status or (status == "unread" and item.get("unread")) or (status == "viewed" and not item.get("unread")) or item.get("lifecycle_status") == status)]
+    size = min(max(page_size, 1), 50)
+    page = min(max(page, 1), max(1, (len(items) + size - 1) // size))
+    return {"items": items[(page-1)*size:page*size], "total": len(items), "page": page, "page_size": size, "unread_count": unread}
 
 
 @router.get("/customer/me/quotes/{quote_id}")

@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional, Sequence
 
 from .database import get_connection
 from .security import to_iso, utc_now
+from .quote_categories import recover_quote_categories
 
 
 QUOTE_ITEM_FIELDS = frozenset({
@@ -16,7 +17,7 @@ QUOTE_ITEM_FIELDS = frozenset({
     'device_label', 'device_key', 'parent_device_key', 'device_sequence',
     'quantity', 'price', 'quoted_price', 'reference_price', 'price_cny', 'price_usd',
     'price_overridden', 'locked', 'configuration_role', 'device_specifications',
-    'category_id', 'category_name', 'category_label', 'category_sort_order',
+    'category_id', 'category_name', 'category_name_en', 'category_label', 'category_sort_order',
     'catalog_category_sort_order', 'sort_order', 'catalog_sort_order',
     'availability', 'captured_availability', 'availability_details',
 })
@@ -518,6 +519,7 @@ def get_quote(quote_id: str, user_id: Optional[str] = None) -> Optional[Dict[str
                 params,
             ).fetchone()
             result = _decode(row, 1)
+        result = recover_quote_categories(db, result)
     if result is not None:
         result["quoted_by"] = {
             "display_name": result.get("display_name") or "",

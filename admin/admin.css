@@ -553,19 +553,15 @@ td small, .badge { font-size: 12px; }
 .quote-primary-row { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(320px, 1fr); align-items: center; gap: 12px; }
 .quote-currency-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; }
 .quote-editor-meta .quote-currency-field { display: grid; grid-template-columns: 96px minmax(0, 1fr); align-items: center; gap: 10px; }
-.quote-customer-summary { display: grid; grid-template-columns: 96px minmax(0, 1fr) 38px 38px; align-items: center; gap: 8px; min-height: 46px; padding: 7px 9px 7px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.quote-customer-summary { display: grid; grid-template-columns: 96px minmax(0, 1fr) auto; align-items: center; gap: 8px; min-height: 46px; padding: 8px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
 .quote-customer-summary > input,
 .quote-customer-summary > select { display: none; }
-.quote-customer-summary .quote-customer-address { grid-column: 1 / -1; grid-row: 2; }
-.quote-customer-address textarea { width: 100%; min-width: 0; }
-.quote-customer-fill { grid-column: 2 / -1; justify-self: start; }
 .quote-customer-summary-label { color: var(--muted); font-size: 12px; font-weight: 700; }
-.quote-customer-summary-value { display: flex; min-width: 0; align-items: baseline; gap: 10px; }
+.quote-customer-summary-value { display: flex; flex-wrap: wrap; min-width: 0; align-items: baseline; gap: 4px 8px; max-height: 44px; overflow: hidden; }
 .quote-customer-summary-value strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .quote-customer-summary-value small { overflow: hidden; color: var(--muted); text-overflow: ellipsis; white-space: nowrap; }
 .quote-customer-summary-value em { margin-left: 5px; padding: 2px 6px; border-radius: 999px; color: #8a4b10; background: #fff0df; font-size: 10px; font-style: normal; white-space: nowrap; }
-.quote-customer-search { width: 36px; height: 36px; color: var(--orange-dark); font-size: 20px; }
-.quote-customer-manual { width: 36px; height: 36px; color: var(--navy); font-size: 17px; }
+.quote-customer-search { width: auto; min-width: 96px; min-height: 40px; padding: 8px 16px; font-size: 13px; white-space: nowrap; }
 .quote-currency-field > span { color: var(--muted); font-size: 12px; font-weight: 700; }
 .quote-currency-field select {
   width: 100%;
@@ -630,11 +626,24 @@ td small, .badge { font-size: 12px; }
 .quote-customer-result strong, .quote-customer-result small { overflow-wrap: anywhere; }
 .quote-customer-result small { color: var(--muted); }
 .quote-customer-result b { flex: 0 0 auto; color: var(--orange-dark); font-size: 12px; }
-.quote-customer-picker-card > footer { display: flex; min-height: 62px; align-items: center; justify-content: flex-end; padding: 10px 18px; border-top: 1px solid var(--line); background: #fafbfc; }
+.quote-customer-picker-card > footer { display: flex; flex-shrink: 0; min-height: 62px; align-items: center; justify-content: flex-end; gap: 8px; padding: 12px 24px; border-top: 1px solid var(--line); background: #fafbfc; }
+.quote-customer-picker-card > header { flex-shrink: 0; }
 .quote-customer-manual-fields { display: grid; gap: 10px; padding: 16px 18px; }
 .quote-customer-manual-fields label { display: grid; grid-template-columns: 92px minmax(0, 1fr); align-items: center; gap: 10px; }
 .quote-customer-manual-fields label > span { color: var(--muted); font-size: 12px; font-weight: 700; }
 .quote-customer-manual-fields input { width: 100%; min-width: 0; }
+.quote-customer-picker-body { min-height: 0; overflow-y: auto; overscroll-behavior: contain; scroll-padding-block: 16px; }
+.quote-customer-picker-body .quote-customer-picker-results { max-height: 160px; min-height: 48px; overscroll-behavior: contain; }
+.quote-customer-picker-body .quote-customer-manual-fields { gap: 12px; padding: 16px 24px; }
+.quote-customer-picker-body .quote-customer-manual-fields label { grid-template-columns: 140px minmax(0, 1fr); gap: 16px; }
+.quote-customer-manual-fields textarea { width: 100%; min-width: 0; resize: vertical; }
+.quote-customer-binding { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 8px 24px; border-top: 1px solid var(--line); }
+.quote-customer-binding-label { min-width: 0; overflow-wrap: anywhere; color: var(--muted); font-size: 13px; }
+.quote-customer-feedback { margin: 0; padding: 0 24px 8px; color: var(--orange-dark); font-size: 13px; }
+@media (max-width: 700px) {
+  .quote-customer-picker-body .quote-customer-manual-fields label { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .quote-customer-binding { flex-wrap: wrap; }
+}
 .inquiry-source-section,
 .inquiry-timeline-section { margin-top: 18px; }
 .inquiry-source-chips { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -660,7 +669,8 @@ td small, .badge { font-size: 12px; }
   .quote-editor-meta > label { grid-template-columns: 82px minmax(0, 1fr); }
   .quote-currency-row { grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
   .quote-editor-meta .quote-currency-field { grid-template-columns: 82px minmax(0, 1fr); }
-  .quote-customer-summary { grid-template-columns: 82px minmax(0, 1fr) 38px 38px; }
+  .quote-customer-summary { grid-template-columns: minmax(0, 1fr) auto; }
+  .quote-customer-summary-label { display: none; }
   .quote-customer-summary-value { display: grid; gap: 2px; }
   .quote-customer-picker-search { grid-template-columns: 1fr; gap: 5px; }
   .quote-customer-manual-fields label { grid-template-columns: 1fr; gap: 5px; }

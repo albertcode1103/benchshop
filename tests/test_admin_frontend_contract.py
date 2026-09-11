@@ -467,7 +467,7 @@ class AdminFrontendContractTests(unittest.TestCase):
 
     def test_customer_picker_and_large_quote_editor_accessibility_contract(self) -> None:
         self.assertNotIn('placeholder="姓名、邮箱或手机号" autofocus', ADMIN_JS)
-        self.assertIn('window.matchMedia("(min-width: 601px)").matches', ADMIN_JS)
+        self.assertIn('window.matchMedia("(min-width: 701px)").matches', ADMIN_JS)
         self.assertIn('requestAnimationFrame(() => input.focus())', ADMIN_JS)
         self.assertIn('.quote-customer-result:focus-visible', ADMIN_CSS)
         self.assertIn('outline: 2px solid var(--orange)', ADMIN_CSS)
@@ -588,7 +588,10 @@ class AdminFrontendContractTests(unittest.TestCase):
         self.assertIn('quote-commerce-group-title', ADMIN_JS)
         self.assertIn('quote-customer-summary', ADMIN_JS)
         self.assertIn('openRecipientPicker', ADMIN_JS)
-        self.assertIn('openManualCustomerEditor', ADMIN_JS)
+        self.assertIn('name="manual_address"', ADMIN_JS)
+        self.assertIn('data-manual-customer', ADMIN_JS)
+        self.assertIn('event.submitter?.value !== "apply"', ADMIN_JS)
+        self.assertNotIn('openManualCustomerEditor', ADMIN_JS)
         self.assertIn('customer_phone:', ADMIN_JS)
         self.assertIn('手动填写的客户未绑定系统账号', ADMIN_JS)
         self.assertIn('class="quote-customer-result"', ADMIN_JS)

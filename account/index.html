@@ -8,9 +8,9 @@
   <link rel="icon" type="image/png" href="../tb/site/LOGO.png?v=20260831" />
   <link rel="stylesheet" href="../css/main.css?v=20260904-1" />
   <link rel="stylesheet" href="../css/components.css?v=20260909-1" />
-  <link rel="stylesheet" href="account.css?v=20260909-4" />
+  <link rel="stylesheet" href="account.css?v=20260911-1" />
   <script src="../js/runtime-config.js?v=20260910-2"></script>
-  <script src="account.js?v=20260909-3" defer></script>
+  <script src="account.js?v=20260911-1" defer></script>
 </head>
 <body class="profile-page">
   <a id="profile-skip-link" class="skip-link" href="#account-main">跳到主要内容</a>
@@ -64,8 +64,6 @@
           <label><span id="profile-name-label">姓名</span><input id="profile-display-name" name="display_name" maxlength="100" autocomplete="name" required /></label>
           <label><span id="profile-gender-label">性别</span><select id="profile-gender" name="gender"><option value="">未设置</option><option value="male">男</option><option value="female">女</option><option value="other">其他</option></select></label>
           <label><span id="profile-birth-label">生日</span><input id="profile-birth-date" name="birth_date" type="date" autocomplete="bday" /></label>
-          <label><span id="profile-signature-label">个性签名</span><textarea id="profile-signature" name="signature" maxlength="160" rows="4"></textarea><small id="profile-signature-count">0 / 160</small></label>
-          <label><span id="profile-address-label">地址</span><textarea id="profile-address" name="address" maxlength="500" rows="3" autocomplete="street-address"></textarea></label>
           <div id="profile-details-status" class="profile-form-status" role="status" aria-live="polite"></div>
           <footer class="profile-form-actions"><button id="profile-details-submit" class="btn btn-primary" type="submit">保存资料</button></footer>
         </form>
@@ -80,6 +78,12 @@
           <label><span id="profile-contact-password-label">当前密码</span><input id="profile-contact-password" name="current_password" type="password" autocomplete="current-password" required /></label>
           <div id="profile-contact-status" class="profile-form-status" role="status" aria-live="polite"></div>
           <footer class="profile-form-actions"><button id="profile-contact-submit" class="btn btn-primary" type="submit">保存并重新登录</button></footer>
+        </form>
+        <form id="profile-address-form" class="profile-form" novalidate>
+          <label><span id="profile-address-label">联系地址</span><textarea id="profile-address" name="address" maxlength="500" rows="2" autocomplete="street-address" aria-describedby="profile-address-help"></textarea></label>
+          <p id="profile-address-help" class="profile-field-help">附加联系信息，保存地址无需重新登录。</p>
+          <div id="profile-address-status" class="profile-form-status" role="status" aria-live="polite"></div>
+          <footer class="profile-form-actions"><button id="profile-address-submit" class="btn btn-primary" type="submit">保存地址</button></footer>
         </form>
       </section>
 

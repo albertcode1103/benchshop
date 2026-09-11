@@ -384,16 +384,20 @@ def create_cart_inquiry(user_id: str, language: str, message: str, idempotency_k
     return _insert_inquiry(user_id, "cart", loaded, language, message, idempotency_key)
 
 
-def list_customer_inquiries(user_id: str, page: int = 1, page_size: int = 20) -> Dict[str, Any]:
+def list_customer_inquiries(user_id: str, page: int = 1, page_size: int = 20, query: str = "", status: str = "", hidden: bool = False) -> Dict[str, Any]:
     safe_page = max(int(page), 1)
     safe_size = min(max(int(page_size), 1), 50)
     with get_connection() as db:
-        total = int(db.execute("SELECT COUNT(*) FROM customer_inquiries WHERE created_by = ?", (user_id,)).fetchone()[0])
+        where = """created_by=? AND COALESCE((SELECT hidden FROM personal_business_visibility v WHERE v.user_id=? AND v.resource_type='inquiries' AND v.resource_id=i.id),0)=?
+            AND (?='' OR instr(lower(inquiry_number),lower(?))>0) AND (?='' OR status=?)"""
+        params = (user_id, user_id, int(hidden), query, query, status, status)
+        total = int(db.execute(f"SELECT COUNT(*) FROM customer_inquiries i WHERE {where}", params).fetchone()[0])
+        safe_page = min(safe_page, max(1, (total + safe_size - 1) // safe_size))
         rows = db.execute(
-            "SELECT * FROM customer_inquiries WHERE created_by = ? ORDER BY created_at DESC LIMIT ? OFFSET ?",
-            (user_id, safe_size, (safe_page - 1) * safe_size),
+            f"SELECT i.* FROM customer_inquiries i WHERE {where} ORDER BY created_at DESC,id LIMIT ? OFFSET ?",
+            (*params, safe_size, (safe_page - 1) * safe_size),
         ).fetchall()
-    return {"items": [dict(row) for row in rows], "total": total, "page": safe_page, "page_size": safe_size}
+    return {"items": [dict(row, hidden=hidden) for row in rows], "total": total, "page": safe_page, "page_size": safe_size}
 
 
 def get_customer_inquiry(inquiry_id: str, user_id: str, language: str = "zh") -> Optional[Dict[str, Any]]:
@@ -642,9 +646,9 @@ def inquiry_quote_items(inquiry: Dict[str, Any], currency: str = "CNY") -> List[
             "captured_availability": entry.get("captured_availability") or availability,
             "availability_details": entry.get("availability_details") or [],
         })
-        for category in snapshot.get("categories") or []:
+        for category_index, category in enumerate(snapshot.get("categories") or []):
             category_id = str(category.get("id") or "").strip().lower()
-            for option in category.get("options") or []:
+            for option_index, option in enumerate(category.get("options") or []):
                 base_option_type = str(option.get("base_option_type") or "").strip().lower()
                 if category_id in {"motor", "channel"} or base_option_type in {"motor", "channel"}:
                     continue
@@ -658,6 +662,10 @@ def inquiry_quote_items(inquiry: Dict[str, Any], currency: str = "CNY") -> List[
                     "device_label": label, "code": option.get("code") or "", "quantity": 1,
                     "price": selected_price, "price_cny": price_cny, "price_usd": price_usd,
                     "reference_price": selected_price, "category_id": category_id,
+                    "category_name": category.get("name") or "",
+                    "category_name_en": category.get("name_en") or "",
+                    "category_sort_order": -1 if is_power else category.get("sort_order", category_index),
+                    "sort_order": option.get("sort_order", option_index),
                     "locked": is_power, "configuration_role": "base_power" if is_power else "optional",
                     "availability": availability,
                     "captured_availability": entry.get("captured_availability") or availability,

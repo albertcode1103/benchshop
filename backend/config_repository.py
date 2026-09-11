@@ -37,7 +37,7 @@ def _build_legacy_snapshot(product_id: str, color: str, selections: Dict[str, An
         "categories": [],
     }
 
-    for category in product["categories"]:
+    for category_index, category in enumerate(product["categories"]):
         requested = selections.get(category["id"])
         requested_ids = requested if isinstance(requested, list) else [requested] if requested else []
         option_map = {option["id"]: option for option in category["options"]}
@@ -55,7 +55,8 @@ def _build_legacy_snapshot(product_id: str, color: str, selections: Dict[str, An
                     "id": category["id"],
                     "name": category["name"],
                     "multiple": category["multiple"],
-                    "options": [option_map[option_id] for option_id in requested_ids],
+                    "sort_order": category_index,
+                    "options": [dict(option, sort_order=option_index) for option_index, option in enumerate(category["options"]) if option["id"] in requested_ids],
                 }
             )
     motor_category = next((category for category in snapshot["categories"] if category["id"] == "motor"), None)
@@ -113,7 +114,7 @@ def _build_v2_snapshot(product: Dict[str, Any], color: str, selections: Dict[str
         )
 
     optional_ids: List[str] = []
-    for category in product.get("optional_categories") or []:
+    for category_index, category in enumerate(product.get("optional_categories") or []):
         option_map = {option["id"]: option for option in category.get("options") or []}
         requested = selections.get(category["id"])
         requested_ids = requested if isinstance(requested, list) else [requested] if requested else []
@@ -124,8 +125,9 @@ def _build_v2_snapshot(product: Dict[str, Any], color: str, selections: Dict[str
             continue
         optional_ids.extend(requested_ids)
         category_options = []
-        for option_id in requested_ids:
-            option = option_map[option_id]
+        for option_index, option in enumerate(category.get("options") or []):
+            if option["id"] not in requested_ids:
+                continue
             category_options.append(
                 {
                     "id": option["id"],
@@ -142,12 +144,14 @@ def _build_v2_snapshot(product: Dict[str, Any], color: str, selections: Dict[str
                     "price_usd": option["price_usd"],
                     "price_confirmed": option["price_confirmed"],
                     "mapping_id": option.get("mapping_id"),
+                    "sort_order": option_index,
                 }
             )
         categories.append(
             {
                 "id": category["id"],
                 "name": category["name"],
+                "sort_order": category_index,
                 "multiple": True,
                 "options": category_options,
             }
@@ -510,7 +514,7 @@ def search_shares(
 
 def deactivate_share(share_id: str) -> bool:
     with get_connection() as connection:
-        cursor = connection.execute("UPDATE config_shares SET active = 0 WHERE id = ?", (share_id,))
+        cursor = connection.execute("UPDATE config_shares SET active = 0,owner_closed=0,customer_version=customer_version+1 WHERE id = ?", (share_id,))
     return cursor.rowcount > 0
 
 

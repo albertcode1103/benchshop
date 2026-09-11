@@ -202,9 +202,24 @@ def _safe_money(value: Any) -> float:
         return 0.0
 
 
+class _EmphasizedParagraph(Paragraph):
+    """Embolden embedded CJK glyphs without modifying the licensed font file."""
+
+    def draw(self):
+        self.canv.saveState()
+        self.canv.setStrokeColor(self.style.textColor)
+        self.canv.setLineWidth(0.25)
+        self.canv._code.append("BT 2 Tr ET")
+        try:
+            super().draw()
+        finally:
+            self.canv.restoreState()
+
+
 def _paragraph(value: Any, style: ParagraphStyle, empty: str = "-") -> Paragraph:
     text = escape(_clean(value)).replace("\n", "<br/>")
-    return Paragraph(text or escape(empty), style)
+    paragraph_type = _EmphasizedParagraph if style.name == "BotenSection" else Paragraph
+    return paragraph_type(text or escape(empty), style)
 
 
 def _styles() -> Dict[str, ParagraphStyle]:
@@ -486,11 +501,12 @@ def _selected_single(snapshot: Dict[str, Any], category_id: str) -> str:
 
 def _section_heading(text: str, styles: Dict[str, ParagraphStyle]) -> Table:
     table = Table([[_paragraph(text, styles["section"], "")]], colWidths=[170 * mm], hAlign="LEFT")
+    table.keepWithNext = True
     table.setStyle(TableStyle([("LINEBELOW", (0, 0), (-1, -1), 1, ACCENT_BLUE), ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0), ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 2)]))
     return table
 
 
-def _item_table(title: str, items: Sequence[Dict[str, Any]], styles: Dict[str, ParagraphStyle], language: str, currency: str = "", include_prices: bool = False, start_index: int = 1, grand_total: Optional[float] = None) -> Tuple[Table, float]:
+def _item_table(title: str, items: Sequence[Dict[str, Any]], styles: Dict[str, ParagraphStyle], language: str, currency: str = "", include_prices: bool = False, start_index: int = 1, grand_total: Optional[float] = None, primary_group: bool = False) -> Tuple[Table, float]:
     copy = PDF_COPY[language]
     headers = [copy["number"], copy["item_code"], copy["item_name"], copy["quantity"]]
     widths = [12 * mm, 30 * mm, 108 * mm, 20 * mm]
@@ -499,7 +515,7 @@ def _item_table(title: str, items: Sequence[Dict[str, Any]], styles: Dict[str, P
         headers.extend([copy["unit_price"], copy["subtotal"]])
         widths = [10 * mm, 26 * mm, 64 * mm, 15 * mm, 27.5 * mm, 27.5 * mm]
         right_columns = [3, 4, 5]
-    rows: List[List[Any]] = [[_paragraph(title, styles["subsection"], "")] + [""] * (len(headers) - 1)]
+    rows: List[List[Any]] = [[_paragraph(title, styles["section" if primary_group else "subsection"], "")] + [""] * (len(headers) - 1)]
     rows.append([_paragraph(label, styles["header"], "") for label in headers])
     subtotal = 0.0
     visible_items = [item for item in items if _positive_quantity(item.get("quantity")) > 0]
@@ -517,6 +533,14 @@ def _item_table(title: str, items: Sequence[Dict[str, Any]], styles: Dict[str, P
             rows.append(["", _paragraph(copy["total"], styles["total_label"]), "", "", "", _paragraph("{} {:,.2f}".format(currency, grand_total), styles["total_money"])])
     table = Table(rows, colWidths=widths, repeatRows=2, hAlign="LEFT", splitByRow=1)
     table.setStyle(_table_style(right_columns=right_columns, title_row=True))
+    if primary_group:
+        table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.white),
+            ("LEFTPADDING", (0, 0), (-1, 0), 0),
+            ("TOPPADDING", (0, 0), (-1, 0), 0),
+            ("BOTTOMPADDING", (0, 0), (-1, 0), 2),
+            ("LINEBELOW", (0, 0), (-1, 0), 1, ACCENT_BLUE),
+        ]))
     if include_prices:
         if grand_total is not None:
             table.setStyle(TableStyle([
@@ -608,7 +632,7 @@ def _commerce_story(entries: Sequence[Dict[str, Any]], context: PdfDocumentConte
         if not items:
             continue
         story.append(CondPageBreak(30 * mm))
-        table, _ = _item_table(copy[title_key], items, styles, context.language)
+        table, _ = _item_table(copy[title_key], items, styles, context.language, primary_group=True)
         story.extend([table, Spacer(1, 2 * mm)])
     unknown = []
     for entry in canonical:
@@ -729,23 +753,30 @@ def _quote_device_story(group: Dict[str, Any], index: int, styles: Dict[str, Par
     model = _clean(product.get("code") or product.get("model"))
     name = _clean(product.get("name"))
     heading = "{} {} - {}".format(copy["device"], index, " - ".join(part for part in (model, name) if part) or "-")
-    summary_items = [(_clean(spec.get("label") or spec.get("key")), spec.get("value")) for spec in product.get("device_specifications") or [] if isinstance(spec, dict)]
+    # Field labels belong to the document language, not its currency or the
+    # source snapshot's language. Values remain the immutable captured values.
+    spec_labels = {"color": copy["appearance"], "motor": copy["motor"], "voltage": copy["power"], "power": copy["power"], "channel": copy["channel"]}
+    summary_items = [(_clean(spec_labels.get(spec.get("key"), spec.get("label") or spec.get("key"))), spec.get("value")) for spec in product.get("device_specifications") or [] if isinstance(spec, dict)]
     summary = _summary_table(summary_items, styles)
     story: List[Any] = [CondPageBreak(38 * mm), _section_heading(heading, styles)]
     if summary:
         story.extend([summary, Spacer(1, 2 * mm)])
     total = 0.0
     grouped_options: Dict[str, List[Dict[str, Any]]] = {}
+    category_labels: Dict[str, str] = {}
     for item in group["options"]:
-        category = _clean(item.get("category_name") or item.get("category_label")) or (copy["basic_configuration"] if item.get("kind") == "surcharge" else copy["optional_configuration"])
-        grouped_options.setdefault(category, []).append(item)
+        category = _clean(item.get("category_name") or item.get("category_label"))
+        category = category or (copy["basic_configuration"] if item.get("kind") == "surcharge" else ("Unclassified Options" if context.language == "en" else "未分类配置"))
+        key = _clean(item.get("category_id")) or "legacy:{}".format(category)
+        category_labels.setdefault(key, category)
+        grouped_options.setdefault(key, []).append(item)
     base_table, subtotal = _item_table(copy["base_price"], [product], styles, context.language, context.currency, True, grand_total=grand_total if not grouped_options else None)
     story.extend(_guarded_table(base_table, grand_total is not None and not grouped_options) + [Spacer(1, 2 * mm)])
     total += subtotal
     option_groups = list(grouped_options.items())
     for option_index, (category, options) in enumerate(option_groups):
         final_total = grand_total if option_index == len(option_groups) - 1 else None
-        table, subtotal = _item_table(category, options, styles, context.language, context.currency, True, grand_total=final_total)
+        table, subtotal = _item_table(category_labels[category], options, styles, context.language, context.currency, True, grand_total=final_total)
         story.extend(_guarded_table(table, final_total is not None) + [Spacer(1, 2 * mm)])
         total += subtotal
     return story, total
@@ -777,7 +808,7 @@ def quote_pdf(quote: Dict[str, Any]) -> bytes:
     for group_index, (items, title_key) in enumerate(trailing_groups):
         story.append(CondPageBreak(32 * mm))
         final_total = grand_total if group_index == len(trailing_groups) - 1 else None
-        table, subtotal = _item_table(copy[title_key], items, styles, language, currency, True, grand_total=final_total)
+        table, subtotal = _item_table(copy[title_key], items, styles, language, currency, True, grand_total=final_total, primary_group=True)
         story.extend(_guarded_table(table, final_total is not None) + [Spacer(1, 2 * mm)])
     if not devices and not tools and not accessories and not other:
         story.append(_paragraph(copy["empty"], styles["body"]))

@@ -1529,12 +1529,11 @@ function openQuoteEditor({ quoteId = null, quoteVersion = null, configId = null,
         <input name="customer_name" type="hidden" value="${escapeHtml(customerName)}" />
         <input name="customer_email" type="hidden" value="${escapeHtml(customerEmail)}" />
         <input name="customer_phone" type="hidden" value="${escapeHtml(customerPhone)}" />
-        <label class="quote-customer-address"><span>客户地址</span><textarea name="customer_address" maxlength="500" rows="2" autocomplete="street-address">${escapeHtml(customerAddress)}</textarea></label>
+        <input name="customer_address" type="hidden" value="${escapeHtml(customerAddress)}" />
         <select name="recipient_user_id" hidden><option value="${escapeHtml(recipientUserId)}" selected>${escapeHtml(recipientLabel || customerName || customerEmail || "未选择客户")}</option></select>
-        <span class="quote-customer-summary-label">接收客户</span>
+        <span class="quote-customer-summary-label">客户信息</span>
         <div class="quote-customer-summary-value"><strong>${escapeHtml(customerName || recipientLabel || "尚未选择客户")}</strong>${customerEmail ? `<small>${escapeHtml(customerEmail)}</small>` : ""}${customerPhone ? `<small>${escapeHtml(customerPhone)}</small>` : ""}</div>
-        <button class="icon-button quote-customer-search" type="button" aria-label="搜索并更换接收客户" title="搜索客户">⌕</button>
-        <button class="icon-button quote-customer-manual" type="button" aria-label="手动填写客户资料" title="手动填写客户资料">✎</button>
+        <button class="button button-secondary quote-customer-search" type="button">客户信息</button>
       </div>
     </div>
     <p class="quote-editor-error" role="alert" hidden></p>
@@ -1662,82 +1661,76 @@ function openQuoteEditor({ quoteId = null, quoteVersion = null, configId = null,
     updateAddSelectors();
     return referenceCatalog;
   };
-  let recipientSearchTimer = null;
   const loadRecipients = async (query = "") => {
     const result = await api(`/api/v1/staff/customers?query=${encodeURIComponent(query)}`);
     return result.items || [];
   };
-  const selectRecipient = (customer) => {
-    const name = customer.display_name || customer.name || customer.email || customer.phone || "未命名客户";
-    const select = $("[name=recipient_user_id]", dialog);
-    select.innerHTML = `<option value="${escapeHtml(customer.id)}" selected>${escapeHtml(name)}</option>`;
-    $("[name=customer_name]", dialog).value = name;
-    $("[name=customer_email]", dialog).value = customer.email || "";
-    $("[name=customer_phone]", dialog).value = customer.phone || "";
-    $("[name=customer_address]", dialog).value = customer.address || "";
-    $(".quote-customer-summary", dialog).classList.remove("is-manual");
-    $(".quote-customer-summary-value", dialog).innerHTML = `<strong>${escapeHtml(name)}</strong>${customer.email ? `<small>${escapeHtml(customer.email)}</small>` : ""}${customer.phone ? `<small>${escapeHtml(customer.phone)}</small>` : ""}`;
-    updateDeliveryAvailability();
-  };
   const openRecipientPicker = async () => {
     const picker = document.createElement("dialog");
     picker.className = "share-dialog quote-customer-picker";
-    picker.innerHTML = `<form method="dialog" class="share-dialog-card quote-customer-picker-card"><header><div><span class="eyebrow">CUSTOMER</span><h2>选择接收客户</h2></div><button class="icon-button" value="cancel" aria-label="关闭">×</button></header><label class="quote-customer-picker-search"><span>搜索客户</span><input type="search" autocomplete="off" placeholder="姓名、邮箱或手机号" /></label><div class="quote-customer-picker-results" aria-live="polite"><div class="empty">正在读取客户…</div></div><footer><button class="button button-secondary" value="cancel">取消</button></footer></form>`;
+    picker.setAttribute("aria-labelledby", "quote-customer-dialog-title");
+    const fields = ["name", "phone", "email", "address"];
+    let selectedId = $("[name=recipient_user_id]", dialog).value;
+    let selectedLabel = $("[name=recipient_user_id]", dialog).selectedOptions[0]?.textContent || "";
+    const initial = Object.fromEntries(fields.map((key) => [key, $(`[name=customer_${key}]`, dialog).value]));
+    picker.innerHTML = `<form method="dialog" class="share-dialog-card quote-customer-picker-card"><header><div><span class="eyebrow">CUSTOMER</span><h2 id="quote-customer-dialog-title">客户信息</h2><p>选择客户自动填充；修改仅用于本次报价，不更改客户账户资料。</p></div><button class="icon-button" value="cancel" formnovalidate aria-label="关闭">×</button></header><div class="quote-customer-picker-body"><label class="quote-customer-picker-search"><span>搜索客户</span><input name="customer_query" type="search" autocomplete="off" placeholder="姓名、邮箱或手机号…" /></label><div class="quote-customer-picker-results" aria-live="polite"></div><div class="quote-customer-binding"><span class="quote-customer-binding-label"></span><button class="button button-secondary" type="button" data-manual-customer>手动填写</button></div><div class="quote-customer-manual-fields">${fields.map((key) => `<label><span>${({ name: "姓名", phone: "电话", email: "邮箱", address: "地址" })[key]}</span>${key === "address" ? `<textarea name="manual_address" maxlength="500" rows="2" autocomplete="street-address">${escapeHtml(initial[key])}</textarea>` : `<input name="manual_${key}" type="${key === "email" ? "email" : key === "phone" ? "tel" : "text"}" maxlength="${key === "name" ? 100 : key === "email" ? 254 : 100}" autocomplete="${key === "phone" ? "tel" : key}" ${key === "email" ? 'spellcheck="false"' : ""} value="${escapeHtml(initial[key])}" ${key === "name" ? "required" : ""} />`}</label>`).join("")}</div><p class="quote-customer-feedback" role="status" aria-live="polite"></p></div><footer><button class="button button-secondary" value="cancel" formnovalidate>取消</button><button class="button button-primary" value="apply">应用</button></footer></form>`;
     document.body.appendChild(picker);
-    const input = $("input", picker);
+    const input = $('[name="customer_query"]', picker);
+    // Match the quote API limits; selecting an account does not relax them.
+    for (const [key, limit] of Object.entries({ name: 200, email: 200, phone: 80, address: 500 })) {
+      $(`[name=manual_${key}]`, picker).maxLength = limit;
+    }
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") event.preventDefault();
+    });
     const results = $(".quote-customer-picker-results", picker);
+    const readDraft = () => Object.fromEntries(fields.map((key) => [key, $(`[name=manual_${key}]`, picker).value]));
+    let baseline = JSON.stringify(readDraft());
+    const updateBinding = () => { $(".quote-customer-binding-label", picker).textContent = selectedId ? `接收账号：${selectedLabel}` : "未绑定账号，仅可保存和导出 PDF"; };
+    updateBinding();
     let records = [];
+    let searchVersion = 0;
+    let searchTimer;
     const renderResults = () => {
       results.innerHTML = records.length ? records.map((customer) => `<button type="button" class="quote-customer-result" data-customer-id="${escapeHtml(customer.id)}"><span><strong>${escapeHtml(customer.display_name || customer.email || customer.phone || "未命名客户")}</strong>${customer.email ? `<small>${escapeHtml(customer.email)}</small>` : ""}${customer.phone ? `<small>${escapeHtml(customer.phone)}</small>` : ""}</span><b aria-hidden="true">选择</b></button>`).join("") : '<div class="empty">没有找到匹配客户</div>';
     };
     const search = async () => {
+      const version = ++searchVersion;
       results.innerHTML = '<div class="empty">正在搜索…</div>';
-      try { records = await loadRecipients(input.value.trim()); renderResults(); }
-      catch (error) { results.innerHTML = `<div class="empty">${escapeHtml(error.message || "客户读取失败")}</div>`; }
+      try { const found = await loadRecipients(input.value.trim()); if (version !== searchVersion || !picker.open) return; records = found; renderResults(); }
+      catch (error) { if (version === searchVersion && picker.open) results.innerHTML = `<div class="empty">${escapeHtml(error.message || "客户读取失败，请重新搜索")}</div>`; }
     };
-    input.addEventListener("input", () => { clearTimeout(recipientSearchTimer); recipientSearchTimer = setTimeout(search, 250); });
-    results.addEventListener("click", (event) => {
+    input.addEventListener("input", () => { ++searchVersion; records = []; results.innerHTML = '<div class="empty">正在搜索…</div>'; clearTimeout(searchTimer); searchTimer = setTimeout(search, 250); });
+    results.addEventListener("click", async (event) => {
       const button = event.target.closest("[data-customer-id]");
       if (!button) return;
       const customer = records.find((item) => String(item.id) === button.dataset.customerId);
       if (!customer) return;
-      selectRecipient(customer);
-      setQuoteError();
-      picker.close();
+      if (JSON.stringify(readDraft()) !== baseline && !await confirmAction("更换客户", "将替换当前填写的姓名、电话、邮箱和地址。", "替换")) return;
+      if (!picker.open) return;
+      selectedId = customer.id;
+      selectedLabel = customer.display_name || customer.name || customer.email || customer.phone || "未命名客户";
+      const values = { name: selectedLabel, phone: customer.phone || "", email: customer.email || "", address: customer.address || "" };
+      fields.forEach((key) => { $(`[name=manual_${key}]`, picker).value = values[key]; });
+      baseline = JSON.stringify(readDraft());
+      updateBinding();
     });
-    picker.addEventListener("close", () => picker.remove(), { once: true });
-    picker.showModal();
-    if (window.matchMedia("(min-width: 601px)").matches) requestAnimationFrame(() => input.focus());
-    await search();
-  };
-  const openManualCustomerEditor = () => {
-    const editor = document.createElement("dialog");
-    editor.className = "share-dialog quote-customer-picker quote-customer-manual-dialog";
-    editor.innerHTML = `<form method="dialog" class="share-dialog-card quote-customer-picker-card quote-customer-manual-card"><header><div><span class="eyebrow">CUSTOMER</span><h2>手动填写客户资料</h2><p>仅用于保存报价和 PDF，不会发送到账户。</p></div><button class="icon-button" value="cancel" aria-label="关闭">×</button></header><div class="quote-customer-manual-fields"><label><span>客户姓名</span><input name="manual_name" autocomplete="name" value="${escapeHtml($("[name=customer_name]", dialog).value)}" required /></label><label><span>客户邮箱</span><input name="manual_email" type="email" autocomplete="email" value="${escapeHtml($("[name=customer_email]", dialog).value)}" /></label><label><span>客户电话</span><input name="manual_phone" type="tel" autocomplete="tel" value="${escapeHtml($("[name=customer_phone]", dialog).value)}" /></label></div><footer><button class="button button-quiet" value="cancel">取消</button><button class="button button-primary" value="apply">应用资料</button></footer></form>`;
-    $("header p", editor).textContent = $("[name=recipient_user_id]", dialog).value
-      ? "修改仅用于本次报价和 PDF，不修改客户账户资料；接收客户保持不变。"
-      : "仅用于保存报价和 PDF，不会发送到账户。";
-    document.body.appendChild(editor);
-    editor.addEventListener("close", () => editor.remove(), { once: true });
-    $("form", editor).addEventListener("submit", (event) => {
+    $('[data-manual-customer]', picker).addEventListener("click", () => { selectedId = ""; selectedLabel = ""; updateBinding(); });
+    $("form", picker).addEventListener("submit", (event) => {
       if (event.submitter?.value !== "apply") return;
       event.preventDefault();
-      const name = $("[name=manual_name]", editor).value.trim();
-      const email = $("[name=manual_email]", editor).value.trim();
-      const phone = $("[name=manual_phone]", editor).value.trim();
-      if (!name) { $("[name=manual_name]", editor).focus(); return; }
-      $("[name=customer_name]", dialog).value = name;
-      $("[name=customer_email]", dialog).value = email;
-      $("[name=customer_phone]", dialog).value = phone;
-      // Editing PDF contact details must preserve the selected delivery account.
-      const isManual = !$("[name=recipient_user_id]", dialog).value;
-      $(".quote-customer-summary", dialog).classList.toggle("is-manual", isManual);
-      $(".quote-customer-summary-value", dialog).innerHTML = `<strong>${escapeHtml(name)}${isManual ? " <em>手动客户</em>" : ""}</strong>${email ? `<small>${escapeHtml(email)}</small>` : ""}${phone ? `<small>${escapeHtml(phone)}</small>` : ""}`;
-      updateDeliveryAvailability();
-      setQuoteError();
-      editor.close();
+      const values = Object.fromEntries(Object.entries(readDraft()).map(([key, value]) => [key, value.trim()]));
+      if (!values.name) { $(".quote-customer-feedback", picker).textContent = "请填写客户姓名。"; $('[name=manual_name]', picker).focus(); return; }
+      fields.forEach((key) => { $(`[name=customer_${key}]`, dialog).value = values[key]; });
+      $("[name=recipient_user_id]", dialog).innerHTML = `<option value="${escapeHtml(selectedId)}" selected>${escapeHtml(selectedLabel || "手动客户")}</option>`;
+      $(".quote-customer-summary", dialog).classList.toggle("is-manual", !selectedId);
+      $(".quote-customer-summary-value", dialog).innerHTML = `<strong>${escapeHtml(values.name)}</strong><small>${escapeHtml([values.phone, values.email].filter(Boolean).join(" · ") || "未填写联系方式")}</small>`;
+      updateDeliveryAvailability(); setQuoteError(); picker.close("apply");
     });
-    editor.showModal();
+    picker.addEventListener("close", () => { clearTimeout(searchTimer); ++searchVersion; picker.remove(); $(".quote-customer-search", dialog).focus(); }, { once: true });
+    picker.showModal();
+    if (window.matchMedia("(min-width: 701px)").matches) requestAnimationFrame(() => input.focus());
+    await search();
   };
   const collectQuoteItems = () => syncQuoteItemsFromInputs();
   const updateTotal = () => {
@@ -1781,6 +1774,8 @@ function openQuoteEditor({ quoteId = null, quoteVersion = null, configId = null,
           quantity: 1, price: referencePrice, quoted_price: referencePrice, reference_price: referencePrice,
           price_cny: Math.max(0, toFiniteNumber(record.price)), price_usd: Math.max(0, toFiniteNumber(record.price_usd)),
           price_overridden: false, availability: "active", category_id: record.category_id,
+          category_name: language === "en" ? record.category_name_en || "" : record.category_name || "",
+          category_name_en: record.category_name_en || "",
           category_sort_order: record.category_sort_order, sort_order: record.sort_order,
         };
         if (kind === "option") {
@@ -1826,25 +1821,6 @@ function openQuoteEditor({ quoteId = null, quoteVersion = null, configId = null,
     list.scrollLeft += event.deltaX;
   }, { passive: false });
   $(".quote-customer-search", dialog).addEventListener("click", () => openRecipientPicker().catch((error) => setQuoteError(error.message)));
-  $(".quote-customer-manual", dialog).addEventListener("click", openManualCustomerEditor);
-  const fillCustomer = document.createElement("button");
-  fillCustomer.type = "button";
-  fillCustomer.className = "button button-secondary quote-customer-fill";
-  fillCustomer.textContent = "一键填充客户资料";
-  $(".quote-customer-summary", dialog).appendChild(fillCustomer);
-  fillCustomer.addEventListener("click", async () => {
-    const id = $("[name=recipient_user_id]", dialog).value;
-    if (!id) { await openRecipientPicker(); return; }
-    fillCustomer.disabled = true;
-    try {
-      const result = await api(`/api/v1/staff/customers?customer_id=${encodeURIComponent(id)}`);
-      const customer = (result.items || []).find((item) => item.id === id);
-      if (!customer) throw new Error("客户资料不可用，请重新选择客户");
-      selectRecipient(customer);
-      setQuoteError();
-    } catch (error) { setQuoteError(error.message); }
-    finally { fillCustomer.disabled = false; }
-  });
   $(".quote-auto-price", dialog).addEventListener("click", async (event) => {
     const button = event.currentTarget;
     const originalText = button.textContent;
@@ -2158,12 +2134,12 @@ async function quoteShare(code) {
       const priceLines = (value) => new Map(((value || {}).lines || []).map((line) => [line.source_id, toFiniteNumber(line.amount)]));
       const cnyLines = priceLines(cnyPricing);
       const usdLines = priceLines(usdPricing);
-      (snapshot.categories || []).forEach((category) => (category.options || []).forEach((option) => {
+      (snapshot.categories || []).forEach((category, categoryIndex) => (category.options || []).forEach((option, optionIndex) => {
         if (["motor", "voltage", "channel"].includes(category.id) && category.id !== "voltage") return;
         const priceCny = cnyLines.has(option.id) ? cnyLines.get(option.id) : toFiniteNumber(option.price_cny ?? option.price);
         const priceUsd = usdLines.has(option.id) ? usdLines.get(option.id) : toFiniteNumber(option.price_usd);
         const isPower = ["voltage", "power"].includes(category.id) || option.base_option_type === "power";
-        items.push({ kind: isPower ? "surcharge" : "option", source_id: option.id, name: option.name, device_label: deviceLabel, code: option.code || "", price: priceCny, price_cny: priceCny, price_usd: priceUsd, reference_price: priceCny, quantity: 1, locked: isPower, configuration_role: isPower ? "base_power" : "optional", category_id: category.id });
+        items.push({ kind: isPower ? "surcharge" : "option", source_id: option.id, name: option.name, device_label: deviceLabel, code: option.code || "", price: priceCny, price_cny: priceCny, price_usd: priceUsd, reference_price: priceCny, quantity: 1, locked: isPower, configuration_role: isPower ? "base_power" : "optional", category_id: category.id, category_name: category.name || "", category_name_en: category.name_en || "", category_sort_order: isPower ? -1 : (category.sort_order ?? categoryIndex), sort_order: option.sort_order ?? optionIndex });
       }));
     });
     openQuoteEditor({ configId: share.config_id, title: `分享配置 ${code}`, items, currency: "CNY", sourceShareId: share.id, sourceType: "share", sourceDocumentVersion: share.document_version || 1, sourceDocumentId: share.id, sourceCode: share.code || code, customerName: share.customer_name || share.sender_name || "", customerEmail: share.customer_email || share.sender_email || "", customerPhone: share.customer_phone || share.sender_phone || "", language: state.catalogLanguage === "en" ? "en" : "zh", recipientUserId: share.created_by || "", recipientLabel: share.sender_name || share.customer_name || share.sender_email || "分享创建者" });
