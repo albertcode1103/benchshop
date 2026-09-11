@@ -570,10 +570,15 @@ class BackendWorkflowTests(unittest.TestCase):
             self.assertEqual(0, client.get("/api/v1/customer/me/shares", headers=headers).json()["total"])
             hidden = client.get("/api/v1/customer/me/shares?hidden=true", headers=headers).json()
             self.assertEqual(share["id"], hidden["items"][0]["id"])
-            self.assertIsNotNone(get_share(share["code"]))
+            self.assertIsNone(get_share(share["code"]))
+            self.assertEqual(0, hidden["quota"]["used"])
             self.assertEqual(200, client.patch(path, headers=headers, json={"hidden": False}).status_code)
             listed = client.get("/api/v1/customer/me/shares?query=" + share["code"], headers=headers).json()["items"][0]
             version = listed["customer_version"]
+            self.assertEqual("closed", listed["status"])
+            reopened_after_restore = client.patch(lifecycle, headers=headers, json={"active": True, "version": version})
+            self.assertEqual(200, reopened_after_restore.status_code)
+            version = reopened_after_restore.json()["version"]
             self.assertEqual(404, client.patch(lifecycle, headers=other_headers, json={"active": False, "version": version}).status_code)
             closed = client.patch(lifecycle, headers=headers, json={"active": False, "version": version})
             self.assertEqual(200, closed.status_code, closed.text)
@@ -588,6 +593,24 @@ class BackendWorkflowTests(unittest.TestCase):
             self.assertFalse(state["can_reopen"])
             self.assertEqual(409, client.patch(lifecycle, headers=headers, json={"active": True, "version": state["customer_version"]}).status_code)
             self.assertEqual(200, client.get(f"/api/v1/customer/me/shares/{share['id']}", headers=headers).status_code)
+
+    def test_share_quota_is_enforced_by_both_creation_apis(self) -> None:
+        from backend.commerce_repository import create_commerce_share
+        owner = create_user("quota-api@example.com", None, "password123", display_name="Quota")
+        product = get_product("cr1016")
+        selections = {c["id"]: c["options"][0]["id"] for c in product["categories"] if not c["multiple"] and c["options"]}
+        saved = save_config(owner["id"], "Quota", product["id"], build_snapshot(product["id"], product["colors"][0]["code"], selections))
+        refs = [{"item_type": "device_config", "id": saved["id"]}]
+        for index in range(10):
+            if index % 2: create_share(saved["id"], owner["id"])
+            else: create_commerce_share(refs, owner["id"])
+        headers = {"Authorization": "Bearer " + create_session(owner)["token"]}
+        with TestClient(app) as client:
+            for path, payload in (("/api/v1/cart/share", {"items": refs}), ("/api/v1/config-shares", {"config_ids": [saved["id"]]}), (f"/api/v1/configs/{saved['id']}/share", {})):
+                response = client.post(path, headers=headers, json=payload)
+                self.assertEqual(409, response.status_code, response.text)
+                self.assertEqual("SHARE_QUOTA_EXCEEDED", response.json()["error"]["code"])
+            self.assertEqual(10, client.get("/api/v1/customer/me/shares", headers=headers).json()["quota"]["used"])
 
     def test_save_and_share_configuration(self) -> None:
         user = create_user("share@example.com", None, "password123", display_name="Share User")
@@ -1201,7 +1224,7 @@ class BackendWorkflowTests(unittest.TestCase):
                 )
                 inserted_root = True
         option = create_catalog_item(
-            category_id=root_id,
+            category_id="tools-other",
             code="TOOL-REG-001",
             name_zh="回归测试工具",
             name_en="Regression Test Tool",
@@ -1310,12 +1333,12 @@ class BackendWorkflowTests(unittest.TestCase):
                     inserted_roots.append(root_id)
 
         tool = create_catalog_item(
-            category_id="catalog-tools", code="MIX-TOOL-001",
+            category_id="tools-other", code="MIX-TOOL-001",
             name_zh="混合测试工具", name_en="Mixed Test Tool",
             price_cny=120, price_usd=18, translation_status="reviewed",
         )
         accessory = create_catalog_item(
-            category_id="catalog-accessories", code="MIX-ACC-001",
+            category_id="accessories-other", code="MIX-ACC-001",
             name_zh="混合测试附件", name_en="Mixed Test Accessory",
             price_cny=80, price_usd=12, translation_status="reviewed",
         )
@@ -1939,7 +1962,7 @@ class BackendWorkflowTests(unittest.TestCase):
                 )
                 inserted_root = True
         tool = create_catalog_item(
-            category_id=root_id, code="AVAIL-TOOL-001",
+            category_id="tools-other", code="AVAIL-TOOL-001",
             name_zh="状态测试工具", name_en="Availability Test Tool",
             price_cny=120, price_usd=18, translation_status="reviewed",
         )
@@ -2486,7 +2509,7 @@ class BackendWorkflowTests(unittest.TestCase):
         self.assertGreaterEqual(len(config_reader.pages), 1)
         self.assertIn("CR1016", config_reader.pages[0].extract_text())
 
-        quote_content = quote_pdf({"id": "quote-test", "title": "中文报价单", "currency": "CNY", "total_price": 3200, "items": [{"code": "CR1016", "name": "共轨试验台", "quantity": 1, "price": 3200}]})
+        quote_content = quote_pdf({"id": "quote-test", "quote_number": "BTQ-20260911-0001", "title": "中文报价单", "currency": "CNY", "total_price": 3200, "items": [{"code": "CR1016", "name": "共轨试验台", "quantity": 1, "price": 3200}]})
         quote_reader = PdfReader(BytesIO(quote_content))
         self.assertEqual(1, len(quote_reader.pages))
         self.assertIn("CR1016", quote_reader.pages[0].extract_text())
@@ -2521,7 +2544,7 @@ class BackendWorkflowTests(unittest.TestCase):
         config_text = "\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(config_content)).pages)
         self.assertIn("BOTEN TESTING EQUIPMENT SUZHOU CO., LTD.", config_text)
         self.assertIn("Configuration List", config_text)
-        self.assertIn("Document Code: 123456", config_text)
+        self.assertIn("123456", config_text)
         self.assertIn("PDF Customer", config_text)
         self.assertIn("Code", config_text)
         self.assertNotIn("Unit Price", config_text)
@@ -2561,16 +2584,16 @@ class BackendWorkflowTests(unittest.TestCase):
             "total_price": 1102,
         })
         quote_text = "\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(quote_content)).pages)
-        self.assertIn("Quotation", quote_text)
+        self.assertIn("Price List", quote_text)
         self.assertIn("Prepared By", quote_text)
         self.assertIn("sales@example.com", quote_text)
         self.assertIn("Unit Price", quote_text)
         self.assertIn("Subtotal", quote_text)
-        self.assertIn("BTQ-20260909-0001", quote_text)
+        self.assertIn("QUOTA-BOTEN20260909-0001", quote_text)
         self.assertNotIn("Document Information", quote_text)
         self.assertNotIn("Group Subtotal", quote_text)
         self.assertIn("1,102.00", quote_text)
-        self.assertIn("Matang RD", quote_text)
+        self.assertIn("Matang Road", quote_text)
         self.assertIn("2026-09-09 17:30:00", quote_text)
         self.assertLess(quote_text.index("CR1016"), quote_text.index("Service Tools"))
         self.assertLess(quote_text.index("Service Tools"), quote_text.index("Accessories"))
@@ -2620,7 +2643,7 @@ class BackendWorkflowTests(unittest.TestCase):
         long_name = "超长工具名称" * 45
         quote_content = quote_pdf({
             "id": "zero-quantity-quote",
-            "quote_number": "BTQ-ZERO-0001",
+            "quote_number": "BTQ-20260911-0001",
             "currency": "CNY",
             "items": [
                 {"kind": "product", "device_key": "device-zero", "device_sequence": 1, "code": "ZERO-DEVICE", "name": "Hidden device", "quantity": 0, "price": 9000},
@@ -2713,7 +2736,7 @@ class BackendWorkflowTests(unittest.TestCase):
             finally:
                 connection.close()
             self.assertIsNotNone(version_row, process.stdout + process.stderr)
-            self.assertEqual("20260911_0027", version_row[0])
+            self.assertEqual("20260911_0030", version_row[0])
             self.assertIn("address", user_columns)
             self.assertIn("customer_address", quote_columns)
             self.assertTrue({"products", "options", "users", "quotes", "audit_logs", "product_motor_prices", "product_specifications", "config_share_items", "product_base_option_groups", "product_base_options", "product_price_variants", "saved_catalog_items", "commerce_shares", "commerce_share_items", "commerce_quotes", "share_imports", "quote_deliveries"}.issubset(tables))

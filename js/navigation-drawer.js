@@ -12,7 +12,8 @@
   function initCatalogNavigationDrawer() {
     const toggle = document.getElementById("catalog-drawer-toggle");
     const stageToggle = document.getElementById("catalog-stage-toggle");
-    const toggles = [toggle, stageToggle].filter(Boolean);
+    const marketplaceToggle = document.getElementById("catalog-marketplace-toggle");
+    const toggles = [toggle, stageToggle, marketplaceToggle].filter(Boolean);
     const drawer = document.getElementById("catalog-navigation-drawer");
     const modelDrawer = document.getElementById("catalog-model-drawer");
     const backdrop = document.getElementById("catalog-navigation-backdrop");
@@ -27,6 +28,7 @@
     function applyCopy() {
       document.getElementById("catalog-drawer-toggle-label").textContent = text("openProductNavigation", "打开产品导航", "Open product navigation");
       document.getElementById("catalog-stage-toggle-label").textContent = text("viewCatalog", "查看目录", "View Catalog");
+      document.getElementById("catalog-marketplace-toggle-label").textContent = text("viewCatalog", "查看目录", "View Catalog");
       document.getElementById("catalog-navigation-title").textContent = text("productNavigation", "产品导航", "Product Navigation");
       document.getElementById("catalog-model-title").textContent = text("testEquipment", "检测设备", "Test Equipment");
       deviceEntry.querySelector("span").textContent = text("testEquipment", "检测设备", "Test Equipment");
@@ -41,7 +43,7 @@
     function renderModels() {
       const models = Array.isArray(window.configData?.models) ? window.configData.models : (typeof configData !== "undefined" ? configData.models : []);
       const current = select.value;
-      modelList.innerHTML = models.filter((model) => model.enabled !== false).map((model) => {
+      modelList.innerHTML = models.filter((model) => model.enabled !== false && model.navigationVisible !== false).map((model) => {
         const value = `device:${model.id}`;
         const active = current === value;
         const modelName = model.type || model.name || model.id;
@@ -124,7 +126,7 @@
       if (event.key === "Escape") { event.preventDefault(); closeDrawer(); return; }
       if (event.key !== "Tab") return;
       const roots = modelDrawer.classList.contains("open") ? [drawer, modelDrawer] : [drawer];
-      const focusable = roots.flatMap((root) => [...root.querySelectorAll('button:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])')]).filter((element) => !element.hidden);
+      const focusable = roots.flatMap((root) => [...root.querySelectorAll('button:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])')]).filter((element) => !element.hidden && element.getClientRects().length);
       if (!focusable.length) return;
       const first = focusable[0];
       const last = focusable[focusable.length - 1];

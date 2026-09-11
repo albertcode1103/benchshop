@@ -101,6 +101,9 @@
 .profile-device-basics > header, .profile-device-option-group > header { display: flex; align-items: center; justify-content: space-between; gap: var(--space-md); padding: var(--space-sm) var(--space-md); border-bottom: 1px solid var(--color-border); }
 .profile-device-basics > header small, .profile-device-option-group > header small { color: var(--color-text-secondary); }
 .profile-device-basics > div { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.profile-share-details .profile-device-basics > div { grid-template-columns: minmax(0, 1fr); }
+.profile-share-details .profile-device-basics > div > div { grid-template-columns: minmax(80px, 1fr) minmax(0, 2fr); gap: 12px; border-right: 0; }
+.profile-share-details .profile-device-basics > div > div > strong { text-align: right; overflow-wrap: anywhere; }
 .profile-device-basics > div > div { display: grid; gap: 2px; padding: var(--space-sm) var(--space-md); border-bottom: 1px solid var(--color-border); }
 .profile-device-basics > div > div:nth-child(odd) { border-right: 1px solid var(--color-border); }
 .profile-device-basics span { color: var(--color-text-secondary); font-size: .75rem; }

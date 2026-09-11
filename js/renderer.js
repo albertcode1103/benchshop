@@ -192,7 +192,7 @@
     const selectedValue = currentSelectionView === "device" ? `device:${currentModel.id}` : currentSelectionView;
     rendererElements.deviceSelect.innerHTML = `
       <option value="none" ${selectedValue === "none" ? "selected" : ""}>${copy.placeholder}</option>
-      <optgroup label="${copy.devices}">${configData.models.map((m) =>
+      <optgroup label="${copy.devices}">${configData.models.filter((m) => m.navigationVisible !== false).map((m) =>
         `<option value="device:${m.id}" ${selectedValue === `device:${m.id}` ? "selected" : ""}>${m.type}</option>`).join("")}</optgroup>
       <optgroup label="${copy.tools} / ${copy.accessories}">
         <option value="catalog:tools" ${selectedValue === "catalog:tools" ? "selected" : ""}>${copy.tools}</option>
@@ -486,12 +486,19 @@
     rendererElements.categoryTabs.innerHTML = model.categories
       .filter((c) => !["motor", "voltage", "channel"].includes(c.id))
       .map(
-        (cat) => `
+        (cat) => {
+          const selected = rendererStateRef.selections[cat.id];
+          const ids = Array.isArray(selected) ? selected : [selected];
+          const count = cat.options.filter((option) => ids.includes(option.id)).length;
+          const countLabel = localStorage.getItem("boten-language") === "en" ? `${count} selected` : `已选 ${count} 项`;
+          return `
           <button type="button" id="category-tab-${cat.id}" class="tab-btn ${cat.id === currentCategoryId ? "active" : ""}"
                   data-category="${cat.id}" role="tab" aria-selected="${cat.id === currentCategoryId}" aria-controls="options-panel" tabindex="${cat.id === currentCategoryId ? "0" : "-1"}">
-            ${cat.name}
+            ${escapeOptionHtml(cat.name)}
+            <span class="cart-badge category-selected-count${count === 0 ? " is-empty" : ""}" aria-label="${countLabel}">${count}</span>
           </button>
-        `
+        `;
+        }
       )
       .join("");
 

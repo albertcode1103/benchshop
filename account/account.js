@@ -11,14 +11,14 @@ const PROFILE_INQUIRY_PAGE_SIZE = 10;
 
 const profileCopy = {
   zh: {
-    pageTitle: "个人中心", backHome: "返回主页", myProfile: "我的资料", myAccount: "我的账号", contact: "联系方式", security: "密码与安全", signOut: "退出登录",
+    pageTitle: "个人中心", backHome: "主页", myProfile: "我的资料", myAccount: "我的账号", contact: "联系方式", security: "密码与安全", signOut: "退出登录",
     profileDesc: "维护用于识别和联系您的基本资料。", name: "姓名", gender: "性别", unset: "未设置", male: "男", female: "女", other: "其他", birth: "生日", signature: "个性签名", saveProfile: "保存资料",
     contactDesc: "修改登录邮箱、国家或手机号后需重新登录；联系地址可独立保存。", email: "邮箱", country: "国家", phone: "手机号", currentPassword: "当前密码", saveRelogin: "保存并重新登录",
     securityDesc: "设置至少 8 个字符的新密码。修改后需要重新登录。", newPassword: "新密码", confirmPassword: "确认新密码", changeRelogin: "修改密码并重新登录",
-    loading: "正在加载账号资料…", saved: "资料已保存。", redirecting: "修改已保存，即将返回登录页面。", nameRequired: "请填写姓名。", passwordRequired: "请输入当前密码。", passwordLength: "新密码至少需要 8 个字符。", passwordMismatch: "两次输入的新密码不一致。", requestFailed: "操作失败，请检查填写内容后重试。", networkError: "无法连接服务，请稍后重试。", selectCountry: "请选择国家", skip: "跳到主要内容", profileNav: "个人中心导航", phoneInvalid: "请输入有效手机号。", countryRequired: "请选择国家。", loadErrorTitle: "暂时无法加载个人中心", loadErrorMessage: "登录状态仍会保留，请检查服务状态后重试。", retry: "重新加载", myBusiness: "我的业务", myShares: "我的分享记录", myQuotes: "我的报价单", sharesDesc: "查看当前账号生成过的配置分享码及有效状态。", quotesDesc: "查看业务员发送给您的正式报价和 PDF。", active: "有效", expired: "已过期", closed: "已关闭", items: "项内容", views: "次查看", quoteCount: "份报价", createdAt: "创建于", expiresAt: "有效期至", details: "查看详情", copyCode: "复制分享码", copied: "分享码已复制", emptyShares: "当前账号还没有分享记录。", emptyQuotes: "当前账号还没有收到报价单。", previous: "上一页", next: "下一页", page: "第 {page} 页", newQuote: "新报价", viewed: "已查看", updated: "已更新", archivedQuote: "已撤回（仅历史记录）", sentAt: "发送于", quotationDetails: "报价详情", shareDetails: "分享详情", downloadPdf: "下载 PDF", unavailable: "当前已失效", total: "合计", quantity: "数量", unitPrice: "单价", loadingBusiness: "正在加载…", close: "关闭"
+    loading: "正在加载账号资料…", saved: "资料已保存。", redirecting: "修改已保存，即将返回登录页面。", nameRequired: "请填写姓名。", passwordRequired: "请输入当前密码。", passwordLength: "新密码至少需要 8 个字符。", passwordMismatch: "两次输入的新密码不一致。", requestFailed: "操作失败，请检查填写内容后重试。", networkError: "无法连接服务，请稍后重试。", selectCountry: "请选择国家", skip: "跳到主要内容", profileNav: "个人中心导航", phoneInvalid: "请输入有效手机号。", countryRequired: "请选择国家。", loadErrorTitle: "暂时无法加载个人中心", loadErrorMessage: "登录状态仍会保留，请检查服务状态后重试。", retry: "重新加载", myBusiness: "我的业务", myShares: "我的分享", myQuotes: "我的报价单", sharesDesc: "查看当前账号生成过的配置分享码及有效状态。", quotesDesc: "查看业务员发送给您的正式报价和 PDF。", active: "有效", expired: "已过期", closed: "已关闭", items: "项内容", views: "次查看", quoteCount: "份报价", createdAt: "创建于", expiresAt: "有效期至", details: "查看详情", copyCode: "复制分享码", copied: "分享码已复制", emptyShares: "当前账号还没有分享记录。", emptyQuotes: "当前账号还没有收到报价单。", previous: "上一页", next: "下一页", page: "第 {page} 页", newQuote: "新报价", viewed: "已查看", updated: "已更新", archivedQuote: "已撤回（仅历史记录）", sentAt: "发送于", quotationDetails: "报价详情", shareDetails: "分享详情", downloadPdf: "下载 PDF", unavailable: "当前已失效", total: "合计", quantity: "数量", unitPrice: "单价", loadingBusiness: "正在加载…", close: "关闭"
   },
   en: {
-    pageTitle: "Profile", backHome: "Back to Home", myProfile: "My Profile", myAccount: "My Account", contact: "Contact Details", security: "Password & Security", signOut: "Sign Out",
+    pageTitle: "Profile", backHome: "Home", myProfile: "My Profile", myAccount: "My Account", contact: "Contact Details", security: "Password & Security", signOut: "Sign Out",
     profileDesc: "Maintain the personal details used to identify your account.", name: "Name", gender: "Gender", unset: "Not set", male: "Male", female: "Female", other: "Other", birth: "Birthday", signature: "Signature", saveProfile: "Save Profile",
     contactDesc: "Changing your sign-in email, country, or phone requires signing in again. Save your address separately.", email: "Email", country: "Country", phone: "Phone", currentPassword: "Current Password", saveRelogin: "Save and Sign In Again",
     securityDesc: "Set a new password with at least 8 characters. You will need to sign in again.", newPassword: "New Password", confirmPassword: "Confirm New Password", changeRelogin: "Change Password and Sign In Again",
@@ -29,7 +29,7 @@ Object.assign(profileCopy.zh, {
   myInquiries: "我的询价", inquiriesDesc: "查看已经提交给销售人员的询价和当前处理进度。",
   emptyInquiries: "当前账号还没有询价记录。", inquiryDetails: "询价详情", inquiryNumber: "询价编号",
   inquirySource: "来源", currentDevice: "当前设备", cart: "购物车", submittedItems: "项内容",
-  copyInquiry: "复制询价编号", inquiryCopied: "询价编号已复制", cancelInquiry: "取消询价",
+  copyInquiry: "复制询价码", inquiryCopied: "询价编号已复制", cancelInquiry: "取消询价",
   cancelInquiryConfirm: "仅处于新询价状态且尚未开始处理的记录可以取消。确定取消这条询价吗？",
   confirmCancel: "确认取消", inquiryCancelled: "询价已取消。", note: "补充说明",
   newInquiry: "新询价", assignedInquiry: "已分配", contactedInquiry: "已联系",
@@ -39,7 +39,7 @@ Object.assign(profileCopy.en, {
   myInquiries: "My Inquiries", inquiriesDesc: "Review inquiries sent to sales and follow their current progress.",
   emptyInquiries: "This account has no inquiry records yet.", inquiryDetails: "Inquiry Details", inquiryNumber: "Inquiry number",
   inquirySource: "Source", currentDevice: "Current device", cart: "Cart", submittedItems: "items",
-  copyInquiry: "Copy inquiry number", inquiryCopied: "Inquiry number copied", cancelInquiry: "Cancel Inquiry",
+  copyInquiry: "Copy Code", inquiryCopied: "Inquiry number copied", cancelInquiry: "Cancel Inquiry",
   cancelInquiryConfirm: "Only a new inquiry that has not been processed can be cancelled. Cancel this inquiry?",
   confirmCancel: "Cancel Inquiry", inquiryCancelled: "Inquiry cancelled.", note: "Note",
   newInquiry: "New", assignedInquiry: "Assigned", contactedInquiry: "Contacted",
@@ -320,7 +320,7 @@ async function loadProfileInquiries(page = profileInquiryPage) {
     list.innerHTML = result.items.length ? result.items.map((inquiry) => `
       <article class="profile-business-card">
         <div class="profile-business-card-main"><strong translate="no">${escapeProfileHtml(inquiry.inquiry_number)}</strong><span>${escapeProfileHtml(inquirySourceLabel(inquiry.source_type))}</span></div>
-        <div class="profile-business-card-actions"><button class="btn btn-secondary btn-sm" type="button" data-copy-inquiry="${escapeProfileHtml(inquiry.inquiry_number)}">${pc.copyInquiry}</button><button class="btn btn-secondary btn-sm" type="button" data-open-inquiry="${escapeProfileHtml(inquiry.id)}">${pc.details}</button>${inquiry.status === "new" ? `<button class="btn btn-secondary btn-sm profile-danger-action" type="button" data-cancel-inquiry="${escapeProfileHtml(inquiry.id)}" data-inquiry-version="${Number(inquiry.version || 0)}" data-inquiry-number="${escapeProfileHtml(inquiry.inquiry_number)}">${pc.cancelInquiry}</button>` : ""}</div>
+        <div class="profile-business-card-actions"><button class="btn btn-secondary btn-sm" type="button" data-copy-inquiry="${escapeProfileHtml(inquiry.inquiry_number)}">${pc.copyInquiry}</button><button class="btn btn-secondary btn-sm" type="button" data-open-inquiry="${escapeProfileHtml(inquiry.id)}">${profileLanguage === "en" ? "View" : "查看"}</button>${inquiry.status === "new" ? `<button class="btn btn-secondary btn-sm profile-danger-action" type="button" data-cancel-inquiry="${escapeProfileHtml(inquiry.id)}" data-inquiry-version="${Number(inquiry.version || 0)}" data-inquiry-number="${escapeProfileHtml(inquiry.inquiry_number)}">${pc.cancelInquiry}</button>` : ""}</div>
         <div class="profile-business-card-meta"><span class="profile-status-badge${inquiry.status === "new" ? " is-new" : inquiry.status === "cancelled" ? " is-off" : ""}">${escapeProfileHtml(inquiryStatusLabel(inquiry.status))}</span><span>${Number(inquiry.item_count || 0)} ${pc.submittedItems}</span><span>${pc.createdAt} ${profileDate(inquiry.created_at)}</span>${inquiry.updated_at && inquiry.updated_at !== inquiry.created_at ? `<span>${pc.updated} ${profileDate(inquiry.updated_at)}</span>` : ""}</div>
       </article>`).join("") : `<div class="profile-list-empty">${pc.emptyInquiries}</div>`;
     const pages = Math.max(1, Math.ceil(profileInquiryTotal / PROFILE_INQUIRY_PAGE_SIZE));
@@ -349,7 +349,7 @@ async function loadProfileShares(page = profileSharePage) {
     list.innerHTML = result.items.length ? result.items.map((share) => `
       <article class="profile-business-card">
         <div class="profile-business-card-main"><strong>${escapeProfileHtml(share.title || share.code)}</strong><span>${escapeProfileHtml(share.code)}</span></div>
-        <div class="profile-business-card-actions"><button class="btn btn-secondary btn-sm" type="button" data-copy-share="${escapeProfileHtml(share.code)}">${pc.copyCode}</button><button class="btn btn-secondary btn-sm" type="button" data-open-share="${escapeProfileHtml(share.id)}">${pc.details}</button></div>
+        <div class="profile-business-card-actions"><button class="btn btn-secondary btn-sm" type="button" data-copy-share="${escapeProfileHtml(share.code)}">${pc.copyCode}</button><button class="btn btn-secondary btn-sm" type="button" data-open-share="${escapeProfileHtml(share.id)}">${profileLanguage === "en" ? "View" : "查看"}</button></div>
         <div class="profile-business-card-meta"><span class="profile-status-badge${share.status === "active" ? "" : " is-off"}">${shareStatusLabel(share.status)}</span><span>${Number(share.item_count || 0)} ${pc.items}</span><span>${Number(share.view_count || 0)} ${pc.views}</span><span>${Number(share.quote_count || 0)} ${pc.quoteCount}</span><span>${pc.createdAt} ${profileDate(share.created_at)}</span><span>${pc.expiresAt} ${profileDate(share.expires_at)}</span></div>
       </article>`).join("") : `<div class="profile-list-empty">${pc.emptyShares}</div>`;
     const pages = Math.max(1, Math.ceil(profileShareTotal / PROFILE_SHARE_PAGE_SIZE));
@@ -357,7 +357,8 @@ async function loadProfileShares(page = profileSharePage) {
     document.getElementById("profile-shares-page").textContent = pc.page.replace("{page}", String(profileSharePage));
     document.getElementById("profile-shares-prev").disabled = profileSharePage <= 1;
     document.getElementById("profile-shares-next").disabled = profileSharePage >= pages;
-    status.textContent = ""; status.className = "profile-form-status";
+    status.textContent = result.quota?.limited ? `${businessText("有效分享", "Active shares")}: ${result.quota.used}/${result.quota.limit}` : "";
+    status.className = "profile-form-status";
   } catch (error) { status.textContent = error.message || pc.requestFailed; status.className = "profile-form-status is-error"; }
 }
 
@@ -459,7 +460,7 @@ function decorateBusinessRecords(kind, records) {
 async function handlePersonalOperation(button, confirmed = false) {
   const { personalOperation: operation, recordKind: kind, recordId: id, recordVersion: version } = button.dataset;
   if (!confirmed && ["hide", "close"].includes(operation)) {
-    const message = operation === "hide" ? businessText("仅从你的列表隐藏，可在已删除中恢复；不会删除业务历史或改变处理状态。", "Hide only from your list. Restore it from Deleted; business history and status remain unchanged.") : businessText("关闭后他人不能继续使用此分享码。", "Others can no longer use this share code after closing.");
+    const message = operation === "hide" ? (kind === "shares" ? businessText("删除后分享码立即失效并释放名额，业务历史保留。恢复记录不会自动重新开启分享。", "Deleting immediately closes the share code and frees its slot. History is retained; restoring the record does not reopen the share.") : businessText("仅从你的列表隐藏，可在已删除中恢复；不会删除业务历史或改变处理状态。", "Hide only from your list. Restore it from Deleted; business history and status remain unchanged.")) : businessText("关闭后他人不能继续使用此分享码。", "Others can no longer use this share code after closing.");
     openProfileBusinessDialog(button.textContent, pc.myBusiness, `<p class="profile-inquiry-confirm">${message}</p>`, `<button type="button" class="btn btn-secondary" data-close-business-dialog>${businessText("取消", "Cancel")}</button><button type="button" class="btn btn-primary" data-personal-confirm data-personal-operation="${operation}" data-record-kind="${kind}" data-record-id="${escapeProfileHtml(id)}" data-record-version="${version}">${businessText("确认", "Confirm")}</button>`);
     return;
   }
@@ -478,6 +479,7 @@ async function handlePersonalOperation(button, confirmed = false) {
 }
 
 function openProfileBusinessDialog(title, kicker, body, actions = "") {
+  document.getElementById("profile-business-dialog").classList.toggle("profile-share-details", kicker === pc.shareDetails);
   document.getElementById("profile-business-dialog-title").textContent = title;
   document.getElementById("profile-business-dialog-kicker").textContent = kicker;
   document.getElementById("profile-business-dialog-body").innerHTML = body;
@@ -529,7 +531,8 @@ async function openOwnShare(shareId) {
   }).join("");
   const body = deviceSection + catalogSections;
   const note = result.note ? `<section class="profile-detail-group profile-share-note"><h3>${profileLanguage === "en" ? "Share note" : "分享备注"}</h3><p>${escapeProfileHtml(result.note)}</p></section>` : "";
-  openProfileBusinessDialog(result.title || result.code, pc.shareDetails, note + (body || `<div class="profile-list-empty">${pc.emptyShares}</div>`));
+  const heading = [result.title, result.code].filter(Boolean).join(" · ");
+  openProfileBusinessDialog(heading, pc.shareDetails, note + (body || `<div class="profile-list-empty">${pc.emptyShares}</div>`));
 }
 
 async function openOwnInquiry(inquiryId) {
@@ -596,7 +599,7 @@ async function downloadOwnQuote(quoteId) {
   const response = await fetch(`${window.BOTEN_API_BASE || ""}/api/v1/customer/me/quotes/${encodeURIComponent(quoteId)}/pdf`, { headers: { Authorization: `Bearer ${sessionStorage.getItem(PROFILE_TOKEN_KEY)}`, "X-UI-Language": profileLanguage === "en" ? "en" : "zh-CN" } });
   if (!response.ok) { const body = await response.json().catch(() => ({})); throw new Error(body.detail || pc.requestFailed); }
   const url = URL.createObjectURL(await response.blob());
-  const link = document.createElement("a"); link.href = url; link.download = `BOTEN-quote-${quoteId.slice(0, 8)}.pdf`; document.body.appendChild(link); link.click(); link.remove();
+  const link = document.createElement("a"); link.href = url; link.download = response.headers.get("Content-Disposition")?.match(/filename="([^"]+)"/)?.[1] || "BOTEN.pdf"; document.body.appendChild(link); link.click(); link.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
   await loadProfileQuotes();
 }

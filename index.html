@@ -6,28 +6,28 @@
   <meta name="description" content="BOTEN Diesel Test Bench - 设备配置选择器" />
   <meta name="theme-color" content="#ffffff" />
   <title>BOTEN DIESEL TEST BENCH</title>
-  <script src="js/scroll-reset.js?v=20260903-1"></script>
+  <script src="js/scroll-reset.js?v=20260911-5"></script>
   <link rel="icon" type="image/png" href="tb/site/LOGO.png?v=20260831" />
   <link rel="shortcut icon" type="image/png" href="tb/site/LOGO.png?v=20260831" />
   <link rel="apple-touch-icon" href="tb/site/LOGO.png?v=20260831" />
   <link rel="stylesheet" href="css/main.css?v=20260904-1" />
-  <link rel="stylesheet" href="css/layout.css?v=20260909-3" />
-  <link rel="stylesheet" href="css/components.css?v=20260910-2" />
+  <link rel="stylesheet" href="css/layout.css?v=20260911-6" />
+  <link rel="stylesheet" href="css/components.css?v=20260911-6" />
   <link rel="stylesheet" href="css/print.css?v=20260831-1" />
-  <script src="js/runtime-config.js?v=20260910-2"></script>
+  <script src="js/runtime-config.js?v=20260911-8"></script>
   <script src="js/data.js?v=20260909-1" defer></script>
   <script src="js/catalog-api.js?v=20260908-2" defer></script>
   <script src="js/state.js?v=20260905-1" defer></script>
   <script src="js/price.js?v=20260909-1" defer></script>
-  <script src="js/renderer.js?v=20260909-3" defer></script>
-  <script src="js/navigation-drawer.js?v=20260910-4" defer></script>
-  <script src="js/auth.js?v=20260905-5" defer></script>
+  <script src="js/renderer.js?v=20260911-6" defer></script>
+  <script src="js/navigation-drawer.js?v=20260911-7" defer></script>
+  <script src="js/auth.js?v=20260911-3" defer></script>
   <script src="js/share-viewer.js?v=20260909-4" defer></script>
-  <script src="js/cart.js?v=20260909-3" defer></script>
-  <script src="js/catalog-marketplace.js?v=20260910-1" defer></script>
+  <script src="js/cart.js?v=20260911-12" defer></script>
+  <script src="js/catalog-marketplace.js?v=20260911-3" defer></script>
   <script src="js/pdf.js?v=20260903-1" defer></script>
   <script src="js/main.js?v=20260905-2" defer></script>
-  <script src="js/language.js?v=20260910-2" defer></script>
+  <script src="js/language.js?v=20260911-2" defer></script>
 </head>
 <body>
   <a class="skip-link" href="#main-content">跳到主要内容</a>
@@ -198,6 +198,7 @@ stroke-width="2" aria-hidden="true">
             <button type="button" class="active" role="tab" aria-selected="true" tabindex="0" data-catalog-type="tools" id="catalog-tab-tools" aria-controls="catalog-marketplace-panel">维修工具</button>
             <button type="button" role="tab" aria-selected="false" tabindex="-1" data-catalog-type="accessories" id="catalog-tab-accessories" aria-controls="catalog-marketplace-panel">设备附件</button>
           </div>
+          <button id="catalog-marketplace-toggle" class="btn btn-secondary stage-catalog-toggle no-print" type="button" aria-haspopup="dialog" aria-controls="catalog-navigation-drawer" aria-expanded="false"><span aria-hidden="true">☰</span><span id="catalog-marketplace-toggle-label">查看目录</span></button>
         </header>
         <div class="catalog-marketplace-controls">
           <label class="catalog-search-field" for="catalog-marketplace-search">
@@ -386,14 +387,16 @@ aria-controls="catalog-summary-panel" aria-label="查看购物车中的工具" h
       <header class="cart-panel-header">
         <h2 id="cart-title">我的购物车</h2>
         <div class="cart-header-actions">
-          <button id="cart-pdf" class="btn btn-secondary btn-sm cart-header-action" type="button" disabled aria-label="导出购物车 PDF"><span class="cart-action-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M6.5 2.75h7l4 4v14.5H6.5z"/><path d="M13.5 2.75v4h4"/><path d="M8.25 14.25h7.5M8.25 17.25h5.25"/></svg></span><span class="cart-action-label">导出 PDF</span></button>
-          <button id="cart-share" class="btn btn-secondary btn-sm cart-header-action" type="button" disabled aria-label="分享购物车"><span class="cart-action-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><circle cx="18" cy="5" r="2.25"/><circle cx="6" cy="12" r="2.25"/><circle cx="18" cy="19" r="2.25"/><path d="m7.95 10.95 7.95-4.7M7.95 13.05l7.95 4.7"/></svg></span><span class="cart-action-label">分享</span></button>
           <button id="cart-close" class="btn btn-secondary btn-sm cart-header-action" type="button" aria-label="关闭购物车"><span class="cart-action-icon" aria-hidden="true">×</span></button>
         </div>
       </header>
       <div id="cart-items" class="cart-items"></div>
       <div id="cart-empty" class="cart-empty" hidden>购物车为空</div>
       <footer class="cart-panel-footer">
+        <div class="cart-footer-actions">
+          <button id="cart-pdf" class="btn btn-secondary btn-sm cart-header-action" type="button" disabled aria-label="导出购物车 PDF"><span class="cart-action-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M6.5 2.75h7l4 4v14.5H6.5z"/><path d="M13.5 2.75v4h4"/><path d="M8.25 14.25h7.5M8.25 17.25h5.25"/></svg></span><span class="cart-action-label">导出 PDF</span></button>
+          <button id="cart-share" class="btn btn-secondary btn-sm cart-header-action" type="button" disabled aria-label="分享购物车"><span class="cart-action-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><circle cx="18" cy="5" r="2.25"/><circle cx="6" cy="12" r="2.25"/><circle cx="18" cy="19" r="2.25"/><path d="m7.95 10.95 7.95-4.7M7.95 13.05l7.95 4.7"/></svg></span><span class="cart-action-label">分享</span></button>
+        </div>
         <div id="cart-operation-status" class="cart-operation-status" role="status" aria-live="polite" hidden></div>
         <button id="cart-inquiry" class="btn btn-primary btn-block" type="button">联系销售获取报价</button>
       </footer>

@@ -46,6 +46,7 @@ ACCOUNT_ERROR_MESSAGES = {
     "CART_ITEM_REFERENCE_INVALID": {"zh-CN": "购物车项目类型或编号无效", "en": "A cart item type or identifier is invalid"},
     "CONFIG_ACCESS_DENIED": {"zh-CN": "无权操作该配置", "en": "You do not have access to this configuration"},
     "PDF_GENERATION_FAILED": {"zh-CN": "PDF 生成失败，请稍后重试", "en": "PDF generation failed. Try again later"},
+    "PDF_LOGO_UNAVAILABLE": {"zh-CN": "PDF Logo 缺失或无法读取，请联系管理员修复后重试", "en": "PDF logo is missing or unreadable. Contact an administrator before retrying"},
     "SHARE_CREATION_FAILED": {"zh-CN": "分享码生成失败，请重试", "en": "Could not create a share code. Try again"},
     "SHARE_CODE_INVALID": {"zh-CN": "分享码必须是 6 位数字", "en": "The share code must contain 6 digits"},
     "SHARE_NOT_FOUND": {"zh-CN": "分享码不存在，请核对六位分享码后重试", "en": "The share code was not found. Check the six-digit code and try again"},
@@ -103,7 +104,7 @@ ACCOUNT_ERROR_MESSAGES = {
     "CATALOG_ITEM_NOT_AVAILABLE": {"zh-CN": "维修工具或设备附件不存在、已停用或不可购买", "en": "The tool or accessory is missing, disabled, or unavailable"},
     "CATALOG_CODE_REQUIRED": {"zh-CN": "请填写配置编号", "en": "Enter a catalog item code"},
     "CATALOG_CODE_DUPLICATE": {"zh-CN": "该配置编号已被其他项目使用", "en": "This catalog item code is already in use"},
-    "CATALOG_ITEM_TYPE_CHANGE_FORBIDDEN": {"zh-CN": "已被设备使用的配置不能改为维修工具或设备附件", "en": "An item used by a product cannot be moved to a different catalog type"},
+    "CATALOG_ITEM_TYPE_CHANGE_FORBIDDEN": {"zh-CN": "不能跨配置、维修工具或设备附件目录移动项目，请选择当前目录内的分类", "en": "Items cannot move between configuration, tool and accessory catalogs. Choose a category in the current catalog."},
     "CATALOG_MEDIA_NOT_FOUND": {"zh-CN": "上传的图片不存在或已失效，请重新上传", "en": "The uploaded image is missing or expired. Upload it again"},
     "CATALOG_QUANTITY_INVALID": {"zh-CN": "数量必须在 1 至 999 之间", "en": "Quantity must be between 1 and 999"},
     "CATALOG_CART_ITEM_NOT_FOUND": {"zh-CN": "购物车中的工具或附件不存在或已被删除", "en": "The tool or accessory is no longer in the cart"},
@@ -129,6 +130,9 @@ ACCOUNT_ERROR_MESSAGES = {
     "PRICE_VARIANT_COVERAGE_INVALID": {"zh-CN": "每个已启用的电机和通道组合都必须有且只有一个价格方案", "en": "Every enabled motor and channel combination must have exactly one price variant"},
     "PRICE_VARIANT_NOT_FOUND": {"zh-CN": "当前电机和通道组合尚未设置基础价格", "en": "No base price is configured for this motor and channel combination"},
 }
+
+
+ACCOUNT_ERROR_MESSAGES["SHARE_QUOTA_EXCEEDED"] = {"zh-CN": "有效分享已达 {limit} 份，请前往个人中心关闭或删除后重试。", "en": "You have reached {limit} active shares. Close or delete a share in your account and try again."}
 
 
 class AccountError(Exception):

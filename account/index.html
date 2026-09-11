@@ -7,16 +7,16 @@
   <title>个人中心 | BOTEN</title>
   <link rel="icon" type="image/png" href="../tb/site/LOGO.png?v=20260831" />
   <link rel="stylesheet" href="../css/main.css?v=20260904-1" />
-  <link rel="stylesheet" href="../css/components.css?v=20260909-1" />
-  <link rel="stylesheet" href="account.css?v=20260911-1" />
-  <script src="../js/runtime-config.js?v=20260910-2"></script>
-  <script src="account.js?v=20260911-1" defer></script>
+  <link rel="stylesheet" href="../css/components.css?v=20260911-2" />
+  <link rel="stylesheet" href="account.css?v=20260911-6" />
+  <script src="../js/runtime-config.js?v=20260911-8"></script>
+  <script src="account.js?v=20260911-7" defer></script>
 </head>
 <body class="profile-page">
   <a id="profile-skip-link" class="skip-link" href="#account-main">跳到主要内容</a>
   <header class="profile-header">
     <div class="profile-header-inner">
-      <a id="profile-brand-link" class="profile-brand" href="../" aria-label="返回主页">
+      <a id="profile-brand-link" class="profile-brand" href="../" aria-label="主页">
         <img src="../tb/site/BOTEN.png" alt="BOTEN" width="1617" height="545" />
         <span>BOTEN DIESEL TEST BENCH</span>
       </a>
@@ -25,7 +25,7 @@
           <button type="button" data-language="zh">中文</button>
           <button type="button" data-language="en">EN</button>
         </div>
-        <a class="btn btn-secondary btn-sm" href="../" id="profile-back-home">返回主页</a>
+        <a class="btn btn-secondary btn-sm" href="../" id="profile-back-home">主页</a>
       </div>
     </div>
   </header>
@@ -42,7 +42,7 @@
         <button type="button" data-account-panel="account-contact">联系方式</button>
         <button type="button" data-account-panel="account-security">密码与安全</button>
         <p id="profile-business-group">我的业务</p>
-        <button type="button" data-account-panel="my-shares">我的分享记录</button>
+        <button type="button" data-account-panel="my-shares">我的分享</button>
         <button type="button" data-account-panel="my-inquiries">我的询价</button>
         <button class="profile-quote-nav" type="button" data-account-panel="my-quotes">我的报价单 <span id="profile-quote-unread" class="profile-unread-badge" hidden>0</span></button>
       </nav>
@@ -55,7 +55,7 @@
         <p id="profile-load-error-message">登录状态仍会保留，请检查服务状态后重试。</p>
         <div class="profile-load-error-actions">
           <button id="profile-load-retry" class="btn btn-primary" type="button">重新加载</button>
-          <a id="profile-load-back" class="btn btn-secondary" href="../">返回主页</a>
+          <a id="profile-load-back" class="btn btn-secondary" href="../">主页</a>
         </div>
       </section>
       <section class="profile-panel" data-account-content="profile" aria-labelledby="profile-details-title">
@@ -99,7 +99,7 @@
       </section>
 
       <section class="profile-panel" data-account-content="my-shares" aria-labelledby="profile-shares-title" hidden>
-        <header class="profile-panel-header"><h1 id="profile-shares-title">我的分享记录</h1><p id="profile-shares-description">查看当前账号生成过的配置分享码及有效状态。</p></header>
+        <header class="profile-panel-header"><h1 id="profile-shares-title">我的分享</h1><p id="profile-shares-description">查看当前账号生成过的配置分享码及有效状态。</p></header>
         <div id="profile-shares-status" class="profile-form-status" role="status" aria-live="polite"></div>
         <div id="profile-shares-list" class="profile-business-list"></div>
         <footer class="profile-list-pagination"><span id="profile-shares-page">第 1 页</span><div><button id="profile-shares-prev" class="btn btn-secondary btn-sm" type="button">上一页</button><button id="profile-shares-next" class="btn btn-secondary btn-sm" type="button">下一页</button></div></footer>

@@ -42,16 +42,45 @@
   }
 
   window.renderProducts = function renderProductsV2() {
+    const table = $("#products-table");
+    let controls = document.getElementById("product-order-controls");
+    if (!controls) {
+      controls = document.createElement("div");
+      controls.id = "product-order-controls";
+      controls.className = "catalog-group-actions";
+      table.closest("section, .view").querySelector("header").appendChild(controls);
+    }
+    controls.innerHTML = state.productOrderDraft ? '<button type="button" class="button button-secondary" data-save-product-order>保存排序</button><button type="button" class="button button-secondary" data-cancel-product-order>取消</button>' : '<button type="button" class="button button-secondary" data-start-product-order>排序</button>';
     const english = state.catalogLanguage === "en";
-    $("#products-table").innerHTML = state.products.map((product) => `
+    $("#products-table").innerHTML = (state.productOrderDraft || state.products).map((product, index, list) => `
       <tr>
         <td><strong>${escapeHtml(english ? (product.name_en || product.name) : product.name)}</strong></td>
         <td>${escapeHtml(localized(product.title_name, product.title_name_en))}</td>
         <td><span class="badge ${product.enabled ? "good" : "off"}">${product.enabled ? "已启用" : "已下架"}</span></td>
-        <td class="align-right"><button class="table-action" type="button" data-edit-product="${escapeHtml(product.id)}">编辑</button></td>
+        <td class="align-right"><small>${product.visible_zh !== false && product.visible_zh !== 0 ? "中文 " : ""}${product.visible_en !== false && product.visible_en !== 0 ? "EN" : ""}</small>${state.productOrderDraft ? `<button type="button" class="button button-secondary" data-product-order-step="${index}" data-step="-1" ${index === 0 ? "disabled" : ""}>上移</button><button type="button" class="button button-secondary" data-product-order-step="${index}" data-step="1" ${index === list.length - 1 ? "disabled" : ""}>下移</button>` : `<button class="table-action" type="button" data-edit-product="${escapeHtml(product.id)}">编辑</button>`}</td>
       </tr>
     `).join("") || '<tr><td colspan="4" class="empty">暂无产品数据</td></tr>';
   };
+
+  document.addEventListener("click", async (event) => {
+    if (event.target.closest("[data-start-product-order]")) { state.productOrderDraft = state.products.map(item => ({ ...item })); window.renderProducts(); }
+    if (event.target.closest("[data-cancel-product-order]")) { state.productOrderDraft = null; window.renderProducts(); }
+    const move = event.target.closest("[data-product-order-step]");
+    if (move && state.productOrderDraft) {
+      const from = Number(move.dataset.productOrderStep), to = from + Number(move.dataset.step);
+      if (to >= 0 && to < state.productOrderDraft.length) [state.productOrderDraft[from], state.productOrderDraft[to]] = [state.productOrderDraft[to], state.productOrderDraft[from]];
+      window.renderProducts();
+    }
+    const save = event.target.closest("[data-save-product-order]");
+    if (save && state.productOrderDraft) {
+      save.disabled = true;
+      try {
+        const result = await api("/api/v1/admin/products-order", { method: "PUT", body: JSON.stringify({ items: state.productOrderDraft.map(({id, version}) => ({id, version})) }) });
+        state.products = result.items; state.productOrderDraft = null; window.renderProducts();
+        showToast("设备顺序已保存");
+      } catch (error) { showToast(error.message, "error"); save.disabled = false; }
+    }
+  });
 
   function captureSpecifications() {
     if (!state.editingProduct) return;
@@ -340,6 +369,8 @@
     state.editingProduct.overview_en = form.elements.overview_en.value.trim();
     state.editingProduct.translation_status = form.elements.translation_status.value;
     state.editingProduct.enabled = form.elements.enabled.checked;
+    state.editingProduct.visible_zh = form.elements.visible_zh.checked;
+    state.editingProduct.visible_en = form.elements.visible_en.checked;
     state.editingProduct.colors = window.collectColors();
     captureProductImages();
     captureSpecifications();
@@ -446,6 +477,14 @@
       form.elements.overview_en.value = product.overview_en || "";
       form.elements.translation_status.value = product.translation_status || "machine_draft";
       form.elements.enabled.checked = Boolean(product.enabled);
+      if (!form.elements.visible_zh) {
+        const field = document.createElement("fieldset");
+        field.className = "catalog-field-list";
+        field.innerHTML = '<legend>用户端目录显示语言</legend><label><input type="checkbox" name="visible_zh"> 中文</label><label><input type="checkbox" name="visible_en"> English</label>';
+        form.elements.enabled.closest("label").before(field);
+      }
+      form.elements.visible_zh.checked = Boolean(product.visible_zh ?? true);
+      form.elements.visible_en.checked = Boolean(product.visible_en ?? true);
       $("#product-dialog-title").textContent = `编辑 ${product.model}`;
       const status = $("#product-editor-status");
       status.textContent = product.enabled ? "已启用" : "已下架";
@@ -526,6 +565,8 @@
           overview_en: product.overview_en,
           translation_status: product.translation_status || "machine_draft",
           enabled: product.enabled,
+          visible_zh: product.visible_zh,
+          visible_en: product.visible_en,
           colors,
           specifications: product.specifications || [],
           images: product.images || [],
@@ -597,6 +638,7 @@
       fields: [
         { name: "id", label: "设备内部编号", placeholder: "例如：cr999", required: true },
         { name: "model", label: "设备型号", placeholder: "例如：BOTEN CR999", required: true },
+        { name: "visibility", label: "用户端目录显示语言", type: "select", options: [["both", "中文和英文"], ["zh", "仅中文"], ["en", "仅英文"]] },
         { name: "product_name_zh", label: "产品名称", lang: "zh", placeholder: "中文产品名称", required: true },
         { name: "product_name_en", label: "产品名称", lang: "en", placeholder: "English product name", required: true }
       ],
@@ -607,6 +649,8 @@
           name_en: data.model,
           title_name: data.product_name_zh,
           title_name_en: data.product_name_en,
+          visible_zh: data.visibility !== "en",
+          visible_en: data.visibility !== "zh",
           base_price: 0,
           price_usd: 0
         }) });
@@ -718,6 +762,24 @@
     </section>`;
   }
 
+  function catalogListingFilters(rootId) {
+    state.catalogListingFilters ||= {};
+    const params = new URL(window.location.href).searchParams;
+    return state.catalogListingFilters[rootId] ||= {
+      category: params.get("catalogCategory") || "all",
+      query: params.get("catalogQuery") || ""
+    };
+  }
+
+  function syncCatalogListingFilters() {
+    const filters = catalogListingFilters(currentCatalogRootId());
+    const url = new URL(window.location.href);
+    for (const [key, value] of [["catalogCategory", filters.category === "all" ? "" : filters.category], ["catalogQuery", filters.query]]) {
+      if (value) url.searchParams.set(key, value); else url.searchParams.delete(key);
+    }
+    history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+  }
+
   window.renderConfigCatalog = function renderConfigCatalogV2() {
     const target = $("#config-catalog-list");
     if (!target) return;
@@ -727,6 +789,22 @@
     const active = roots.find((root) => root.id === activeId);
     if (!active) {
       target.innerHTML = '<div class="empty">配置目录尚未完成数据迁移。</div>';
+      return;
+    }
+    if (["tools", "accessories"].includes(active.catalog_type) && active.children?.length) {
+      const filters = catalogListingFilters(activeId);
+      if (!active.children.some((category) => category.id === filters.category)) filters.category = "all";
+      const query = filters.query.trim().toLocaleLowerCase();
+      const groups = active.children.filter((category) => filters.category === "all" || category.id === filters.category)
+        .map((category) => ({ ...category, options: (category.options || []).filter((item) =>
+          !query || [item.code, item.name, item.name_en].some((value) => String(value || "").toLocaleLowerCase().includes(query))) }));
+      const count = groups.reduce((total, category) => total + category.options.length, 0);
+      target.innerHTML = `<div class="catalog-list-filters">
+        <label><span>搜索编号或名称</span><input type="search" name="catalog_query" autocomplete="off" spellcheck="false" data-catalog-list-query value="${escapeHtml(filters.query)}" placeholder="编号或名称…"></label>
+        <div class="catalog-list-chips" role="group" aria-label="分类筛选">${[{ id: "all", name: "全部", name_en: "All" }, ...active.children].map((category) => `<button type="button" class="button button-secondary ${filters.category === category.id ? "active" : ""}" data-catalog-list-category="${escapeHtml(category.id)}" aria-pressed="${filters.category === category.id}">${escapeHtml(localized(category.name, category.name_en))}</button>`).join("")}</div>
+        <p aria-live="polite">共 ${count} 项</p>
+      </div><div class="catalog-category-content">${groups.some((category) => !query || category.options.length) ? groups.filter((category) => !query || category.options.length).map((category) => renderCatalogCategory(category)).join("") : '<div class="catalog-empty">没有匹配项目，请切换分类或修改搜索条件。</div>'}</div>`;
+      if (query) $$('[data-move-catalog-item]', target).forEach((button) => { button.disabled = true; button.title = "清空搜索后调整排序"; });
       return;
     }
     const hasCategories = Boolean(active.children?.length);
@@ -869,7 +947,7 @@
         if (failure.field) form.elements[failure.field]?.focus?.();
       }
     });
-    dialog.addEventListener("close", () => { dialog.remove(); opener?.focus?.(); }, { once: true });
+    dialog.addEventListener("close", () => { const toast = dialog.querySelector("#toast"); if (toast) document.body.appendChild(toast); dialog.remove(); opener?.focus?.(); }, { once: true });
     dialog.addEventListener("cancel", (event) => {
       const current = JSON.stringify(Object.fromEntries(new FormData(form)));
       if (!form.dataset.initialSnapshot || current === form.dataset.initialSnapshot) return;
@@ -893,8 +971,8 @@
   function openCatalogCategoryEditor(category = null) {
     const editing = Boolean(category);
     const dialog = openCatalogDialog({
-      title: editing ? "编辑配置分类" : "添加配置分类",
-      subtitle: "维护配置目录的二级分类及中英文显示内容",
+      title: editing ? "编辑分类" : "添加分类",
+      subtitle: "维护当前目录的二级分类及中英文显示内容",
       dialogClass: "catalog-category-editor-dialog",
       body: `<input type="hidden" name="version" value="${escapeHtml(category?.version || 1)}">
         ${translationFields(category || {}, { nameLabel: "分类名称" })}
@@ -902,7 +980,7 @@
       footerControl: `<label class="compact-check catalog-footer-enabled"><input name="enabled" type="checkbox" ${category?.enabled !== false ? "checked" : ""}><span>启用分类</span></label>`,
       onSave: async (form) => {
         const payload = {
-          parent_id: ROOT_IDS.optional,
+          parent_id: category?.parent_id || currentCatalogRootId(),
           name_zh: form.elements.name_zh.value.trim(),
           name_en: form.elements.name_en.value.trim(),
           description_zh: form.elements.description_zh.value.trim(),
@@ -945,9 +1023,7 @@
       : catalogType === "accessories"
         ? { singular: "附件", directory: "附件目录" }
         : { singular: "配置", directory: "配置目录" };
-    const categoryField = catalogType === "optional"
-      ? `<label class="catalog-field"><span>所属分类</span><select name="category_id" required>${itemCategoryOptions(selectedCategoryId, catalogType)}</select></label>`
-      : `<div class="catalog-field catalog-readonly-field"><span>所属目录</span><strong>${labels.directory}</strong><input name="category_id" type="hidden" value="${escapeHtml(selectedCategoryId)}"></div>`;
+    const categoryField = `<label class="catalog-field"><span>所属分类</span><select name="category_id" required><option value="">请选择分类</option>${itemCategoryOptions(selectedCategoryId, catalogType)}</select></label>`;
     const dialog = openCatalogDialog({
       title: editing ? `编辑${labels.singular} ${item.code}` : `添加${labels.singular}`,
       subtitle: `维护${labels.singular}的编号、中英文内容、图片和参考价格`,
@@ -1001,8 +1077,10 @@
 
   function selectCatalogRoot(rootId, focus = false) {
     if (!catalogRoots().some((root) => root.id === rootId)) return;
+    const changed = state.catalogRootId !== rootId;
     state.catalogRootId = rootId;
     const url = new URL(window.location.href);
+    if (changed) { url.searchParams.delete("catalogCategory"); url.searchParams.delete("catalogQuery"); }
     url.searchParams.set("catalog", rootId);
     history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
     window.renderConfigCatalog();
@@ -1013,7 +1091,27 @@
     selectCatalogRoot(rootId);
   };
 
+  document.addEventListener("input", (event) => {
+    if (!event.target.matches("[data-catalog-list-query]") || event.isComposing) return;
+    const position = event.target.selectionStart;
+    catalogListingFilters(currentCatalogRootId()).query = event.target.value;
+    syncCatalogListingFilters();
+    window.renderConfigCatalog();
+    const input = $("[data-catalog-list-query]");
+    input?.focus();
+    if (position !== null) input?.setSelectionRange(position, position);
+  });
+
   document.addEventListener("click", (event) => {
+    const categoryFilter = event.target.closest("[data-catalog-list-category]");
+    if (categoryFilter) {
+      const category = categoryFilter.dataset.catalogListCategory;
+      catalogListingFilters(currentCatalogRootId()).category = category;
+      syncCatalogListingFilters();
+      window.renderConfigCatalog();
+      $(`[data-catalog-list-category="${CSS.escape(category)}"]`)?.focus();
+      return;
+    }
     const removeColor = event.target.closest("[data-remove-color]");
     if (removeColor) {
       event.preventDefault();

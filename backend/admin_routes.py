@@ -260,6 +260,8 @@ class ProductUpdateRequest(BaseModel):
     price_usd: Optional[int] = Field(default=None, ge=0, le=9223372036854775807)
 
 class ProductCreateRequest(BaseModel):
+    visible_zh: bool = True
+    visible_en: bool = True
     id: str
     name: str
     name_en: str = ""
@@ -476,6 +478,8 @@ class PriceVariantEditorRequest(BaseModel):
 
 
 class ProductEditorV2Request(BaseModel):
+    visible_zh: Optional[bool] = None
+    visible_en: Optional[bool] = None
     version: int = Field(ge=1)
     model: str = Field(max_length=200)
     product_name_zh: str = Field(max_length=300)
@@ -536,8 +540,33 @@ def audit_logs():
 def products():
     return {"items": list_admin_products()}
 
+
+class ProductOrderEntry(BaseModel):
+    id: str = Field(min_length=1, max_length=100)
+    version: int = Field(ge=1)
+
+
+class ProductOrderRequest(BaseModel):
+    items: List[ProductOrderEntry] = Field(min_length=1, max_length=1000)
+
+
+@router.put("/products-order")
+def reorder_products(payload: ProductOrderRequest, user=Depends(require_catalog_manager)):
+    from .database import get_connection
+    with get_connection() as db:
+        db.execute("BEGIN IMMEDIATE")
+        current = dict(db.execute("SELECT id, version FROM products"))
+        if len(payload.items) != len(current) or {item.id for item in payload.items} != set(current) or any(current.get(item.id) != item.version for item in payload.items):
+            raise HTTPException(status_code=409, detail="设备列表已变化，请刷新后重新排序")
+        for index, item in enumerate(payload.items):
+            db.execute("UPDATE products SET sort_order=?, version=version+1, updated_at=CURRENT_TIMESTAMP WHERE id=?", (index, item.id))
+    write_audit(user["id"], "product_order_update", "products", "all", {"ids": [item.id for item in payload.items]})
+    return {"items": list_admin_products()}
+
 @router.post("/products", status_code=status.HTTP_201_CREATED)
 def add_product(payload: ProductCreateRequest):
+    if not payload.visible_zh and not payload.visible_en:
+        raise HTTPException(status_code=422, detail="至少选择一种显示语言")
     if not payload.id.strip() or not payload.name.strip(): raise HTTPException(status_code=422, detail="Device model and name are required")
     if payload.base_price < 0 or payload.price_usd < 0: raise HTTPException(status_code=422, detail="Price cannot be negative")
     try: return create_product(payload.model_dump())
@@ -764,6 +793,8 @@ def replace_product_editor(product_id: str, payload: ProductEditorV2Request, req
             product_id,
             version=payload.version,
             model=payload.model,
+            visible_zh=payload.visible_zh,
+            visible_en=payload.visible_en,
             product_name_zh=payload.product_name_zh,
             product_name_en=payload.product_name_en,
             overview_zh=payload.overview_zh,

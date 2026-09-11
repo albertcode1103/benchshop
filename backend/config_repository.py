@@ -333,6 +333,9 @@ def create_share_bundle(config_ids: List[str], user_id: str, lang: str = "zh") -
     expires_at = to_iso(utc_now() + timedelta(days=SHARE_DAYS))
     share_id = uuid.uuid4().hex
     with get_connection() as connection:
+        from .share_quota import enforce_share_quota
+        connection.execute("BEGIN IMMEDIATE")
+        enforce_share_quota(connection, user_id)
         user = connection.execute("SELECT display_name, email, phone FROM users WHERE id = ?", (user_id,)).fetchone()
         customer_name = (user["display_name"] if user else "") or ""
         customer_email = ((user["email"] or user["phone"]) if user else "") or ""

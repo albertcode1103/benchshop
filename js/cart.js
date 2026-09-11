@@ -166,7 +166,7 @@ function renderCartActions() {
     button.setAttribute("aria-label", label);
     const text = button.querySelector(".cart-action-label");
     if (text) text.textContent = label;
-    if (id !== "cart-close") button.disabled = !hasItems;
+    if (id !== "cart-close") button.disabled = !hasItems || (id === "cart-pdf" && cartPdfPending);
   });
   const inquiry = document.getElementById("cart-inquiry");
   if (inquiry) {
@@ -182,7 +182,7 @@ function renderDeviceCartCard(item, deviceIndex) {
     `<div class="cart-item-core-row"><span>${escapeCartHtml(group.category)}</span><strong>${escapeCartHtml(Array.isArray(group.value) ? group.value.join("、") : group.value)}</strong></div>`).join("");
   const summaryHtml = item.groups.filter((group) => !["color", "motor", "voltage", "channel"].includes(group.id)).map((group) => {
     const optionCount = group.count || (Array.isArray(group.value) ? group.value.length : 1);
-    return `<div class="cart-item-summary-row"><span>${escapeCartHtml(group.category)}</span><strong>${optionCount}</strong></div>`;
+    return `<button type="button" class="cart-item-summary-row cart-category-preview" data-cart-category="${escapeCartHtml(group.id)}" data-id="${escapeCartHtml(item.id)}"><span>${escapeCartHtml(group.category)}</span><strong>${optionCount}</strong></button>`;
   }).join("");
   return `<article class="cart-item">
     <header class="cart-item-toolbar">
@@ -237,6 +237,7 @@ function renderCartPanel() {
   itemsEl.innerHTML = displayUnits.map((unit) => unit.kind === "device" ? renderDeviceCartCard(unit.item, ++deviceIndex) : renderCatalogCartGroup(unit.type, unit.items)).join("");
   itemsEl.querySelectorAll(".cart-item-edit").forEach((button) => button.addEventListener("click", () => beginConfigEdit(button.dataset.id)));
   itemsEl.querySelectorAll(".cart-item-details").forEach((button) => button.addEventListener("click", () => showCartDetails(button.dataset.id)));
+  itemsEl.querySelectorAll("[data-cart-category]").forEach((button) => button.addEventListener("click", () => showCartDetails(button.dataset.id, button.dataset.cartCategory)));
   itemsEl.querySelectorAll(".cart-item-delete").forEach((button) => button.addEventListener("click", () => removeDeviceCartItem(button.dataset.id, button)));
   itemsEl.querySelectorAll("[data-edit-catalog-group]").forEach((button) => button.addEventListener("click", () => showCatalogGroupDialog(button.dataset.editCatalogGroup)));
   itemsEl.querySelectorAll("[data-delete-catalog-group]").forEach((button) => button.addEventListener("click", () => removeCatalogCartGroup(button.dataset.deleteCatalogGroup, button)));
@@ -321,9 +322,13 @@ function showCatalogGroupDialog(type) {
   dialog.showModal();
 }
 
-function showCartDetails(id) {
+function showCartDetails(id, categoryId = null) {
+  if (document.querySelector(".cart-detail-dialog[open]")) return;
+  const trigger = document.activeElement;
   const item = serverCart.find((candidate) => candidate.id === id);
   if (!item) return;
+  const selectedGroup = categoryId === null ? null : item.groups?.find((group) => group.id === categoryId);
+  if (categoryId !== null && !selectedGroup) return;
   if (item.itemType !== "device_config") {
     const dialog = document.createElement("dialog");
     const typeLabel = item.itemType === "tool" ? cartText("serviceTools", "维修工具", "Service Tools") : cartText("accessories", "设备附件", "Accessories");
@@ -337,13 +342,21 @@ function showCartDetails(id) {
     return;
   }
   const renderDetailItem = (detail) => `<li class="cart-detail-option">${detail.code ? `<strong>${escapeCartHtml(detail.code)}</strong>` : ""}<span>${escapeCartHtml(detail.name)}</span></li>`;
-  const groupsHtml = item.groups.map((group) => group.type === "multi"
+  const groupsHtml = (selectedGroup ? [selectedGroup] : item.groups).map((group) => group.type === "multi"
     ? `<section class="cart-item-group"><div class="cart-item-group-header"><span>${escapeCartHtml(group.category)}</span><span class="cart-item-count">${group.count}</span></div><ul>${(group.detailItems || group.value.map((name) => ({ code: "", name }))).map(renderDetailItem).join("")}</ul></section>`
     : `<section class="cart-item-group"><div class="cart-item-group-header"><span class="cart-item-category">${escapeCartHtml(group.category)}</span></div>${group.detailItems?.length ? `<ul>${group.detailItems.map(renderDetailItem).join("")}</ul>` : `<div class="cart-item-value">${escapeCartHtml(group.value)}</div>`}</section>`).join("");
   const dialog = document.createElement("dialog");
   dialog.className = "share-dialog cart-detail-dialog";
   dialog.setAttribute("aria-labelledby", "cart-detail-title");
   dialog.innerHTML = `<div class="share-dialog-card"><header class="share-dialog-header"><div><span class="auth-kicker">${cartText("configurationDetails", "配置详情", "CONFIGURATION DETAILS")}</span><h2 id="cart-detail-title">${escapeCartHtml(item.modelName)}</h2><p class="cart-detail-model">${escapeCartHtml(item.productTitle)} · ${escapeCartHtml(item.colorName)}</p></div><button class="btn btn-text btn-sm" type="button" aria-label="${cartText("close", "关闭", "Close")}">✕</button></header><div class="cart-detail-content">${groupsHtml}</div></div>`;
+  if (selectedGroup) {
+    dialog.querySelector("h2").textContent = selectedGroup.category;
+    const number = serverCart.filter((entry) => entry.itemType === "device_config").findIndex((entry) => entry.id === id) + 1;
+    dialog.querySelector(".cart-detail-model").textContent = `${cartText("deviceSequence", "设备 {number}", "Device {number}").replace("{number}", number)} · ${item.modelName} · ${selectedGroup.count || 1}`;
+  }
+  dialog.addEventListener("click", (event) => { if (event.target === dialog) dialog.close(); });
+  dialog.addEventListener("keydown", (event) => { if (event.key === "Escape") event.stopPropagation(); });
+  dialog.addEventListener("close", () => { if (trigger?.isConnected) trigger.focus({ preventScroll: true }); }, { once: true });
   document.body.appendChild(dialog);
   dialog.querySelector("button")?.addEventListener("click", () => dialog.close());
   dialog.addEventListener("close", () => dialog.remove(), { once: true });
@@ -498,7 +511,7 @@ async function copyShareCode() {
   }
 }
 
-function requestShareNote() {
+function requestShareNote(quota, forPdf = false) {
   return new Promise((resolve) => {
     const dialog = document.createElement("dialog");
     dialog.className = "share-dialog cart-share-note-dialog";
@@ -509,7 +522,18 @@ function requestShareNote() {
       <footer class="cart-share-note-actions"><button class="btn btn-secondary" type="submit" value="cancel">${cartText("cancelAction", "取消", "Cancel")}</button><button class="btn btn-primary" type="submit" value="confirm">${cartText("createShare", "生成分享码", "Create Share Code")}</button></footer>
     </form>`;
     document.body.appendChild(dialog);
+    if (quota?.limited) {
+      const usage = document.createElement("p");
+      usage.textContent = `${cartText("activeShares", "有效分享", "Active shares")}: ${quota.used}/${quota.limit}`;
+      dialog.querySelector(".share-dialog-header").after(usage);
+    }
     const textarea = dialog.querySelector("textarea");
+    if (forPdf) dialog.querySelector('[value="confirm"]').textContent = cartText("createPdf", "创建 PDF", "Create PDF");
+    if (forPdf) {
+      const reuseHint = document.createElement("p");
+      reuseHint.textContent = cartText("shareReuseHint", "若已有相同配置的有效分享，将复用分享码并保留原备注。", "An identical active share will be reused with its original note.");
+      dialog.querySelector(".cart-share-note-field").before(reuseHint);
+    }
     const counter = dialog.querySelector("[data-share-note-count]");
     textarea.addEventListener("input", () => {
       const characters = Array.from(textarea.value);
@@ -522,42 +546,83 @@ function requestShareNote() {
       resolve(note);
     }, { once: true });
     dialog.showModal();
-    requestAnimationFrame(() => textarea.focus());
+    if (window.matchMedia("(min-width: 701px)").matches) requestAnimationFrame(() => textarea.focus());
   });
+}
+
+let shareCartPending = false;
+async function offerShareManagement() {
+  if (await confirmCartRemoval(cartText("shareQuotaFull", "有效分享已达10份。是否前往个人中心关闭或删除分享以释放名额？购物车内容会保留。", "You have 10 active shares. Open your account to close or delete a share? Your cart will be retained."), cartText("shareQuotaTitle", "分享名额已满", "Share limit reached"), { danger: false, confirmLabel: cartText("manageShares", "管理分享", "Manage shares") })) {
+    window.location.href = "./account/#my-shares";
+  }
 }
 
 async function shareCart() {
   const items = allCartItems();
-  if (!items.length) return;
-  const note = await requestShareNote();
-  if (note === null) return;
-  const button = document.getElementById("cart-share"); const original = button.textContent;
-  button.disabled = true; button.textContent = cartText("generating", "生成中…", "Generating…");
+  if (!items.length || shareCartPending) return;
+  shareCartPending = true;
+  const button = document.getElementById("cart-share"); const original = button.innerHTML;
+  button.disabled = true;
   try {
     setCartStatus();
+    const { quota } = await authRequest("/customer/me/shares?page_size=1");
+    if (quota?.limited && quota.remaining === 0) { await offerShareManagement(); return; }
+    const note = await requestShareNote(quota);
+    if (note === null) return;
+    button.textContent = cartText("generating", "生成中…", "Generating…");
     const share = await authRequest("/cart/share", { method: "POST", body: JSON.stringify({ items, lang: cartLanguage(), note }) });
     showShareResult(share);
-  } catch (error) { setCartStatus(`${cartText("shareFailed", "分享失败", "Share failed")}: ${error.message}`, "error"); }
-  finally { button.textContent = original; renderCartActions(); }
+  } catch (error) {
+    if (error.code === "SHARE_QUOTA_EXCEEDED") await offerShareManagement();
+    else setCartStatus(`${cartText("shareFailed", "分享失败", "Share failed")}: ${error.message}`, "error");
+  }
+  finally { shareCartPending = false; button.innerHTML = original; renderCartActions(); }
 }
 
+let cartPdfAttempt = null;
+let cartPdfPending = false;
+function createPdfRequestKey() {
+  if (typeof window.crypto?.randomUUID === "function") return window.crypto.randomUUID();
+  // getRandomValues is also available on HTTP LAN origins; randomUUID is not.
+  const bytes = new Uint8Array(16);
+  window.crypto.getRandomValues(bytes);
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = Array.from(bytes, value => value.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
 async function exportCartPdf() {
+  if (cartPdfPending) return;
   const items = allCartItems();
-  if (!items.length) return;
-  const button = document.getElementById("cart-pdf"); const original = button.textContent;
+  if (!items.length && !cartPdfAttempt) return;
+  cartPdfPending = true;
+  const button = document.getElementById("cart-pdf");
+  button.dataset.idleMarkup ||= button.innerHTML;
+  const original = button.dataset.idleMarkup;
   button.disabled = true; button.textContent = cartText("generating", "生成中…", "Generating…");
   try {
     setCartStatus();
-    const response = await fetch(`${CATALOG_API_BASE}/api/v1/cart/export/pdf`, {
-      method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${sessionStorage.getItem(USER_TOKEN_KEY)}` },
-      body: JSON.stringify({ items, lang: cartLanguage() }),
+    if (!cartPdfAttempt) {
+      const { quota } = await authRequest("/customer/me/shares?page_size=1");
+      const note = await requestShareNote(quota, true);
+      if (note === null) return;
+      cartPdfAttempt = { items: JSON.parse(JSON.stringify(items)), lang: cartLanguage(), note, idempotency_key: createPdfRequestKey(), reuse_existing: true };
+    }
+    if (!cartPdfAttempt.share) cartPdfAttempt.share = await authRequest("/cart/share", { method: "POST", body: JSON.stringify(cartPdfAttempt) });
+    const response = await fetch(`${CATALOG_API_BASE}/api/v1/shares/${encodeURIComponent(cartPdfAttempt.share.code)}/pdf?lang=${cartPdfAttempt.lang}`, {
+      headers: { Authorization: `Bearer ${sessionStorage.getItem(USER_TOKEN_KEY)}` },
     });
     if (!response.ok) { const body = await response.json().catch(() => ({})); throw new Error(body.detail || `PDF (${response.status})`); }
     const blob = await response.blob(); const url = URL.createObjectURL(blob); const link = document.createElement("a");
-    link.href = url; link.download = "BOTEN-configurations.pdf"; document.body.appendChild(link); link.click(); link.remove();
+    link.href = url; link.download = response.headers.get("Content-Disposition")?.match(/filename="([^"]+)"/)?.[1] || `ShareBench-BOTEN${cartPdfAttempt.share.code}.pdf`; document.body.appendChild(link); link.click(); link.remove();
+    setCartStatus(`${cartPdfAttempt.share.reused ? cartText("shareReused", "已复用相同配置的有效分享（保留原备注）", "Reused matching active share (original note retained)") : cartText("shareCode", "分享码", "Share code")}: ${cartPdfAttempt.share.code}`);
+    cartPdfAttempt = null;
     setTimeout(() => URL.revokeObjectURL(url), 1000);
-  } catch (error) { setCartStatus(`${cartText("pdfFailed", "PDF 导出失败", "PDF export failed")}: ${error.message}`, "error"); }
-  finally { button.textContent = original; renderCartActions(); }
+  } catch (error) {
+    if (error.code === "SHARE_QUOTA_EXCEEDED") { cartPdfAttempt = null; await offerShareManagement(); }
+    else setCartStatus(`${cartText("pdfFailed", "PDF 导出失败，点击重试，不会重复创建分享", "PDF failed. Retry without creating another share")}: ${error.message}`, "error");
+  }
+  finally { cartPdfPending = false; if (cartPdfAttempt) button.textContent = cartText("retryPdf", "重试 PDF", "Retry PDF"); else button.innerHTML = original; renderCartActions(); }
 }
 
 async function archiveCartItems(items, button, message, title) {
@@ -627,7 +692,10 @@ function openInquiryDialog(sourceType) {
   let summary;
   let currentPayload = null;
   try {
-    if (sourceType === "current_device") currentPayload = currentConfigPayload().payload;
+    if (sourceType === "current_device") {
+      const { product_id, color, selections, lang } = currentConfigPayload().payload;
+      currentPayload = { product_id, color, selections, lang };
+    }
     summary = inquirySummary(sourceType);
   } catch (error) {
     setConfigSaveStatus(`${cartText("inquiryConfigInvalid", "当前设备选配不完整，请检查后再询价。", "Complete the current device configuration before requesting a quote.")}`, "error");

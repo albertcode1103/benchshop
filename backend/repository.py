@@ -22,7 +22,7 @@ def list_products(lang: str = "zh") -> List[Dict[str, Any]]:
     with get_connection() as connection:
         rows = connection.execute(
             """
-            SELECT id, name, title_name, description, name_en, title_name_en, description_en, base_price, price_usd
+            SELECT id, name, title_name, description, name_en, title_name_en, description_en, base_price, price_usd, visible_zh, visible_en
             FROM products
             WHERE enabled = 1
             ORDER BY sort_order, name

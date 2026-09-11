@@ -1,7 +1,7 @@
 from typing import Any, Dict, List, Optional
 
 from .database import get_connection
-from .catalog_refactor_repository import CatalogValidationError
+from .catalog_refactor_repository import CatalogValidationError, _item_category
 from .catalog_identity import normalize_catalog_code, strip_redundant_catalog_code
 import uuid
 
@@ -20,7 +20,8 @@ def _check_option_code(connection, code: str, option_id: str = "") -> None:
 def create_product(values: Dict[str, Any]) -> Dict[str, Any]:
     product_id = values["id"].strip().lower()
     with get_connection() as db:
-        db.execute("INSERT INTO products(id,name,name_en,title_name,title_name_en,description,description_en,base_price,price_usd,enabled,sort_order) VALUES(?,?,?,?,?,?,?,?,?,1,999)", (product_id, values["name"], values.get("name_en", ""), values.get("title_name", values["name"]), values.get("title_name_en", ""), values.get("description", ""), values.get("description_en", ""), int(values.get("base_price", 0)), int(values.get("price_usd", 0))))
+        db.execute("INSERT INTO products(id,name,name_en,title_name,title_name_en,description,description_en,base_price,price_usd,enabled,sort_order) VALUES(?,?,?,?,?,?,?,?,?,1,(SELECT COALESCE(MAX(sort_order),-1)+1 FROM products))", (product_id, values["name"], values.get("name_en", ""), values.get("title_name", values["name"]), values.get("title_name_en", ""), values.get("description", ""), values.get("description_en", ""), int(values.get("base_price", 0)), int(values.get("price_usd", 0))))
+        db.execute("UPDATE products SET visible_zh=?,visible_en=? WHERE id=?", (int(values.get("visible_zh", True)), int(values.get("visible_en", True)), product_id))
         db.execute("INSERT INTO product_colors(product_id,code,label,label_en,is_default,sort_order) VALUES(?,?,?,?,?,0)", (product_id, "Green", "绿色", "Green", 1))
     return get_admin_product(product_id)
 
@@ -31,7 +32,7 @@ def list_config_categories() -> List[Dict[str, Any]]:
             """
             SELECT id, name, name_en, description, description_en, multiple, sort_order, version
             FROM categories
-            WHERE id NOT IN (?, ?, ?)
+            WHERE id NOT IN (?, ?, ?) AND catalog_type NOT IN ('tools', 'accessories')
             ORDER BY sort_order, name
             """,
             CATALOG_ROOT_IDS,
@@ -99,6 +100,9 @@ def create_config_option(category_id: str, code: str, name: str, **values: Any) 
     option_id = "opt-" + uuid.uuid4().hex[:16]
     with get_connection() as connection:
         connection.execute("BEGIN IMMEDIATE")
+        category = connection.execute("SELECT catalog_type FROM categories WHERE id=?", (category_id,)).fetchone()
+        if category is None or category["catalog_type"] in ("tools", "accessories"):
+            _item_category(connection, category_id)
         _check_option_code(connection, code)
         sort_order = connection.execute("SELECT COALESCE(MAX(sort_order), -1) + 1 FROM options WHERE category_id = ?", (category_id,)).fetchone()[0]
         enabled = True if values.get("enabled") is None else bool(values["enabled"])
@@ -114,6 +118,9 @@ def update_config_category(category_id: str, values: Dict[str, Any]) -> Optional
     assignments = ", ".join(f"{k} = ?" for k in updates)
     params = [int(v) if k == "multiple" else v for k, v in updates.items()] + [category_id, values['version']]
     with get_connection() as connection:
+        category = connection.execute("SELECT catalog_type FROM categories WHERE id=?", (category_id,)).fetchone()
+        if category and category["catalog_type"] in ("tools", "accessories"):
+            raise CatalogValidationError("CATALOG_CATEGORY_NOT_AVAILABLE", "category_id")
         cur = connection.execute(f"UPDATE categories SET {assignments}, version=version+1 WHERE id = ? AND version = ?", params)
         if cur.rowcount == 0 and connection.execute('SELECT 1 FROM categories WHERE id=?', (category_id,)).fetchone():
             raise CatalogValidationError('CATALOG_VERSION_CONFLICT', 'version')
@@ -155,7 +162,7 @@ def delete_config_option(option_id: str) -> Optional[bool]:
 
 def config_category_references(category_id: str) -> Optional[Dict[str, Any]]:
     with get_connection() as connection:
-        category = connection.execute("SELECT id, name FROM categories WHERE id = ?", (category_id,)).fetchone()
+        category = connection.execute("SELECT id, name, catalog_type FROM categories WHERE id = ?", (category_id,)).fetchone()
         if category is None:
             return None
         options = connection.execute(
@@ -170,7 +177,7 @@ def config_category_references(category_id: str) -> Optional[Dict[str, Any]]:
             (category_id,),
         ).fetchall()
     result = dict(category)
-    result["protected"] = category_id in ("motor", "voltage", *CATALOG_ROOT_IDS)
+    result["protected"] = category_id in ("motor", "voltage", *CATALOG_ROOT_IDS) or category["catalog_type"] in ("tools", "accessories")
     result["options"] = [dict(row) for row in options]
     result["option_count"] = len(result["options"])
     result["mapping_count"] = sum(row["mapping_count"] for row in result["options"])
@@ -193,7 +200,7 @@ def list_admin_products() -> List[Dict[str, Any]]:
         rows = connection.execute(
             """
             SELECT id, name, name_en, title_name, title_name_en, description, description_en, base_price, price_usd, enabled, sort_order,
-                   created_at, updated_at
+                   created_at, updated_at, version, visible_zh, visible_en
             FROM products
             ORDER BY sort_order, name
             """

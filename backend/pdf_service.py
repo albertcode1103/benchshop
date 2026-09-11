@@ -1,6 +1,8 @@
 """Unified, cross-platform PDF generation for BOTEN business documents."""
 
 import hashlib
+from .pdf_identity import pdf_identity
+from .account_errors import AccountError
 import logging
 import os
 import uuid
@@ -26,7 +28,7 @@ from reportlab.pdfbase import pdfdoc, pdfmetrics
 from reportlab.pdfbase.cidfonts import UnicodeCIDFont
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen import canvas as pdf_canvas
-from reportlab.platypus import BaseDocTemplate, CondPageBreak, Frame, PageTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.platypus import BaseDocTemplate, Frame, PageTemplate, Paragraph, Spacer, Table, TableStyle
 
 from .catalog_identity import normalize_catalog_code, strip_redundant_catalog_code
 
@@ -53,7 +55,12 @@ TEXT_GRAY = colors.HexColor("#666666")
 BORDER_GRAY = colors.HexColor("#E5E7EB")
 LIGHT_GRAY = colors.HexColor("#F7F8FA")
 COMPANY_NAME = "BOTEN TESTING EQUIPMENT SUZHOU CO., LTD."
+COMPANY_NAMES = {"zh": "博特恩检测设备（苏州）有限公司", "en": COMPANY_NAME}
 WEBSITE = "www.boten-diesel.com"
+COMPANY_ADDRESSES = {
+    "zh": "江苏省昆山开发区马塘路108号",
+    "en": "No.108 Matang Road, Kunshan Development Zone\nSuzhou, Jiangsu, China 215333",
+}
 PDF_TIMEZONE = ZoneInfo("Asia/Shanghai")
 LOGO_PATH = Path(__file__).resolve().parent.parent / "tb" / "site" / "BOTEN.png"
 
@@ -96,7 +103,7 @@ PDF_COPY = {
         "draft": "草稿", "sent": "已发送", "archived": "已归档",
     },
     "en": {
-        "configuration_title": "Configuration List", "inquiry_title": "Inquiry", "quote_title": "Quotation",
+        "configuration_title": "Configuration List", "inquiry_title": "Inquiry", "quote_title": "Price List",
         "customer_info": "Customer", "salesperson_info": "Prepared By", "document_info": "Document Information",
         "name": "Name", "email": "Email", "phone": "Phone", "subject": "Quotation Subject",
         "status": "Status", "created": "Created", "valid_until": "Valid Until", "currency": "Currency",
@@ -127,6 +134,7 @@ class PdfDocumentContext:
     created_at: str = ""
     valid_until: str = ""
     generated_at: str = ""
+    is_share: bool = False
     extra_fields: Optional[List[Tuple[str, Any]]] = None
 
     def __post_init__(self) -> None:
@@ -218,7 +226,7 @@ class _EmphasizedParagraph(Paragraph):
 
 def _paragraph(value: Any, style: ParagraphStyle, empty: str = "-") -> Paragraph:
     text = escape(_clean(value)).replace("\n", "<br/>")
-    paragraph_type = _EmphasizedParagraph if style.name == "BotenSection" else Paragraph
+    paragraph_type = _EmphasizedParagraph if style.name in ("BotenSection", "BotenTitle") else Paragraph
     return paragraph_type(text or escape(empty), style)
 
 
@@ -307,6 +315,10 @@ def _status_label(value: Any, language: str) -> str:
 def _intro_story(context: PdfDocumentContext, styles: Dict[str, ParagraphStyle]) -> List[Any]:
     copy = PDF_COPY[context.language]
     story: List[Any] = [_paragraph(_title_for(context), styles["title"])]
+    if context.kind in ("inquiry", "quote") and context.created_at:
+        label = ({"inquiry": "询价时间", "quote": "报价时间"} if context.language == "zh" else
+                 {"inquiry": "Inquiry Date", "quote": "Quotation Date"})[context.kind]
+        story.extend([_paragraph(f"{label}: {_business_timestamp(context.created_at)}", styles["body"]), Spacer(1, 3 * mm)])
     customer_values = _party_values(context.customer or {}, copy)
     if context.kind == "quote":
         party = context.customer or {}
@@ -314,7 +326,8 @@ def _intro_story(context: PdfDocumentContext, styles: Dict[str, ParagraphStyle])
                            (copy["phone"], party.get("phone") or "-"),
                            (copy["email"], party.get("email") or "-"),
                            ("地址" if context.language == "zh" else "Address", party.get("address") or "-")]
-    customer_card = _info_card(copy["customer_info"], customer_values, styles, 82 * mm)
+    customer_heading = ("分享人" if context.language == "zh" else "Shared by") if context.kind == "configuration" and context.is_share else copy["customer_info"]
+    customer_card = _info_card(customer_heading, customer_values, styles, 82 * mm)
     salesperson_card = _info_card(copy["salesperson_info"], _party_values(context.salesperson or {}, copy), styles, 82 * mm) if context.kind == "quote" else None
     party_row = _card_row(customer_card, salesperson_card)
     if party_row:
@@ -333,14 +346,16 @@ def _intro_story(context: PdfDocumentContext, styles: Dict[str, ParagraphStyle])
     return story
 
 
-def _load_logo() -> Optional[ImageReader]:
+def _load_logo() -> ImageReader:
     try:
         if not LOGO_PATH.is_file():
             raise FileNotFoundError(str(LOGO_PATH))
-        return ImageReader(str(LOGO_PATH))
+        logo = ImageReader(str(LOGO_PATH))
+        logo.getRGBData()  # Validate image data before constructing any pages.
+        return logo
     except Exception as error:
-        LOGGER.warning("BOTEN PDF logo could not be loaded: %s", error)
-        return None
+        LOGGER.error("BOTEN PDF logo could not be loaded: %s", error)
+        raise AccountError("PDF_LOGO_UNAVAILABLE", status_code=503) from error
 
 
 class _NumberedCanvas(pdf_canvas.Canvas):
@@ -369,7 +384,12 @@ class _NumberedCanvas(pdf_canvas.Canvas):
 
 class _UnifiedDocument(BaseDocTemplate):
     def __init__(self, stream: BytesIO, context: PdfDocumentContext):
-        super().__init__(stream, pagesize=A4, rightMargin=15 * mm, leftMargin=15 * mm, topMargin=28 * mm, bottomMargin=20 * mm, title=_title_for(context), author="BOTEN")
+        header_style = ParagraphStyle("CompanyHeader", fontName=FONT_NAME, fontSize=7.5, leading=10, textColor=TEXT_MAIN, alignment=TA_RIGHT)
+        self.company_header = Paragraph("<br/>".join(escape(value).replace("\n", "<br/>") for value in (COMPANY_NAMES[context.language], COMPANY_ADDRESSES[context.language], WEBSITE)), header_style)
+        self.header_width = 125 * mm
+        _, self.header_height = self.company_header.wrap(self.header_width, A4[1])
+        self.header_bottom = A4[1] - 9 * mm - max(self.header_height, 10 * mm)
+        super().__init__(stream, pagesize=A4, rightMargin=15 * mm, leftMargin=15 * mm, topMargin=A4[1] - self.header_bottom + 8 * mm, bottomMargin=20 * mm, title=_title_for(context), author="BOTEN")
         self.context = context
         self.logo = _load_logo()
         frame = Frame(self.leftMargin, self.bottomMargin, self.width, self.height, id="content")
@@ -378,46 +398,25 @@ class _UnifiedDocument(BaseDocTemplate):
     def _draw_page(self, canvas, document) -> None:
         copy = PDF_COPY[self.context.language]
         canvas.saveState()
-        logo_y = A4[1] - 18 * mm
-        if self.logo:
-            source_width, source_height = self.logo.getSize()
-            scale = min((38 * mm) / source_width, (10 * mm) / source_height)
-            canvas.drawImage(self.logo, self.leftMargin, logo_y, width=source_width * scale, height=source_height * scale, preserveAspectRatio=True, mask="auto")
-        else:
-            canvas.setFont(FONT_NAME, 13)
-            canvas.setFillColor(BRAND_BLUE)
-            canvas.drawString(self.leftMargin, logo_y + 2 * mm, "BOTEN")
-        canvas.setFont(FONT_NAME, 7.5)
-        canvas.setFillColor(TEXT_MAIN)
-        canvas.drawRightString(A4[0] - self.rightMargin, A4[1] - 12.5 * mm, COMPANY_NAME)
-        if self.context.kind in ("inquiry", "quote"):
-            canvas.setFont(FONT_NAME, 7)
-            canvas.drawRightString(A4[0] - self.rightMargin, A4[1] - 16 * mm, _business_timestamp(self.context.created_at))
-            canvas.drawRightString(A4[0] - self.rightMargin, A4[1] - 19.5 * mm, self.context.code or "")
+        source_width, source_height = self.logo.getSize()
+        scale = min((38 * mm) / source_width, (10 * mm) / source_height)
+        canvas.drawImage(self.logo, self.leftMargin, A4[1] - 9 * mm - source_height * scale, width=source_width * scale, height=source_height * scale, preserveAspectRatio=True, mask="auto")
+        self.company_header.drawOn(canvas, A4[0] - self.rightMargin - self.header_width, A4[1] - 9 * mm - self.header_height)
         canvas.setStrokeColor(ACCENT_BLUE)
         canvas.setLineWidth(0.8)
-        canvas.line(self.leftMargin, A4[1] - 22 * mm, A4[0] - self.rightMargin, A4[1] - 22 * mm)
+        canvas.line(self.leftMargin, self.header_bottom - 3 * mm, A4[0] - self.rightMargin, self.header_bottom - 3 * mm)
         canvas.setStrokeColor(BORDER_GRAY)
         canvas.setLineWidth(0.6)
         canvas.line(self.leftMargin, 14 * mm, A4[0] - self.rightMargin, 14 * mm)
         canvas.setFont(FONT_NAME, 7.1)
         canvas.setFillColor(TEXT_GRAY)
-        if self.context.kind == "inquiry":
-            canvas.drawString(self.leftMargin, 7.2 * mm, WEBSITE)
-            canvas.drawRightString(A4[0] - self.rightMargin, 7.2 * mm, self.context.generated_at)
-        elif self.context.kind == "quote":
-            address = ("江苏省昆山开发区马塘路108号" if self.context.language == "zh" else
-                       "No.108 Matang RD, Kunshan Development Zone, Suzhou, Jiangsu, China 215333")
-            address_style = ParagraphStyle("CompanyAddress", fontName=FONT_NAME, fontSize=6.5, leading=8, textColor=TEXT_GRAY)
-            address_paragraph = Paragraph(escape(address), address_style)
-            _, height = address_paragraph.wrap(75 * mm, 12 * mm)
-            address_paragraph.drawOn(canvas, self.leftMargin, max(2 * mm, 12 * mm - height))
-            canvas.drawRightString(A4[0] - self.rightMargin, 7.2 * mm, WEBSITE)
-        else:
-            if self.context.code:
-                canvas.drawString(self.leftMargin, 7.2 * mm, "{}: {}".format(copy["file_code"], self.context.code))
-            canvas.drawRightString(A4[0] - self.rightMargin, 9 * mm, "{}: {}".format(copy["generated"], self.context.generated_at))
-            canvas.drawRightString(A4[0] - self.rightMargin, 5.8 * mm, WEBSITE)
+        # Independent columns leave the centered page counter unobstructed.
+        code = self.context.code or ""
+        code_size = min(7.1, 7.1 * (74 * mm) / max(pdfmetrics.stringWidth(code, FONT_NAME, 7.1), 1))
+        canvas.setFont(FONT_NAME, code_size)
+        canvas.drawString(self.leftMargin, 7.2 * mm, code)
+        canvas.setFont(FONT_NAME, 7.1)
+        canvas.drawRightString(A4[0] - self.rightMargin, 7.2 * mm, self.context.generated_at)
         canvas.restoreState()
 
 
@@ -547,19 +546,20 @@ def _item_table(title: str, items: Sequence[Dict[str, Any]], styles: Dict[str, P
                 ("BACKGROUND", (0, -1), (-1, -1), BRAND_BLUE),
                 ("LINEABOVE", (0, -1), (-1, -1), 1, ACCENT_BLUE),
                 ("SPAN", (1, -1), (4, -1)),
+                ("NOSPLIT", (0, -2), (-1, -1)),
             ]))
     return table, subtotal
 
 
 def _guarded_table(table: Table, keep_whole: bool) -> List[Any]:
-    if not keep_whole:
-        return [table]
-    _, height = table.wrap(170 * mm, 250 * mm)
-    # A group taller than a page cannot stay whole. Let ReportLab split it
-    # into the current remaining space rather than leaving that space blank.
-    if height > 220 * mm:
-        return [table]
-    return [CondPageBreak(height), table]
+    # Tables split naturally; only the final data row and total stay together.
+    return [table]
+
+
+def _append_module(story: List[Any], content: Sequence[Any]) -> None:
+    while story and isinstance(story[-1], Spacer):
+        story.pop()
+    story.extend([Spacer(1, 12), *content])
 
 
 def _device_story(snapshot: Dict[str, Any], device_index: int, styles: Dict[str, ParagraphStyle], language: str) -> List[Any]:
@@ -570,7 +570,7 @@ def _device_story(snapshot: Dict[str, Any], device_index: int, styles: Dict[str,
     name = _clean(product.get("title_name"))
     heading = "{} {} - {}".format(copy["device"], device_index, " - ".join(part for part in (model, name) if part) or "-")
     summary = _summary_table([(copy["model"], model), (copy["device_name"], name), (copy["appearance"], color.get("label") or color.get("code")), (copy["motor"], _selected_single(snapshot, "motor")), (copy["power"], _selected_single(snapshot, "voltage")), (copy["channel"], _selected_single(snapshot, "channel"))], styles)
-    content: List[Any] = [CondPageBreak(35 * mm), _section_heading(heading, styles)]
+    content: List[Any] = [_section_heading(heading, styles)]
     if summary:
         content.extend([summary, Spacer(1, 2 * mm)])
     for category in _sorted_categories(snapshot):
@@ -626,14 +626,13 @@ def _commerce_story(entries: Sequence[Dict[str, Any]], context: PdfDocumentConte
     canonical = _canonical_entries(entries)
     devices = [entry for entry in canonical if entry.get("item_type") == "device_config" and _positive_quantity(entry.get("quantity")) > 0]
     for index, entry in enumerate(devices, start=1):
-        story.extend(_device_story(entry.get("snapshot") or {}, index, styles, context.language))
+        _append_module(story, _device_story(entry.get("snapshot") or {}, index, styles, context.language))
     for item_type, title_key in (("tool", "tools"), ("accessory", "accessories")):
         items = _aggregate_entries(canonical, item_type)
         if not items:
             continue
-        story.append(CondPageBreak(30 * mm))
         table, _ = _item_table(copy[title_key], items, styles, context.language, primary_group=True)
-        story.extend([table, Spacer(1, 2 * mm)])
+        _append_module(story, [table])
     unknown = []
     for entry in canonical:
         if entry.get("item_type") in ("device_config", "tool", "accessory"):
@@ -646,9 +645,8 @@ def _commerce_story(entries: Sequence[Dict[str, Any]], context: PdfDocumentConte
         item["availability"] = "snapshot_only"
         unknown.append(item)
     if unknown:
-        story.append(CondPageBreak(30 * mm))
         table, _ = _item_table(copy["other"], unknown, styles, context.language)
-        story.append(table)
+        _append_module(story, [table])
     has_visible_content = bool(devices or _aggregate_entries(canonical, "tool") or _aggregate_entries(canonical, "accessory") or unknown)
     if not has_visible_content:
         story.append(_paragraph(copy["empty"], styles["body"]))
@@ -672,12 +670,12 @@ def configuration_bundle_pdf(configs: List[Dict[str, Any]], customer: Dict[str, 
     return _build_document(context, _commerce_story(entries, context))
 
 
-def commerce_bundle_pdf(entries: List[Dict[str, Any]], customer: Dict[str, Any], lang: str = "zh", reference: str = "", *, include_prices: bool = False, document_metadata: Any = None, document_kind: str = "configuration", document_code: str = "", note: str = "", status: str = "", created_at: str = "") -> bytes:
+def commerce_bundle_pdf(entries: List[Dict[str, Any]], customer: Dict[str, Any], lang: str = "zh", reference: str = "", *, include_prices: bool = False, document_metadata: Any = None, document_kind: str = "configuration", document_code: str = "", note: str = "", status: str = "", created_at: str = "", is_share: bool = False) -> bytes:
     """Render a canonical configuration or inquiry document without prices."""
     if include_prices:
         raise ValueError("Prices are only permitted in quotation PDFs")
     kind = "inquiry" if document_kind == "inquiry" else "configuration"
-    context = PdfDocumentContext(kind=kind, language=_language(lang), code=document_code or _reference_code(reference) or temporary_configuration_code(), customer=customer, note=note, status=status, created_at=created_at, extra_fields=list(document_metadata or []))
+    context = PdfDocumentContext(kind=kind, language=_language(lang), code=document_code or _reference_code(reference) or temporary_configuration_code(), customer=customer, note=note, status=status, created_at=created_at, extra_fields=list(document_metadata or []), is_share=is_share)
     return _build_document(context, _commerce_story(entries, context))
 
 
@@ -758,7 +756,7 @@ def _quote_device_story(group: Dict[str, Any], index: int, styles: Dict[str, Par
     spec_labels = {"color": copy["appearance"], "motor": copy["motor"], "voltage": copy["power"], "power": copy["power"], "channel": copy["channel"]}
     summary_items = [(_clean(spec_labels.get(spec.get("key"), spec.get("label") or spec.get("key"))), spec.get("value")) for spec in product.get("device_specifications") or [] if isinstance(spec, dict)]
     summary = _summary_table(summary_items, styles)
-    story: List[Any] = [CondPageBreak(38 * mm), _section_heading(heading, styles)]
+    story: List[Any] = [_section_heading(heading, styles)]
     if summary:
         story.extend([summary, Spacer(1, 2 * mm)])
     total = 0.0
@@ -786,7 +784,7 @@ def quote_pdf(quote: Dict[str, Any]) -> bytes:
     language = _language(quote.get("language"))
     currency = quote.get("currency") if quote.get("currency") in ("CNY", "USD") else "CNY"
     quote_id = _clean(quote.get("id"))
-    code = _clean(quote.get("quote_number")) or "DRAFT-{}".format((quote_id[:8] or uuid.uuid4().hex[:8]).upper())
+    code = pdf_identity("quote", quote.get("quote_number"))
     salesperson = quote.get("quoted_by") or quote.get("sender") or {"display_name": quote.get("display_name"), "email": quote.get("email"), "phone": quote.get("phone")}
     context = PdfDocumentContext(kind="quote", language=language, code=code, customer={"display_name": quote.get("customer_name"), "email": quote.get("customer_email"), "phone": quote.get("customer_phone"), "address": quote.get("customer_address")}, salesperson=salesperson, subject=_clean(quote.get("title")), currency=currency, status=_clean(quote.get("lifecycle_status") or "draft"), created_at=_clean(quote.get("created_at")), valid_until=_clean(quote.get("valid_until")))
     styles = _styles()
@@ -804,12 +802,11 @@ def quote_pdf(quote: Dict[str, Any]) -> bytes:
     for index, group in enumerate(devices, start=1):
         final_total = grand_total if index == len(devices) and not trailing_groups else None
         device_story, subtotal = _quote_device_story(group, index, styles, context, final_total)
-        story.extend(device_story)
+        _append_module(story, device_story)
     for group_index, (items, title_key) in enumerate(trailing_groups):
-        story.append(CondPageBreak(32 * mm))
         final_total = grand_total if group_index == len(trailing_groups) - 1 else None
         table, subtotal = _item_table(copy[title_key], items, styles, language, currency, True, grand_total=final_total, primary_group=True)
-        story.extend(_guarded_table(table, final_total is not None) + [Spacer(1, 2 * mm)])
+        _append_module(story, _guarded_table(table, final_total is not None))
     if not devices and not tools and not accessories and not other:
         story.append(_paragraph(copy["empty"], styles["body"]))
     return _build_document(context, story)

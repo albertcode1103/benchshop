@@ -1,6 +1,7 @@
 const catalogMarketplaceState = {
   type: "tools",
   items: [],
+  categories: [],
   category: "all",
   query: "",
   loading: false,
@@ -33,7 +34,9 @@ function setMarketplaceStatus(message = "", kind = "") {
 function renderMarketplaceCategories() {
   const container = document.getElementById("catalog-category-filters");
   if (!container) return;
-  const categories = [...new Map(catalogMarketplaceState.items.map((item) => [item.category_id, item.category_name])).entries()];
+  const categories = catalogMarketplaceState.categories.length
+    ? catalogMarketplaceState.categories.map((category) => [category.id, category.name])
+    : [...new Map(catalogMarketplaceState.items.map((item) => [item.category_id, item.category_name])).entries()];
   const entries = [["all", marketplaceText("allCategories", "全部", "All")], ...categories];
   if (!entries.some(([id]) => id === catalogMarketplaceState.category)) catalogMarketplaceState.category = "all";
   container.innerHTML = entries.map(([id, name]) => `
@@ -45,6 +48,7 @@ function renderMarketplaceCategories() {
     button.addEventListener("click", () => {
       catalogMarketplaceState.category = button.dataset.catalogCategory;
       renderCatalogMarketplace();
+      container.querySelector(`[data-catalog-category="${CSS.escape(catalogMarketplaceState.category)}"]`)?.focus();
     });
   });
 }
@@ -314,20 +318,26 @@ async function addMarketplaceItem(optionId, button) {
 }
 
 async function loadMarketplaceItems() {
+  const requestId = catalogMarketplaceState.requestId = (catalogMarketplaceState.requestId || 0) + 1;
   catalogMarketplaceState.loading = true;
   setMarketplaceStatus(marketplaceLanguage() === "en" ? "Loading…" : "正在加载…");
   renderCatalogMarketplace();
   try {
     const result = await catalogRequest(`/api/v1/catalog/items?type=${encodeURIComponent(catalogMarketplaceState.type)}&lang=${marketplaceLanguage()}`);
+    if (requestId !== catalogMarketplaceState.requestId) return;
     catalogMarketplaceState.items = Array.isArray(result.items) ? result.items : [];
-    catalogMarketplaceState.category = "all";
+    catalogMarketplaceState.categories = Array.isArray(result.categories) ? result.categories : [];
     setMarketplaceStatus();
   } catch (error) {
+    if (requestId !== catalogMarketplaceState.requestId) return;
     catalogMarketplaceState.items = [];
+    catalogMarketplaceState.categories = [];
     setMarketplaceStatus(`${marketplaceText("requestFailed", "加载失败", "Load failed")}：${error.message}`, "error");
   } finally {
-    catalogMarketplaceState.loading = false;
-    renderCatalogMarketplace();
+    if (requestId === catalogMarketplaceState.requestId) {
+      catalogMarketplaceState.loading = false;
+      renderCatalogMarketplace();
+    }
   }
 }
 

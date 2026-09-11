@@ -29,6 +29,28 @@ NAS 与 ECS 必须分别有目标配置、备份和同步结果，不得把服�
 
 ## 部署前准备
 
+### 可复用的本机发布预检与打包
+
+在本机项目根目录执行（不访问或修改 NAS/ECS）：
+
+```powershell
+.\backend\.venv312\Scripts\python.exe -m deploy.release_bundle --check --database backend/boten.db --uploads uploads/catalog
+```
+
+预检没有阻断项、相关代码与图片经用户授权提交，且暂停源端编辑后，使用一个不存在的私有输出目录生成发布包：
+
+```powershell
+.\backend\.venv312\Scripts\python.exe -m deploy.release_bundle --database backend/boten.db --uploads uploads/catalog --output tmp/release-NEW-ID
+```
+
+输出 `release.tar.gz`、`manifest.json` 和数据库快照。归档内 `code/` 为代码与静态资源，`data/boten.db` 为在线备份，`data/uploads/catalog/` 为上传目录；数据库和上传图片不得复制到 Web 静态根目录。包含账号等私有信息，发布包不能进入 Git、公共共享链接或公开站点。
+
+工作区未清理、引用图片未跟踪/缺失、LFS 指针、非法路径、数据库损坏、源文件在归档中变化都会阻断。输出目录已存在时拒绝覆盖。失败输出保留供检查，重试使用新目录，不把失败包用于发布。
+
+该命令**不会**传输文件、替换远端数据库或重建容器。正式传输仍需核验目标与维护窗口、备份远端、校验清单，再按下方恢复流程执行；不自动删除远端独有文件。
+
+### 目标环境准备
+
 1. NAS/Linux 已安装 Docker Engine 与 Docker Compose v2，并可执行 `docker compose version`。
 2. 已将项目代码复制或克隆到服务器，例如群晖：`/volume1/docker/benchshop`。
 3. 将当前运行中的业务数据迁移到部署目录：

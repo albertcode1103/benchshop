@@ -239,6 +239,23 @@ dialog::backdrop { background: rgba(19,26,32,.6); backdrop-filter: blur(3px); }
 .dialog-card { padding: 26px; }.dialog-card header, .dialog-card footer { display: flex; align-items: center; justify-content: space-between; gap: 16px; }.dialog-card h2 { margin: 4px 0 0; }.dialog-card footer { justify-content: flex-end; margin-top: 12px; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; margin-top: 26px; }.form-grid .full { grid-column: 1/-1; }
 .product-dialog { width: min(920px, calc(100% - 30px)); max-height: 90vh; }
+.pdf-language-dialog { width: min(400px, calc(100% - 32px)); max-height: calc(100dvh - 32px); margin: auto; overflow: auto; overscroll-behavior: contain; }
+.pdf-language-card { padding: 24px; }
+.pdf-language-card header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
+.pdf-language-card h2 { margin: 0; font-size: 20px; font-weight: 700; }
+.pdf-language-card fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
+.pdf-language-card legend { padding: 0; margin-bottom: 8px; font-size: 13px; color: var(--muted); }
+.pdf-language-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.pdf-language-options label { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; margin: 0; padding: 8px; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
+.pdf-language-options input[type="radio"] { width: 16px; height: 16px; min-height: 0; margin: 0; accent-color: var(--orange, #a53d00); }
+.pdf-language-options label:hover { border-color: #a53d00; }
+.pdf-language-options label:has(:checked) { border-color: #a53d00; background: #fff1e8; }
+.pdf-language-options label:has(:focus-visible) { outline: 2px solid #a53d00; outline-offset: 2px; }
+.pdf-language-options input[type="radio"]:focus-visible { outline: none; box-shadow: none; }
+.pdf-language-card p { margin: 12px 0 0; color: var(--muted); font-size: 13px; line-height: 1.6; }
+.pdf-language-card footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--line); }
+.pdf-language-card footer .button { min-width: 80px; min-height: 40px; }
+@media (max-width: 640px) { .pdf-language-card { padding: 16px; } }
 .product-dialog .dialog-card { max-height: 90vh; display: flex; flex-direction: column; }
 .editor-tabs { display: flex; gap: 4px; margin: 22px 0 4px; padding: 4px; border-radius: 10px; background: var(--paper); }
 .editor-tab { flex: 1; min-height: 40px; border: 0; border-radius: 8px; color: var(--muted); background: transparent; font-weight: 700; }
@@ -1112,8 +1129,7 @@ dialog:not(.product-dialog):not(.catalog-editor-dialog) .dialog-card .form-grid 
 .inquiries-business-table .inquiry-col-number { width: 17%; }
 .inquiries-business-table .inquiry-col-customer { width: 17%; }
 .inquiries-business-table .inquiry-col-content { width: 12%; }
-.inquiries-business-table .inquiry-col-progress { width: 12%; }
-.inquiries-business-table .inquiry-col-quote { width: 13%; }
+.inquiries-business-table .inquiry-col-progress { width: 25%; }
 .inquiries-business-table .inquiry-col-created { width: 14%; }
 .inquiries-business-table .inquiry-col-actions { width: 15%; }
 .inquiries-business-table .table-actions { flex-wrap: nowrap; white-space: nowrap; }
@@ -1453,4 +1469,23 @@ dialog.catalog-v2-dialog.catalog-category-editor-dialog { width: min(720px, calc
 @media (prefers-reduced-motion: reduce) {
   .disclosure-chevron,
   .disclosure-chevron::before { transition: none; }
+}
+.catalog-list-filters { display: grid; gap: 12px; padding: 16px 24px 0; }
+#config-catalog-list > .catalog-category-content { display: grid; gap: 16px; padding: 16px 24px 24px; min-width: 0; }
+#config-catalog-list > .catalog-category-content .catalog-v2-group > header { gap: 16px; padding: 16px; }
+#config-catalog-list > .catalog-category-content .catalog-collapse-target { flex: 1; min-width: 0; }
+#config-catalog-list > .catalog-category-content .catalog-collapse-target h3 { overflow-wrap: anywhere; }
+#config-catalog-list > .catalog-category-content .catalog-group-actions { flex-shrink: 0; gap: 8px; }
+@media (max-width: 700px) {
+  .catalog-list-filters { padding: 16px 16px 0; }
+  #config-catalog-list > .catalog-category-content { padding: 16px; }
+  #config-catalog-list > .catalog-category-content .catalog-v2-group > header { flex-direction: column; align-items: stretch; }
+}
+.catalog-list-filters > label { display: grid; grid-template-columns: 130px minmax(0, 420px); align-items: center; gap: 12px; margin: 0; }
+.catalog-list-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.catalog-list-chips .button { min-height: 40px; }
+.catalog-list-chips .active { color: var(--orange-dark); border-color: var(--orange); background: var(--orange-soft); }
+.catalog-list-filters > p { margin: 0; color: var(--muted); font-size: 13px; }
+@media (max-width: 700px) {
+  .catalog-list-filters > label { grid-template-columns: minmax(0, 1fr); gap: 8px; }
 }

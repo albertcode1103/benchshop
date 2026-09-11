@@ -102,7 +102,11 @@ async function authRequest(path, options = {}) {
     if (!response.ok) {
       const code = body.error?.code || response.headers.get("X-Error-Code") || `HTTP_${response.status}`;
       const requestId = body.request_id || response.headers.get("X-Request-ID") || "";
-      const message = response.status >= 500 ? authErrorCopy("SERVER_UNAVAILABLE") : (authErrorCopy(code) || body.detail || `${authText("requestFailed", "请求失败", "Request failed")} (${response.status})`);
+      const detail = typeof body.detail === "string" ? body.detail
+        : (typeof body.detail?.message === "string" ? body.detail.message : "");
+      const validationMessage = response.status === 422
+        ? authText("requestValidationFailed", "提交内容校验失败，请检查填写内容并刷新页面后重试。", "The submitted content is invalid. Check the fields and refresh the page before retrying.") : "";
+      const message = response.status >= 500 ? authErrorCopy("SERVER_UNAVAILABLE") : (authErrorCopy(code) || detail || validationMessage || `${authText("requestFailed", "请求失败", "Request failed")} (${response.status})`);
       throw new AuthRequestError(message, { code, field: body.error?.field, status: response.status, requestId, retryAfter: Number(response.headers.get("Retry-After") || 0) });
     }
     return body;
@@ -266,7 +270,7 @@ function enterAdmin() {
   sessionStorage.setItem(ADMIN_TOKEN_KEY, token);
   // The new same-origin window receives a copy of this sessionStorage at open
   // time, allowing the admin page to validate the existing session normally.
-  const adminWindow = window.open("./admin/", "boten-admin-workspace", "popup,width=1280,height=900");
+  const adminWindow = window.open("./admin/", "_blank");
   if (!adminWindow) return;
   adminWindow.focus();
 }

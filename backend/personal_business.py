@@ -2,6 +2,7 @@
 from fastapi import HTTPException
 from .database import get_connection
 from .security import to_iso, utc_now
+from .share_quota import enforce_share_quota
 
 
 def _owned(db, user_id, kind, resource_id):
@@ -20,6 +21,9 @@ def set_visibility(user_id, kind, resource_id, hidden):
         db.execute("BEGIN IMMEDIATE")
         if not _owned(db, user_id, kind, resource_id):
             raise HTTPException(404, "记录不存在或无权访问")
+        if kind == "shares" and hidden:
+            for table in ("commerce_shares", "config_shares"):
+                db.execute(f"UPDATE {table} SET owner_closed=CASE WHEN active=1 THEN 1 ELSE owner_closed END, active=0, customer_version=customer_version+1 WHERE id=? AND created_by=? AND active=1", (resource_id, user_id))
         db.execute("""INSERT INTO personal_business_visibility(user_id,resource_type,resource_id,hidden)
             VALUES(?,?,?,?) ON CONFLICT(user_id,resource_type,resource_id)
             DO UPDATE SET hidden=excluded.hidden,updated_at=CURRENT_TIMESTAMP""",
@@ -45,6 +49,11 @@ def set_owner_share_status(user_id, share_id, active, version):
                 raise HTTPException(409, "分享已过期，不能重新开启")
             if bool(row["active"]) == active:
                 return {"id": share_id, "active": active, "version": row["customer_version"]}
+            if active:
+                hidden = db.execute("SELECT hidden FROM personal_business_visibility WHERE user_id=? AND resource_type='shares' AND resource_id=?", (user_id, share_id)).fetchone()
+                if hidden and hidden[0]:
+                    raise HTTPException(409, "请先恢复已删除的分享记录")
+                enforce_share_quota(db, user_id)
             if row["customer_version"] != version:
                 raise HTTPException(409, "分享状态已更新，请刷新后重试")
             db.execute(f"UPDATE {table} SET active=?,owner_closed=?,customer_version=customer_version+1 WHERE id=?",

@@ -272,6 +272,8 @@
     if (catalogTabs) catalogTabs.setAttribute("aria-label", text.catalogTabs);
     if (catalogCategories) catalogCategories.setAttribute("aria-label", text.catalogCategories);
     if (catalogStageToggleLabel) catalogStageToggleLabel.textContent = text.viewCatalog;
+    const marketplaceToggleLabel = document.getElementById("catalog-marketplace-toggle-label");
+    if (marketplaceToggleLabel) marketplaceToggleLabel.textContent = text.viewCatalog;
   }
 
   window.botenI18n = {

@@ -576,6 +576,8 @@ def quote_source_summaries(source_type: str, source_ids: Sequence[str], current_
             summary["historical_quote_count"] += 1
             continue
         summary["quote_count"] += 1
+        count_key = "sent_quote_count" if row["lifecycle_status"] == "sent" else "draft_quote_count"
+        summary[count_key] = summary.get(count_key, 0) + 1
         summary["quote_links"].append({
             "id": row["id"],
             "user_id": row["user_id"],

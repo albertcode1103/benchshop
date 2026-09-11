@@ -7,7 +7,7 @@ const CUSTOMER_TOKEN_KEY = "boten_user_token";
 const SIDEBAR_COLLAPSED_KEY = "boten_admin_sidebar_collapsed";
 
 function getStoredCollapsedCategories() { try { const value = JSON.parse(localStorage.getItem("boten-admin-collapsed-categories") || "[]"); return Array.isArray(value) ? value : []; } catch (_) { return []; } }
-const state = { user: null, products: [], users: [], userTotal: 0, userPage: 1, userPageSize: 20, userQuery: "", userRoleFilter: "all", userStatusFilter: "all", userArchivedFilter: false, shares: [], shareTotal: 0, sharePage: 1, sharePageSize: 20, shareQuery: "", shareStatus: "all", shareProduct: "", shareCreatedFrom: "", shareCreatedTo: "", shareActiveTotal: 0, shareViewTotal: 0, inquiries: [], inquiryTotal: 0, inquiryPage: 1, inquiryPageSize: 20, inquiryQuery: "", inquiryStatus: "all", quoteQuery: "", quoteStatus: "all", quotes: [], audits: [], countries: [], editingProduct: null, mappingEditor: null, catalogLanguage: localStorage.getItem("boten-admin-language") || "zh", configCatalog: [], collapsedCategories: new Set(getStoredCollapsedCategories()) };
+const state = { user: null, products: [], users: [], userTotal: 0, userPage: 1, userPageSize: 20, userQuery: "", userRoleFilter: "all", userStatusFilter: "all", userArchivedFilter: false, shares: [], shareTotal: 0, sharePage: 1, sharePageSize: 20, shareQuery: "", shareStatus: "active", shareProduct: "", shareCreatedFrom: "", shareCreatedTo: "", shareActiveTotal: 0, shareViewTotal: 0, inquiries: [], inquiryTotal: 0, inquiryPage: 1, inquiryPageSize: 20, inquiryQuery: "", inquiryStatus: "all", quoteQuery: "", quoteStatus: "all", quotes: [], audits: [], countries: [], editingProduct: null, mappingEditor: null, catalogLanguage: localStorage.getItem("boten-admin-language") || "zh", configCatalog: [], collapsedCategories: new Set(getStoredCollapsedCategories()) };
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
 let shareDrawerElement = null;
@@ -361,10 +361,10 @@ function syncBusinessFilterUrl() {
 function restoreBusinessFilterState() {
   const query = new URLSearchParams(window.location.search);
   state.shareQuery = query.get("shareQuery") || "";
-  state.shareStatus = ["active", "expired", "closed"].includes(query.get("shareStatus")) ? query.get("shareStatus") : "all";
+  state.shareStatus = ["all", "active", "expired", "closed"].includes(query.get("shareStatus")) ? query.get("shareStatus") : "active";
   state.sharePage = Math.max(1, Number(query.get("sharePage") || 1) || 1);
   state.inquiryQuery = query.get("inquiryQuery") || "";
-  state.inquiryStatus = ["new", "assigned", "contacted", "quoted", "closed", "cancelled"].includes(query.get("inquiryStatus")) ? query.get("inquiryStatus") : "all";
+  state.inquiryStatus = ["business_new", "business_assigned", "business_contacted", "business_pending", "business_sent", "business_archived", "business_closed", "business_cancelled"].includes(query.get("inquiryStatus")) ? query.get("inquiryStatus") : "all";
   state.inquiryPage = Math.max(1, Number(query.get("inquiryPage") || 1) || 1);
   state.quoteQuery = query.get("quoteQuery") || "";
   state.quoteStatus = ["draft", "sent", "archived"].includes(query.get("quoteStatus")) ? query.get("quoteStatus") : "all";
@@ -923,6 +923,16 @@ function renderInquiryQuoteStatus(item) {
   return item.historical_quote_count ? '<span class="badge off">历史报价已归档</span>' : '<span class="badge inquiry-unquoted">未报价</span>';
 }
 
+function renderInquiryBusinessStatus(item) {
+  const status = item.business_status || item.status;
+  const sent = Number(item.sent_quote_count || 0), draft = Number(item.draft_quote_count || 0);
+  const label = status === "sent" ? `已报价 · ${sent} 份` : ({ pending: "待报价", archived: "报价已归档" }[status] || inquiryListStatusLabel(item));
+  const style = status === "sent" ? "good" : status === "pending" ? "inquiry-converted" : ["closed", "cancelled", "archived"].includes(status) ? "off" : "warn";
+  const owner = item.assignee_name && status !== "assigned" ? `<small>负责人：${escapeHtml(item.assignee_name)}</small>` : "";
+  const detail = (sent && status !== "sent" ? `<small>已报价 ${sent} 份</small>` : "") + (draft ? `<small>草稿 ${draft} 份</small>` : "");
+  return `<span class="badge ${style}">${escapeHtml(label)}</span>${owner}${detail}`;
+}
+
 function renderQuoteSourceStatus(item) {
   const count = Number(item.quote_count || 0);
   if (!count) return item.historical_quote_count ? '<span class="badge off">历史报价已归档</span>' : '<span class="badge">未报价</span>';
@@ -1036,7 +1046,7 @@ function renderInquiries() {
         : `<button class="table-action" data-quote-inquiry="${escapeHtml(item.id)}">${Number(item.quote_count || 0) ? "再次报价" : "转报价"}</button>`
       : "";
     const actions = `<span class="table-actions"><button class="table-action" data-view-inquiry="${escapeHtml(item.id)}">查看</button>${canTake ? `<button class="table-action" data-take-inquiry="${escapeHtml(item.id)}">接手</button>` : ""}<details class="table-actions-menu"><summary aria-label="更多询价操作">更多</summary><div><button class="table-action" data-export-inquiry="${escapeHtml(item.id)}" data-inquiry-number="${escapeHtml(item.inquiry_number)}">导出 PDF</button>${quoteAction}</div></details></span>`;
-    return `<tr><td><strong translate="no">${escapeHtml(item.inquiry_number)}</strong><small class="business-cell-meta">${escapeHtml(inquirySourceSummary(item))}</small></td><td>${renderCustomerLines(item.customer_name_snapshot || item.customer_display_name, item.customer_email_snapshot || item.customer_email_current, item.customer_phone_snapshot || item.customer_phone_current)}</td><td>${renderInquirySummary(item)}</td><td><span class="badge ${stateClass}">${escapeHtml(inquiryListStatusLabel(item))}</span></td><td>${renderInquiryQuoteStatus(item)}</td><td>${escapeHtml(formatDateTime(item.created_at))}</td><td class="align-right">${actions}</td></tr>`;
+    return `<tr><td><strong translate="no">${escapeHtml(item.inquiry_number)}</strong><small class="business-cell-meta">${escapeHtml(inquirySourceSummary(item))}</small></td><td>${renderCustomerLines(item.customer_name_snapshot || item.customer_display_name, item.customer_email_snapshot || item.customer_email_current, item.customer_phone_snapshot || item.customer_phone_current)}</td><td>${renderInquirySummary(item)}</td><td>${renderInquiryBusinessStatus(item)}</td><td>${escapeHtml(formatDateTime(item.created_at))}</td><td class="align-right">${actions}</td></tr>`;
   }).join("") || '<tr><td colspan="7" class="empty">暂无询价记录</td></tr>';
   const pages = Math.max(1, Math.ceil(state.inquiryTotal / state.inquiryPageSize));
   if ($("#inquiry-page-summary")) $("#inquiry-page-summary").textContent = `共 ${state.inquiryTotal} 条 · 第 ${state.inquiryPage}/${pages} 页`;
@@ -1248,12 +1258,36 @@ async function openInquiryQuote(button) {
   } catch (failure) { showToast(failure.message, "error"); }
 }
 
+let pdfExportPending = false;
+function choosePdfLanguage() {
+  return new Promise((resolve) => {
+    const dialog = document.createElement("dialog");
+    const opener = document.activeElement;
+    dialog.className = "pdf-language-dialog";
+    dialog.setAttribute("aria-labelledby", "pdf-language-title");
+    dialog.setAttribute("aria-describedby", "pdf-language-description");
+    dialog.innerHTML = `<form method="dialog" class="pdf-language-card"><header><h2 id="pdf-language-title">导出 PDF</h2><button class="icon-button" value="cancel" aria-label="关闭">×</button></header><fieldset><legend>文件语言</legend><div class="pdf-language-options"><label><input type="radio" name="language" value="zh"><span>中文版</span></label><label><input type="radio" name="language" value="en"><span lang="en">English</span></label></div></fieldset><p id="pdf-language-description">仅影响本次文件，不改变原记录、币种或金额。</p><footer><button class="button button-secondary" value="cancel">取消</button><button class="button button-primary" value="export">导出</button></footer></form>`;
+    dialog.querySelector(`input[value="${state.catalogLanguage === "en" ? "en" : "zh"}"]`).checked = true;
+    document.body.appendChild(dialog);
+    dialog.addEventListener("close", () => {
+      const language = dialog.returnValue === "export" ? dialog.querySelector('input[name="language"]:checked').value : null;
+      dialog.remove(); if (opener?.isConnected) opener.focus(); resolve(language);
+    }, { once: true });
+    dialog.showModal();
+    dialog.querySelector('input:checked').focus();
+  });
+}
+
 async function exportInquiryPdf(button) {
+  if (pdfExportPending) return;
+  pdfExportPending = true;
   const inquiryId = button.dataset.exportInquiry;
   const inquiryNumber = button.dataset.inquiryNumber || inquiryId.slice(0, 8);
   try {
+    const language = await choosePdfLanguage();
+    if (!language) return;
     await runButtonAction(button, "导出中…", async () => {
-      const response = await fetch(`${API_BASE}/api/v1/staff/inquiries/${encodeURIComponent(inquiryId)}/pdf?lang=${state.catalogLanguage === "en" ? "en" : "zh"}`, { headers: { Authorization: `Bearer ${sessionStorage.getItem(TOKEN_KEY)}` } });
+      const response = await fetch(`${API_BASE}/api/v1/staff/inquiries/${encodeURIComponent(inquiryId)}/pdf?lang=${language}`, { headers: { Authorization: `Bearer ${sessionStorage.getItem(TOKEN_KEY)}` } });
       if (!response.ok) {
         const error = await response.json().catch(() => ({}));
         throw new Error(error.detail || `PDF生成失败（${response.status}）`);
@@ -1262,7 +1296,7 @@ async function exportInquiryPdf(button) {
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = `inquiry-${inquiryNumber}.pdf`;
+      link.download = response.headers.get("Content-Disposition")?.match(/filename="([^"]+)"/)?.[1] || "BOTEN.pdf";
       link.style.display = "none";
       document.body.appendChild(link);
       link.click();
@@ -1271,6 +1305,7 @@ async function exportInquiryPdf(button) {
       showToast("询价配置 PDF 已开始下载（不含价格）");
     });
   } catch (failure) { showToast(failure.message, "error"); }
+  finally { pdfExportPending = false; }
 }
 
 function renderAudits() {
@@ -1305,13 +1340,8 @@ function switchView(view, updateHistory = true) {
     delete catalogAction.dataset.addCatalogCategory;
     delete catalogAction.dataset.addCatalogItem;
     catalogAction.hidden = false;
-    if (catalogView.rootId === "catalog-optional") {
-      catalogAction.textContent = "添加分类";
-      catalogAction.dataset.addCatalogCategory = "";
-    } else {
-      catalogAction.textContent = catalogView.rootId === "catalog-tools" ? "添加工具" : "添加附件";
-      catalogAction.dataset.addCatalogItem = catalogView.rootId;
-    }
+    catalogAction.textContent = "添加分类";
+    catalogAction.dataset.addCatalogCategory = "";
     window.selectCatalogRootFromNavigation?.(catalogView.rootId);
   }
   if (updateHistory && window.location.hash !== `#${view}`) window.location.hash = view;
@@ -1465,8 +1495,12 @@ async function viewQuoteHistory(quoteId) {
 
 async function exportQuote(quote) {
   if (!quote?.id) { showToast("报价已保存，但未取得报价编号，请在报价管理中重试导出"); return false; }
+  if (pdfExportPending) return false;
+  pdfExportPending = true;
   try {
-    const response = await fetch(`${API_BASE}/api/v1/quotes/${encodeURIComponent(quote.id)}/pdf`, { headers: { Authorization: `Bearer ${sessionStorage.getItem(TOKEN_KEY)}` } });
+    const language = await choosePdfLanguage();
+    if (!language) return false;
+    const response = await fetch(`${API_BASE}/api/v1/quotes/${encodeURIComponent(quote.id)}/pdf?lang=${language}`, { headers: { Authorization: `Bearer ${sessionStorage.getItem(TOKEN_KEY)}` } });
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
       throw new Error(error.detail || `PDF生成失败（${response.status}）`);
@@ -1475,7 +1509,7 @@ async function exportQuote(quote) {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `quote-${quote.id.slice(0, 8)}.pdf`;
+    link.download = response.headers.get("Content-Disposition")?.match(/filename="([^"]+)"/)?.[1] || "BOTEN.pdf";
     link.style.display = "none";
     document.body.appendChild(link);
     link.click();
@@ -1486,6 +1520,7 @@ async function exportQuote(quote) {
     showToast(error.message);
     return false;
   }
+  finally { pdfExportPending = false; }
 }
 
 function openQuoteEditor({ quoteId = null, quoteVersion = null, configId = null, title, items, currency = "CNY", sourceShareId = null, sourceInquiryId = null, sourceType = "direct", sourceDocumentVersion = null, sourceDocumentId = null, sourceCode = "", customerName = "", customerEmail = "", customerPhone = "", customerAddress = "", language = "zh", recipientUserId = "", recipientLabel = "" }) {
@@ -2070,16 +2105,21 @@ function clearShareResult() {
 }
 
 async function exportSharePdf(code) {
+  if (pdfExportPending) return;
+  pdfExportPending = true;
   try {
-    const response = await fetch(`${API_BASE}/api/v1/shares/${encodeURIComponent(code)}/pdf`, { headers: { Authorization: `Bearer ${sessionStorage.getItem(TOKEN_KEY)}` } });
+    const language = await choosePdfLanguage();
+    if (!language) return;
+    const response = await fetch(`${API_BASE}/api/v1/shares/${encodeURIComponent(code)}/pdf?lang=${language}`, { headers: { Authorization: `Bearer ${sessionStorage.getItem(TOKEN_KEY)}` } });
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
       throw new Error(error.detail || `PDF生成失败（${response.status}）`);
     }
     const blob = await response.blob(); const url = URL.createObjectURL(blob); const link = document.createElement("a");
-    link.href = url; link.download = `shared-configuration-${code}.pdf`; link.style.display = "none"; document.body.appendChild(link); link.click(); link.remove();
+    link.href = url; link.download = response.headers.get("Content-Disposition")?.match(/filename="([^"]+)"/)?.[1] || "BOTEN.pdf"; link.style.display = "none"; document.body.appendChild(link); link.click(); link.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   } catch (failure) { showToast(failure.message); }
+  finally { pdfExportPending = false; }
 }
 
 async function quoteShare(code) {
@@ -2249,7 +2289,7 @@ function bindEvents() {
     state.sharePage = 1; loadShares().catch((failure) => showToast(failure.message, "error"));
   });
   $("#share-filter-reset")?.addEventListener("click", () => {
-    $("#share-filter-form").reset(); state.shareQuery = ""; state.shareStatus = "all"; state.shareProduct = ""; state.shareCreatedFrom = ""; state.shareCreatedTo = ""; state.sharePage = 1;
+    $("#share-filter-form").reset(); state.shareQuery = ""; state.shareStatus = "active"; state.shareProduct = ""; state.shareCreatedFrom = ""; state.shareCreatedTo = ""; state.sharePage = 1;
     loadShares().catch((failure) => showToast(failure.message, "error"));
   });
   $("#share-query")?.addEventListener("input", () => {
@@ -2375,6 +2415,7 @@ function bindEvents() {
 
 // Unified catalog editor cards.
 function editorFieldControl(field) {
+  if (field.type === "select") return `<select name="${escapeHtml(field.name)}">${field.options.map(([value, label]) => `<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`).join("")}</select>`;
   if (field.name === "image_path") {
     return `<div class="image-path-control"><input name="image_path" value="${escapeHtml(field.value || "")}" placeholder="${escapeHtml(field.placeholder || "上传图片或填写现有路径")}"><button class="button button-secondary" type="button" data-pick-image>上传</button><input type="file" accept="image/png,image/jpeg,image/webp" data-image-file hidden></div>`;
   }

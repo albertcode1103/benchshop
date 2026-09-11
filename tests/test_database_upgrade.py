@@ -33,4 +33,4 @@ def test_legacy_and_drifted_upgrade_preserves_data_and_backups(tmp_path):
         assert db.execute("SELECT value FROM upgrade_sentinel").fetchall() == [('preserve me',)]
         assert db.execute("PRAGMA integrity_check").fetchone() == ('ok',)
         assert not db.execute("PRAGMA foreign_key_check").fetchall()
-        assert db.execute("SELECT version_num FROM alembic_version").fetchone() == ('20260911_0027',)
+        assert db.execute("SELECT version_num FROM alembic_version").fetchone() == ('20260911_0030',)

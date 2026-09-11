@@ -45,7 +45,7 @@ class AdminFrontendContractTests(unittest.TestCase):
         self.assertIn('data-catalog-drawer-select="catalog:accessories"', CUSTOMER_HTML)
         self.assertIn("function renderModels()", CUSTOMER_NAVIGATION_DRAWER)
         self.assertIn('toggles.forEach((button) => button.addEventListener("click", openDrawer))', CUSTOMER_NAVIGATION_DRAWER)
-        self.assertIn('models.filter((model) => model.enabled !== false)', CUSTOMER_NAVIGATION_DRAWER)
+        self.assertIn('models.filter((model) => model.enabled !== false && model.navigationVisible !== false)', CUSTOMER_NAVIGATION_DRAWER)
         self.assertIn('model.titleName || model.title_name || model.title', CUSTOMER_NAVIGATION_DRAWER)
         self.assertIn('select.dispatchEvent(new Event("change", { bubbles: true }))', CUSTOMER_NAVIGATION_DRAWER)
         self.assertIn('event.key === "Escape"', CUSTOMER_NAVIGATION_DRAWER)
@@ -112,9 +112,11 @@ class AdminFrontendContractTests(unittest.TestCase):
             2,
         )
 
-    def test_page_reload_resets_scroll_without_overriding_history_navigation(self) -> None:
+    def test_home_entries_and_reload_reset_scroll_without_changing_selection(self) -> None:
         self.assertIn('js/scroll-reset.js', CUSTOMER_HTML)
-        self.assertIn('navigation?.type !== "reload"', CUSTOMER_SCROLL_RESET)
+        self.assertNotIn('navigation?.type !== "reload"', CUSTOMER_SCROLL_RESET)
+        self.assertIn('behavior: "instant"', CUSTOMER_SCROLL_RESET)
+        self.assertNotIn('delete window.botenResetReloadScroll', CUSTOMER_SCROLL_RESET)
         self.assertIn('window.history.scrollRestoration = "manual"', CUSTOMER_SCROLL_RESET)
         self.assertIn('window.addEventListener("pagehide"', CUSTOMER_SCROLL_RESET)
         self.assertIn('window.history.scrollRestoration = previousScrollRestoration', CUSTOMER_SCROLL_RESET)
@@ -141,7 +143,8 @@ class AdminFrontendContractTests(unittest.TestCase):
         self.assertNotIn('class="catalog-root-tabs"', ADMIN_CATALOG_V2)
         self.assertNotIn('class="catalog-root-toolbar"', ADMIN_CATALOG_V2)
         self.assertIn('class="catalog-flat-list"', ADMIN_CATALOG_V2)
-        self.assertIn('catalogAction.textContent = catalogView.rootId === "catalog-tools" ? "添加工具" : "添加附件"', ADMIN_JS)
+        self.assertIn('catalogAction.textContent = "添加分类"', ADMIN_JS)
+        self.assertIn('parent_id: category?.parent_id || currentCatalogRootId()', ADMIN_CATALOG_V2)
 
     def test_catalog_prices_keep_table_layout_and_align_currency_tracks(self) -> None:
         self.assertIn('class="catalog-price-values"', ADMIN_CATALOG_V2)
@@ -224,7 +227,8 @@ class AdminFrontendContractTests(unittest.TestCase):
         customer_auth = (PROJECT_ROOT / "js" / "auth.js").read_text(encoding="utf-8")
         self.assertIn('id="account-admin-entry"', customer_html)
         self.assertIn('sessionStorage.setItem(ADMIN_TOKEN_KEY, token)', customer_auth)
-        self.assertIn('window.open("./admin/", "boten-admin-workspace", "popup,width=1280,height=900")', customer_auth)
+        self.assertIn('window.open("./admin/", "_blank")', customer_auth)
+        self.assertNotIn('popup,width=', customer_auth)
         self.assertIn('["admin", "sales"].includes(currentUser.role)', customer_auth)
         self.assertIn('sessionStorage.getItem(CUSTOMER_TOKEN_KEY)', ADMIN_JS)
 
@@ -246,9 +250,9 @@ class AdminFrontendContractTests(unittest.TestCase):
         customer_api = (PROJECT_ROOT / "js" / "catalog-api.js").read_text(encoding="utf-8")
         customer_price = (PROJECT_ROOT / "js" / "price.js").read_text(encoding="utf-8")
         runtime_config = (PROJECT_ROOT / "js" / "runtime-config.js").read_text(encoding="utf-8")
-        self.assertIn('const botenIsLoopbackHost = ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname);', runtime_config)
-        self.assertIn('window.location.port === "8081"', runtime_config)
-        self.assertIn('window.location.port === "8080" && botenIsLoopbackHost', runtime_config)
+        self.assertIn('window.BOTEN_API_BASE = "";', runtime_config)
+        self.assertNotIn('window.location.port', runtime_config)
+        self.assertNotIn(':8001', runtime_config)
         self.assertIn('/snapshot?lang=${language}', customer_api)
         self.assertIn('base_option_groups', customer_api)
         self.assertIn('optional_categories', customer_api)
@@ -258,7 +262,7 @@ class AdminFrontendContractTests(unittest.TestCase):
         self.assertIn('id="sales-contact-dialog"', CUSTOMER_HTML)
         self.assertIn('function initSalesContact()', customer_price)
         self.assertIn('window.BOTEN_SALES_CONTACT', runtime_config)
-        self.assertIn('window.location.port === "8081"', runtime_config)
+        self.assertIn('typeof window.BOTEN_API_BASE !== "string"', runtime_config)
         self.assertIn('info@boten-diesel.com', runtime_config)
         self.assertNotIn('id="sales-contact-phone"', CUSTOMER_HTML)
         self.assertIn('class="btn btn-secondary btn-sm sales-whatsapp-button"', CUSTOMER_HTML)
@@ -286,7 +290,7 @@ class AdminFrontendContractTests(unittest.TestCase):
         self.assertIn('/configs?lang=${cartLanguage()}', customer_cart)
         self.assertIn('/cart/catalog-items?lang=${cartLanguage()}', customer_cart)
         self.assertIn('/cart/share', customer_cart)
-        self.assertIn('/cart/export/pdf', customer_cart)
+        self.assertIn('/api/v1/shares/${encodeURIComponent(cartPdfAttempt.share.code)}/pdf?lang=${cartPdfAttempt.lang}', customer_cart)
         self.assertIn('/cart/batch-archive', customer_cart)
         self.assertIn('item_type: item.itemType', customer_cart)
         self.assertIn('getColorLabel(snapshot.currentColor, model)', customer_price)
@@ -333,13 +337,17 @@ class AdminFrontendContractTests(unittest.TestCase):
         self.assertIn('.share-dialog.cart-detail-dialog { width: min(92vw, 538px)', CUSTOMER_COMPONENTS_CSS)
         self.assertIn('items.reduce((total, item) => total + Number(item.quantity || 1), 0)', CUSTOMER_CART)
 
-    def test_cart_header_contains_whole_cart_share_and_pdf_actions(self) -> None:
+    def test_cart_footer_contains_whole_cart_share_and_pdf_actions(self) -> None:
         self.assertIn('exportCombinedPdf: "导出 PDF"', CUSTOMER_LANGUAGE)
         self.assertIn('exportCombinedPdf: "Export PDF"', CUSTOMER_LANGUAGE)
         self.assertIn('class="cart-header-actions"', CUSTOMER_HTML)
         self.assertIn('id="cart-pdf"', CUSTOMER_HTML)
         self.assertIn('id="cart-share"', CUSTOMER_HTML)
-        self.assertIn('function requestShareNote()', CUSTOMER_CART)
+        self.assertIn('function requestShareNote(quota, forPdf = false)', CUSTOMER_CART)
+        footer = CUSTOMER_HTML.split('class="cart-panel-footer"')[1]
+        self.assertIn('class="cart-footer-actions"', footer)
+        self.assertLess(footer.index('id="cart-pdf"'), footer.index('id="cart-share"'))
+        self.assertLess(footer.index('id="cart-share"'), footer.index('id="cart-inquiry"'))
         self.assertIn('textarea maxlength="30"', CUSTOMER_CART)
         self.assertIn('JSON.stringify({ items, lang: cartLanguage(), note })', CUSTOMER_CART)
         self.assertIn('id="customer-share-note" class="customer-share-note"', CUSTOMER_HTML)
@@ -661,8 +669,9 @@ class AdminFrontendContractTests(unittest.TestCase):
         ):
             self.assertIn(marker, ADMIN_CATALOG_V2)
         self.assertIn('dialogClass: "catalog-item-editor-dialog"', ADMIN_CATALOG_V2)
-        self.assertIn('catalogType === "optional"', ADMIN_CATALOG_V2)
-        self.assertIn('type="hidden" value="${escapeHtml(selectedCategoryId)}"', ADMIN_CATALOG_V2)
+        self.assertIn('<select name="category_id" required><option value="">请选择分类</option>', ADMIN_CATALOG_V2)
+        self.assertIn('itemCategoryOptions(selectedCategoryId, catalogType)', ADMIN_CATALOG_V2)
+        self.assertNotIn('type="hidden" value="${escapeHtml(selectedCategoryId)}"', ADMIN_CATALOG_V2)
 
     def test_catalog_editors_use_aligned_rows_and_footer_status_controls(self) -> None:
         self.assertIn('footerControl = ""', ADMIN_CATALOG_V2)

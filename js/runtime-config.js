@@ -1,15 +1,9 @@
 /*
- * The production Nginx container serves the website and proxies /api/ on the
- * same origin.  Local `py -m http.server 8080` development still reaches the
- * separately started API on port 8001 without requiring a file edit.
+ * Both the local development proxy and production Nginx serve /api/ on the
+ * website origin. Never infer an externally reachable API port from the URL.
  */
-const botenIsLoopbackHost = ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname);
-const botenIsLocalStaticServer = window.location.port === "8081"
-  || (window.location.port === "8080" && botenIsLoopbackHost);
 if (typeof window.BOTEN_API_BASE !== "string") {
-  window.BOTEN_API_BASE = botenIsLocalStaticServer
-    ? `${window.location.protocol}//${window.location.hostname}:8001`
-    : "";
+  window.BOTEN_API_BASE = "";
 }
 window.botenAssetUrl = function (path) {
   const value = String(path || "").trim();

@@ -449,8 +449,15 @@ def list_staff_inquiries(
     safe_size = min(max(int(page_size), 1), 50)
     selected_language = "en" if language == "en" else "zh"
     selected_status = str(status or "all")
-    if selected_status != "all" and selected_status not in INQUIRY_STATES:
+    business_states = {"new", "assigned", "contacted", "pending", "sent", "archived", "closed", "cancelled"}
+    is_business = selected_status.startswith("business_")
+    if selected_status != "all" and selected_status not in INQUIRY_STATES and not (is_business and selected_status[9:] in business_states):
         raise InquiryError("INQUIRY_STATUS_CONFLICT")
+    business_sql = """CASE WHEN i.status IN ('closed','cancelled') THEN i.status
+        WHEN EXISTS (SELECT 1 FROM commerce_quotes q WHERE q.source_type='inquiry' AND q.source_document_id=i.id AND q.lifecycle_status='sent') THEN 'sent'
+        WHEN EXISTS (SELECT 1 FROM commerce_quotes q WHERE q.source_type='inquiry' AND q.source_document_id=i.id AND q.lifecycle_status='draft') THEN 'pending'
+        WHEN EXISTS (SELECT 1 FROM commerce_quotes q WHERE q.source_type='inquiry' AND q.source_document_id=i.id AND q.lifecycle_status='archived') THEN 'archived'
+        WHEN i.status='quoted' THEN 'pending' ELSE i.status END"""
     like = "%{}%".format(str(query or "").strip())
     scope, scope_params = _staff_scope_clause(actor_id, actor_role)
     filters = """
@@ -466,15 +473,17 @@ def list_staff_inquiries(
                    WHERE cis.inquiry_id = i.id AND cis.source_share_code LIKE ?
                ))
     """.format(scope)
-    params = (*scope_params, selected_status, selected_status, like, like, like, like, like, like, like)
+    if is_business:
+        filters = filters.replace("i.status = ?", "(" + business_sql + ") = ?")
+    params = (*scope_params, selected_status, selected_status[9:] if is_business else selected_status, like, like, like, like, like, like, like)
     with get_connection() as db:
         total = int(db.execute("SELECT COUNT(*) " + filters, params).fetchone()[0])
         rows = db.execute(
             """
             SELECT i.*, creator.display_name AS customer_display_name,
                    creator.email AS customer_email_current, creator.phone AS customer_phone_current,
-                   assignee.display_name AS assignee_name
-            """ + filters + " ORDER BY CASE i.status WHEN 'new' THEN 0 WHEN 'assigned' THEN 1 ELSE 2 END, i.created_at DESC LIMIT ? OFFSET ?",
+                   assignee.display_name AS assignee_name,
+            """ + business_sql + " AS business_status " + filters + " ORDER BY CASE i.status WHEN 'new' THEN 0 WHEN 'assigned' THEN 1 ELSE 2 END, i.created_at DESC LIMIT ? OFFSET ?",
             (*params, safe_size, (safe_page - 1) * safe_size),
         ).fetchall()
         inquiry_ids = [row["id"] for row in rows]

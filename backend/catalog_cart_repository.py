@@ -11,6 +11,14 @@ from .database import get_connection
 CATALOG_CART_TYPES = ("tools", "accessories")
 
 
+def list_public_catalog_categories(catalog_type: str, language: str = "zh"):
+    if catalog_type not in CATALOG_CART_TYPES:
+        raise CatalogValidationError("CATALOG_TYPE_INVALID", "catalog_type")
+    with get_connection() as db:
+        rows = db.execute("SELECT id,name,name_en,sort_order FROM categories WHERE catalog_type=? AND parent_id=? AND enabled=1 ORDER BY sort_order,id", (catalog_type, "catalog-" + catalog_type)).fetchall()
+    return [{"id": r["id"], "name": r["name_en"] if language == "en" else r["name"], "sort_order": r["sort_order"]} for r in rows]
+
+
 def _merge_source_traces(rows: List[Any]) -> List[Dict[str, Any]]:
     merged: Dict[str, Dict[str, Any]] = {}
     for row in rows:

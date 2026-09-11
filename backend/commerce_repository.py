@@ -390,7 +390,47 @@ def _load_share_item(item_type: str, source_id: str, user_id: str) -> Dict[str, 
     }
 
 
-def create_commerce_share(items: Sequence[Dict[str, Any]], user_id: str, lang: str = "zh", note: str = "") -> Dict[str, Any]:
+def _share_snapshot_key(items):
+    """Compare ordered bilingual content, excluding only cart row identity."""
+    normalized = []
+    for item in items:
+        payload = json.loads(json.dumps(item["payload"], ensure_ascii=False))
+        if not isinstance(payload, dict):
+            raise ValueError("Invalid share snapshot")
+        for language in ("zh", "en"):
+            if isinstance(payload.get(language), dict):
+                payload[language].pop("source_id", None)
+        normalized.append([item["item_type"], item["quantity"], payload])
+    return json.dumps(normalized, sort_keys=True, ensure_ascii=False)
+
+
+def _find_matching_share(db, loaded, user_id):
+    expected = _share_snapshot_key(loaded)
+    for table, item_table, version in (("commerce_shares", "commerce_share_items", 2), ("config_shares", "config_share_items", 1)):
+        candidates = db.execute(f"SELECT * FROM {table} WHERE created_by=? AND active=1 AND expires_at>? AND item_count=? ORDER BY created_at DESC,id", (user_id, to_iso(utc_now()), len(loaded))).fetchall()
+        for candidate in candidates:
+            rows = db.execute(f"SELECT * FROM {item_table} WHERE share_id=? ORDER BY sort_order,created_at", (candidate["id"],)).fetchall()
+            try:
+                content = [{"item_type": row["item_type"] if version == 2 else "device_config", "quantity": row["quantity"] if version == 2 else 1, "payload": json.loads(row["snapshot_json"])} for row in rows]
+                matches = _share_snapshot_key(content) == expected
+            except (ValueError, TypeError):
+                matches = False  # Malformed historical data is never reused.
+            if matches:
+                return {**{key: candidate[key] for key in ("id", "code", "expires_at", "note", "item_count")}, "document_version": version, "reused": True}
+    return None
+
+
+def create_commerce_share(items: Sequence[Dict[str, Any]], user_id: str, lang: str = "zh", note: str = "", idempotency_key: Optional[str] = None, reuse_existing: bool = False) -> Dict[str, Any]:
+    request_payload = json.dumps([list(items), lang, note], sort_keys=True, ensure_ascii=False)
+    if reuse_existing:
+        request_payload = "reuse:" + request_payload
+    if idempotency_key:
+        with get_connection() as db:
+            previous = db.execute("SELECT a.payload,s.* FROM share_creation_attempts a JOIN commerce_shares s ON s.id=a.share_id WHERE a.user_id=? AND a.request_key=?", (user_id,idempotency_key)).fetchone()
+            if previous:
+                if previous["payload"] != request_payload:
+                    raise CatalogValidationError("CATALOG_VERSION_CONFLICT", "idempotency_key")
+                return {**{key: previous[key] for key in ("id", "code", "expires_at", "note", "item_count")}, "reused": reuse_existing}
     refs = _normalize_refs(items)
     loaded = sorted(
         (_load_share_item(item_type, source_id, user_id) for item_type, source_id in refs),
@@ -402,6 +442,21 @@ def create_commerce_share(items: Sequence[Dict[str, Any]], user_id: str, lang: s
     models = list(dict.fromkeys(item["product_model"] for item in loaded if item["product_model"]))
     primary_config_id = next((item["source_id"] for item in loaded if item["item_type"] == "device_config"), None)
     with get_connection() as db:
+        from .share_quota import enforce_share_quota
+        db.execute("BEGIN IMMEDIATE")
+        if idempotency_key:
+            previous = db.execute("SELECT a.payload,s.* FROM share_creation_attempts a JOIN commerce_shares s ON s.id=a.share_id WHERE a.user_id=? AND a.request_key=?", (user_id,idempotency_key)).fetchone()
+            if previous:
+                if previous["payload"] != request_payload:
+                    raise CatalogValidationError("CATALOG_VERSION_CONFLICT", "idempotency_key")
+                return {**{key: previous[key] for key in ("id", "code", "expires_at", "note", "item_count")}, "reused": reuse_existing}
+        if reuse_existing:
+            matched = _find_matching_share(db, loaded, user_id)
+            if matched:
+                if idempotency_key and matched["document_version"] == 2:
+                    db.execute("INSERT INTO share_creation_attempts(user_id,request_key,payload,share_id) VALUES(?,?,?,?)", (user_id,idempotency_key,request_payload,matched["id"]))
+                return matched
+        enforce_share_quota(db, user_id)
         user = db.execute("SELECT display_name, email, phone FROM users WHERE id = ?", (user_id,)).fetchone()
         if user is None:
             raise CatalogValidationError("CONFIG_ACCESS_DENIED", "items")
@@ -440,6 +495,8 @@ def create_commerce_share(items: Sequence[Dict[str, Any]], user_id: str, lang: s
                 str(note or "").strip()[:30],
             ),
         )
+        if idempotency_key:
+            db.execute("INSERT INTO share_creation_attempts(user_id,request_key,payload,share_id) VALUES(?,?,?,?)", (user_id,idempotency_key,request_payload,share_id))
         for index, item in enumerate(loaded):
             db.execute(
                 """
@@ -693,6 +750,22 @@ def set_any_share_active(share_id: str, active: bool) -> bool:
     """Update legacy or commerce share state without changing its snapshot."""
     enabled = 1 if active else 0
     with get_connection() as db:
+        from .share_quota import enforce_share_quota
+        from fastapi import HTTPException
+        db.execute("BEGIN IMMEDIATE")
+        for table in ("commerce_shares", "config_shares"):
+            row = db.execute(f"SELECT created_by,active,expires_at FROM {table} WHERE id=?", (share_id,)).fetchone()
+            if row is None:
+                continue
+            if active:
+                if row["expires_at"] <= to_iso(utc_now()):
+                    raise HTTPException(409, "分享已过期，不能重新开启")
+                hidden = db.execute("SELECT hidden FROM personal_business_visibility WHERE user_id=? AND resource_type='shares' AND resource_id=?", (row["created_by"], share_id)).fetchone()
+                if hidden and hidden[0]:
+                    raise HTTPException(409, "用户已删除此分享，请先由用户恢复记录")
+                if not row["active"]:
+                    enforce_share_quota(db, row["created_by"])
+            break
         cursor = db.execute("UPDATE commerce_shares SET active = ?, owner_closed=0, customer_version=customer_version+1 WHERE id = ?", (enabled, share_id))
         if cursor.rowcount:
             return True

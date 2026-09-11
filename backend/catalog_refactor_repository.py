@@ -133,6 +133,8 @@ def _catalog_item_row(db, option_id: str):
 
 
 def _item_category(db, category_id: str):
+    if not category_id or category_id in ("catalog-tools", "catalog-accessories"):
+        raise CatalogValidationError("CATALOG_CATEGORY_NOT_LEAF", "category_id")
     category = _catalog_category_row(db, category_id)
     if category is None:
         raise CatalogValidationError("CATALOG_CATEGORY_NOT_FOUND", "category_id")
@@ -161,13 +163,13 @@ def create_catalog_category(
     name_en = name_en.strip()
     if not name_zh or (enabled and not name_en):
         raise CatalogValidationError("CATALOG_TRANSLATION_REQUIRED", "name")
-    if parent_id != "catalog-optional":
+    if parent_id not in CATALOG_ROOTS:
         raise CatalogValidationError("CATALOG_CATEGORY_PARENT_INVALID", "parent_id")
     status = _translation_status(translation_status, english_value=name_en, field="translation_status")
     category_id = "category-{}".format(uuid.uuid4().hex)
     with get_connection() as db:
         parent = _catalog_category_row(db, parent_id)
-        if parent is None or parent["catalog_type"] != "optional" or not bool(parent["enabled"]):
+        if parent is None or parent["catalog_type"] not in ("optional", "tools", "accessories") or not bool(parent["enabled"]):
             raise CatalogValidationError("CATALOG_CATEGORY_PARENT_INVALID", "parent_id")
         duplicate = db.execute(
             """
@@ -185,7 +187,7 @@ def create_catalog_category(
                 (id, name, name_en, description, description_en, multiple,
                  sort_order, parent_id, catalog_type, enabled, version,
                  translation_status)
-            VALUES (?, ?, ?, ?, ?, 1, ?, ?, 'optional', ?, 1, ?)
+            VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?, 1, ?)
             """,
             (
                 category_id,
@@ -195,6 +197,7 @@ def create_catalog_category(
                 description_en.strip(),
                 int(sort_order),
                 parent_id,
+                parent["catalog_type"],
                 int(enabled),
                 status,
             ),
@@ -233,7 +236,7 @@ def update_catalog_category_v2(
                 "version",
                 {"current_version": int(current["version"])},
             )
-        if current["parent_id"] != "catalog-optional" or current["catalog_type"] != "optional":
+        if current["parent_id"] not in CATALOG_ROOTS or current["catalog_type"] not in ("optional", "tools", "accessories"):
             raise CatalogValidationError("CATALOG_CATEGORY_PROTECTED", "category_id")
         duplicate = db.execute(
             """
@@ -433,11 +436,7 @@ def update_catalog_item(
             )
         category = _item_category(db, category_id)
         if current["catalog_type"] != category["catalog_type"]:
-            references = db.execute(
-                "SELECT 1 FROM product_options WHERE option_id = ? LIMIT 1", (option_id,)
-            ).fetchone()
-            if references is not None:
-                raise CatalogValidationError("CATALOG_ITEM_TYPE_CHANGE_FORBIDDEN", "category_id")
+            raise CatalogValidationError("CATALOG_ITEM_TYPE_CHANGE_FORBIDDEN", "category_id")
         duplicate = db.execute(
             """
             SELECT id FROM options
@@ -604,7 +603,7 @@ def get_product_editor(product_id: str) -> Optional[Dict[str, Any]]:
             """
             SELECT id, name AS model, title_name AS product_name_zh,
                    title_name_en AS product_name_en, description AS overview_zh,
-                   description_en AS overview_en, enabled, sort_order, version,
+                   description_en AS overview_en, enabled, sort_order, version, visible_zh, visible_en,
                    translation_status
             FROM products WHERE id = ?
             """,
@@ -786,6 +785,8 @@ def save_product_editor(
     variants: Sequence[Dict[str, Any]],
     optional_config_ids: Sequence[str],
     optional_config_overrides: Optional[Dict[str, Dict[str, Any]]] = None,
+    visible_zh: Optional[bool] = None,
+    visible_en: Optional[bool] = None,
     translation_status: str = "machine_draft",
     colors: Optional[Sequence[Dict[str, Any]]] = None,
     specifications: Optional[Sequence[Dict[str, Any]]] = None,
@@ -805,7 +806,7 @@ def save_product_editor(
         current = db.execute(
             """
             SELECT version, title_name, title_name_en, description,
-                   description_en, translation_status
+                   description_en, translation_status, visible_zh, visible_en
             FROM products WHERE id = ?
             """,
             (product_id,),
@@ -819,6 +820,8 @@ def save_product_editor(
                 {"current_version": int(current["version"])},
             )
 
+        if not (current["visible_zh"] if visible_zh is None else visible_zh) and not (current["visible_en"] if visible_en is None else visible_en):
+            raise CatalogValidationError("CATALOG_REQUIRED_FIELD", "visible_zh")
         duplicate_model = db.execute(
             """
             SELECT id FROM products
@@ -856,7 +859,7 @@ def save_product_editor(
             UPDATE products
             SET name = ?, name_en = ?, title_name = ?, title_name_en = ?,
                 description = ?, description_en = ?, enabled = ?,
-                translation_status = ?,
+                translation_status = ?, visible_zh = COALESCE(?, visible_zh), visible_en = COALESCE(?, visible_en),
                 version = version + 1, updated_at = CURRENT_TIMESTAMP
             WHERE id = ? AND version = ?
             """,
@@ -869,6 +872,8 @@ def save_product_editor(
                 overview_en.strip(),
                 int(enabled),
                 translation_status,
+                visible_zh,
+                visible_en,
                 product_id,
                 version,
             ),

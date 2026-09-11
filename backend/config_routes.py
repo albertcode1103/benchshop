@@ -4,6 +4,7 @@ from fastapi.responses import Response
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, model_validator, field_validator
 from .payload_bounds import validate_tree
+from .pdf_identity import pdf_identity
 
 from .auth_routes import current_user
 from .personal_business import set_visibility, set_owner_share_status, hidden_ids
@@ -103,6 +104,8 @@ class CartItemRef(BaseModel):
 
 
 class CartBatchRequest(CommerceRequest):
+    reuse_existing: bool = False
+    idempotency_key: Optional[str] = Field(default=None, min_length=8, max_length=80)
     items: List[CartItemRef] = Field(default_factory=list)
     lang: str = Field(default="zh", max_length=5)
     note: str = Field(default="", max_length=30)
@@ -268,7 +271,8 @@ def catalog_reference_prices(catalog_type: str = "optional", lang: str = "zh", u
 @router.get("/catalog/items")
 def public_catalog_items(catalog_type: str = Query("tools", alias="type"), lang: str = "zh"):
     try:
-        return without_prices({"items": list_public_catalog_items(catalog_type, lang)})
+        from .catalog_cart_repository import list_public_catalog_categories
+        return without_prices({"items": list_public_catalog_items(catalog_type, lang), "categories": list_public_catalog_categories(catalog_type, lang)})
     except CatalogValidationError as error:
         raise AccountError(error.code, field=error.field or None, status_code=422, params=error.params)
 
@@ -371,12 +375,12 @@ def remove_catalog_cart_item(item_id: str, version: int = Query(..., ge=1), user
 @router.post("/cart/share", status_code=status.HTTP_201_CREATED)
 def share_cart(payload: CartBatchRequest, user=Depends(registered_user)):
     try:
-        result = create_commerce_share(_cart_refs(payload), user["id"], payload.lang, payload.note.strip())
+        result = create_commerce_share(_cart_refs(payload), user["id"], payload.lang, payload.note.strip(), payload.idempotency_key, payload.reuse_existing)
     except CatalogValidationError as error:
         raise _catalog_cart_error(error)
     except RuntimeError:
         raise AccountError("SHARE_CREATION_FAILED", status_code=503)
-    write_audit(user["id"], "commerce_share_create", "commerce_shares", result["id"], {"item_count": result["item_count"]})
+    write_audit(user["id"], "commerce_share_reuse" if result.get("reused") else "commerce_share_create", "config_shares" if result.get("document_version") == 1 else "commerce_shares", result["id"], {"item_count": result["item_count"]})
     return result
 
 
@@ -532,13 +536,13 @@ def staff_inquiry_pdf(inquiry_id: str, lang: str = "zh", user=Depends(staff_user
         language,
         include_prices=False,
         document_kind="inquiry",
-        document_code=result.get("inquiry_number") or inquiry_id[:8],
+        document_code=pdf_identity("inquiry", result.get("inquiry_number")),
         note=result.get("message") or "",
         status=status_labels[language].get(result.get("status"), result.get("status") or ""),
         created_at=result.get("created_at") or "",
     )
     write_audit(user["id"], "inquiry_pdf_export", "customer_inquiries", inquiry_id, {"item_count": len(entries)})
-    return _pdf_response(content, "inquiry-{}.pdf".format(result.get("inquiry_number") or inquiry_id[:8]))
+    return _pdf_response(content, pdf_identity("inquiry", result.get("inquiry_number")) + ".pdf")
 
 
 @router.patch("/staff/inquiries/{inquiry_id}")
@@ -594,7 +598,12 @@ def convert_inquiry_to_quote(inquiry_id: str, payload: InquiryQuoteRequest, resp
 
 @router.get("/customer/me/shares")
 def customer_own_shares(page: int = 1, page_size: int = 20, query: str = Query(default="", max_length=200), status: str = "", hidden: bool = False, user=Depends(registered_user)):
-    return list_customer_shares(user["id"], page, page_size, query.strip(), status, hidden)
+    from .share_quota import share_quota
+    from .database import get_connection
+    result = list_customer_shares(user["id"], page, page_size, query.strip(), status, hidden)
+    with get_connection() as db:
+        result["quota"] = share_quota(db, user["id"])
+    return result
 
 
 class PersonalVisibilityRequest(BaseModel):
@@ -658,7 +667,7 @@ def customer_own_quote_pdf(quote_id: str, user=Depends(registered_user)):
         raise AccountError("QUOTE_NOT_FOUND", status_code=404)
     if result.get("lifecycle_status") == "archived":
         raise AccountError("QUOTE_ARCHIVED", status_code=409)
-    return _pdf_response(render_quote_pdf(result), "quote-{}.pdf".format(quote_id[:8]))
+    return _pdf_response(render_quote_pdf(result), pdf_identity("quote", result.get("quote_number")) + ".pdf")
 
 
 @router.get("/customer/shares/{code}")
@@ -1036,12 +1045,15 @@ def quote(quote_id: str, user=Depends(staff_user)):
     return result
 
 @router.get("/quotes/{quote_id}/pdf")
-def quote_pdf(quote_id: str, user=Depends(staff_user)):
+def quote_pdf(quote_id: str, lang: Optional[str] = Query(default=None, pattern="^(zh|en)$"), user=Depends(staff_user)):
     result = get_quote(quote_id, None if user["role"] == "admin" else user["id"])
     if result is None: raise HTTPException(status_code=404, detail="Quote not found")
     if result.get("lifecycle_status") == "archived":
         raise AccountError("QUOTE_ARCHIVED", status_code=409)
-    return _pdf_response(render_quote_pdf(result), "quote-{}.pdf".format(quote_id[:8]))
+    if lang:
+        from .quote_export_language import localize_quote_export
+        result = localize_quote_export(result, lang)
+    return _pdf_response(render_quote_pdf(result), pdf_identity("quote", result.get("quote_number")) + ".pdf")
 
 @router.delete("/quotes/{quote_id}", status_code=status.HTTP_204_NO_CONTENT)
 def remove_quote(quote_id: str, user=Depends(staff_user)):
@@ -1072,7 +1084,13 @@ def shared_config(code: str, request: Request, user=Depends(registered_user), la
 
 
 @router.get("/shares/{code}/pdf")
-def shared_config_pdf(code: str, request: Request, user=Depends(staff_user), lang: str = "zh"):
+def shared_config_pdf(code: str, request: Request, user=Depends(registered_user), lang: str = "zh"):
+    if user["role"] not in ("admin", "sales"):
+        from .database import get_connection
+        with get_connection() as db:
+            owned = db.execute("SELECT 1 FROM commerce_shares WHERE code=? AND created_by=? UNION ALL SELECT 1 FROM config_shares WHERE code=? AND created_by=?", (code,user["id"],code,user["id"])).fetchone()
+        if not owned:
+            raise HTTPException(status_code=403, detail="Share owner access required")
     result = get_any_share(code, "en" if lang == "en" else "zh", increment_view=False)
     if result is None:
         raise HTTPException(status_code=404, detail="Share code not found or expired")
@@ -1088,10 +1106,10 @@ def shared_config_pdf(code: str, request: Request, user=Depends(staff_user), lan
     # customer or a staff member initiates the share export.
     content = commerce_bundle_pdf(
         entries, customer, "en" if lang == "en" else "zh",
-        include_prices=False, document_code=code,
+        include_prices=False, document_code=pdf_identity("share", code), note=result.get("note") or "", is_share=True,
     )
     write_audit(user["id"], "share_pdf_export", "commerce_shares" if result.get("document_version") == 2 else "config_shares", result["id"], {"code": code, "item_count": len(entries)})
-    return _pdf_response(content, "shared-configuration-{}.pdf".format(code))
+    return _pdf_response(content, pdf_identity("share", code) + ".pdf")
 
 
 def _pdf_response(content: bytes, filename: str) -> Response:

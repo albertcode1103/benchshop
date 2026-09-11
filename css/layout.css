@@ -234,6 +234,21 @@ body:not([data-selection-view="device"]) [data-device-content] {
   max-width: 600px;
 }
 
+.category-tabs .tab-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.category-tabs .category-selected-count {
+  flex-shrink: 0;
+  margin-left: 0;
+}
+
+.category-tabs .category-selected-count.is-empty {
+  background: var(--color-text-secondary);
+}
+
 .category-tabs {
   position: static;
   top: auto;

@@ -120,7 +120,7 @@ async function loadCatalogFromApi() {
       list.items.map((item) => catalogRequest(`/api/v1/products/${encodeURIComponent(item.id)}/snapshot?lang=${language}`))
     );
     const models = products
-      .map((product) => mapApiProduct(product, localAssets.get(product.id)))
+      .map((product) => ({ ...mapApiProduct(product, localAssets.get(product.id)), navigationVisible: Boolean(list.items.find((item) => item.id === product.id)?.[language === "en" ? "visible_en" : "visible_zh"] ?? true) }))
       .filter((model) => model.colors.length > 0 && model.categories.length > 0);
 
     if (!models.length) throw new Error("Catalog API returned no usable products");
