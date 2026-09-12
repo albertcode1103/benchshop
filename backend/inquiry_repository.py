@@ -189,6 +189,7 @@ def _load_inquiry(inquiry_id: str, language: str = "zh") -> Optional[Dict[str, A
             """
             SELECT i.*, creator.display_name AS customer_display_name,
                    creator.email AS customer_email_current, creator.phone AS customer_phone_current,
+                   creator.address AS customer_address_current,
                    assignee.display_name AS assignee_name
             FROM customer_inquiries i
             JOIN users creator ON creator.id = i.created_by

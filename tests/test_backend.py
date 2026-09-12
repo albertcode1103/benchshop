@@ -1809,6 +1809,11 @@ class BackendWorkflowTests(unittest.TestCase):
         quote_ids = []
         inquiry_id = None
         try:
+            with get_connection() as database:
+                database.execute(
+                    "UPDATE users SET phone = ?, phone_country = ?, address = ? WHERE id = ?",
+                    ("13800000000", "CN", "Kunshan Matang Road 108", customer["id"]),
+                )
             with TestClient(app) as client:
                 snapshot = build_snapshot(product['id'], product['colors'][0]['code'], {}, 'zh')
                 source_config = save_config(sales['id'], 'Three-role shared device', product['id'], snapshot)
@@ -1867,6 +1872,8 @@ class BackendWorkflowTests(unittest.TestCase):
                 self.assertEqual(inquiry_id, converted.json()["quote"]["source_document_id"])
                 converted_quote = converted.json()["quote"]
                 self.assertRegex(converted_quote["quote_number"], r"^BTQ-\d{8}-\d{4}$")
+                self.assertEqual("13800000000", converted_quote["customer_phone"])
+                self.assertEqual("Kunshan Matang Road 108", converted_quote["customer_address"])
                 product_line = next(item for item in converted_quote["items"] if item["kind"] == "product")
                 self.assertTrue(product_line["locked"])
                 self.assertEqual("base_device", product_line["configuration_role"])

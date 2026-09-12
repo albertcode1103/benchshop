@@ -131,7 +131,10 @@ class DevelopmentHandler(SimpleHTTPRequestHandler):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--port', type=int, default=8080)
+    parser.add_argument('--api-port', type=int, default=API_PORT,
+                        help='Loopback API port to proxy (default: 8001)')
     args = parser.parse_args()
+    API_PORT = args.api_port
     server = ThreadingHTTPServer(("0.0.0.0", args.port), DevelopmentHandler)
     print(f"BOTEN local site: http://0.0.0.0:{args.port}", flush=True)
     server.serve_forever()

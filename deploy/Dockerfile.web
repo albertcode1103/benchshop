@@ -11,7 +11,8 @@ COPY tb /site/tb
 RUN find /site -type f ! \( -iname '*.html' -o -iname '*.css' -o -iname '*.js' \
     -o -iname '*.png' -o -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.webp' \
     -o -iname '*.svg' -o -iname '*.ico' -o -iname '*.woff' -o -iname '*.woff2' \
-    -o -iname '*.ttf' -o -iname '*.otf' \) -delete \
+    -o -iname '*.ttf' -o -iname '*.otf' \
+    -o -path '/site/assets/fonts/harmonyos-sans/LICENSE.txt' \) -delete \
     && chmod -R a+rX /site
 
 FROM nginx:1.27-alpine

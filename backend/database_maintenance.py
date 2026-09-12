@@ -2,6 +2,7 @@
 
 import argparse
 import sqlite3
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -11,6 +12,18 @@ from .database import initialize_database
 
 
 DEFAULT_BACKUP_DIR = PROJECT_DIR / "backups"
+
+
+def replace_verified_database(temporary: Path, target: Path, attempts: int = 5) -> None:
+    """Atomically replace a verified SQLite file, tolerating short Windows locks."""
+    for attempt in range(attempts):
+        try:
+            temporary.replace(target)
+            return
+        except PermissionError:
+            if attempt + 1 == attempts:
+                raise
+            time.sleep(0.1 * (attempt + 1))
 
 
 def verify_database(path: Path) -> None:
@@ -77,7 +90,7 @@ def restore_backup(source: Path, confirmation: str, safety_dir: Path = DEFAULT_B
             target_connection.close()
             source_connection.close()
         verify_database(temporary)
-        temporary.replace(target)
+        replace_verified_database(temporary, target)
         verify_database(target)
         initialize_database()
     finally:

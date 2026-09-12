@@ -1,22 +1,18 @@
 from unittest.mock import Mock
-from reportlab.lib.units import mm
-from reportlab.platypus import CondPageBreak
 from backend.pdf_service import _guarded_table
 from backend.pdf_service import _quote_item_sort
 
 
 def test_long_group_can_use_remaining_page_space():
     table = Mock()
-    table.wrap.return_value = (170 * mm, 400 * mm)
     assert _guarded_table(table, True) == [table]
+    table.wrap.assert_not_called()
 
 
-def test_short_group_stays_together():
+def test_short_group_can_split_naturally_without_leaving_a_blank_page():
     table = Mock()
-    table.wrap.return_value = (170 * mm, 40 * mm)
-    result = _guarded_table(table, True)
-    assert isinstance(result[0], CondPageBreak)
-    assert result[1] is table
+    assert _guarded_table(table, True) == [table]
+    table.wrap.assert_not_called()
 
 
 def test_unrestricted_group_does_not_force_break():

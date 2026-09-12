@@ -578,6 +578,8 @@ def convert_inquiry_to_quote(inquiry_id: str, payload: InquiryQuoteRequest, resp
             source_document_id=inquiry_id, source_code=inquiry["inquiry_number"],
             customer_name=inquiry.get("customer_name_snapshot") or inquiry.get("customer_display_name") or "",
             customer_email=inquiry.get("customer_email_snapshot") or "",
+            customer_phone=inquiry.get("customer_phone_snapshot") or inquiry.get("customer_phone_current") or "",
+            customer_address=inquiry.get("customer_address_current") or "",
             language=language, allow_any_owner=user["role"] == "admin",
         )
         result = mark_inquiry_quoted(inquiry_id, user["id"], user["role"], quote["id"], payload.version)
