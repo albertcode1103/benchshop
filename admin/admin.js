@@ -1555,6 +1555,7 @@ function openQuoteEditor({ quoteId = null, quoteVersion = null, configId = null,
   dialog.innerHTML = `<form method="dialog" class="dialog-card quote-editor-card">
     <input type="hidden" name="quote_items_state" />
     <header><div><span class="eyebrow">QUOTATION</span><h2>${quoteId ? "修改报价" : "创建报价"}</h2></div><button class="icon-button" value="cancel" aria-label="关闭">×</button></header>
+    <div class="quote-editor-body">
     <div class="quote-editor-meta">
       <div class="quote-primary-row">
         <label class="quote-title-field"><span>配置名称</span><input name="title" autocomplete="off" placeholder="例如：客户 A · CR1016 配置报价" value="${escapeHtml(title || "")}" required /></label>
@@ -1583,6 +1584,7 @@ function openQuoteEditor({ quoteId = null, quoteVersion = null, configId = null,
       <div id="quote-edit-rows"></div>
     </div>
     <div class="quote-total-row"><span>合计</span><strong class="quote-total">0</strong></div>
+    </div>
     <footer><button class="button button-quiet" value="cancel">取消</button><button class="button button-secondary" value="save">保存报价</button><button class="button button-secondary" value="saveAndExport">保存并导出 PDF</button><button class="button button-primary" value="saveAndDeliver">保存并发送给客户</button></footer>
   </form>`;
   document.body.appendChild(dialog);
@@ -1643,7 +1645,7 @@ function openQuoteEditor({ quoteId = null, quoteVersion = null, configId = null,
       const itemName = catalogDisplayName(item.name, itemCode);
       const lineName = item.kind === "product" ? "设备基础价格" : itemName || "未命名项目";
       const deleteButton = isLockedQuoteLine(item) ? '<span class="quote-base-lock">基础配置</span>' : `<button class="table-action danger quote-line-delete" type="button" data-delete-quote-line="${index}" aria-label="删除 ${escapeHtml(item.name || "报价项目")}">删除</button>`;
-      return `${startsGroup ? `<div class="quote-commerce-group-title">${escapeHtml(groupLabel)}</div>` : ""}<div class="quote-edit-row"><div class="quote-item-name">${availability ? `<small>${availability}</small>` : ""}${itemCode && item.kind !== "product" ? `<small class="catalog-code">${escapeHtml(itemCode)}</small>` : ""}<strong>${escapeHtml(lineName)}</strong>${detail ? `<span>${escapeHtml(detail)}</span>` : ""}</div><input class="quote-qty-input" data-q="qty" data-i="${index}" aria-label="数量" type="number" min="1" step="1" value="${item.quantity}"><input class="quote-price-input" data-q="price" data-i="${index}" aria-label="单价" type="number" min="0" step="0.01" value="${item.price}"><span class="quote-line-action">${deleteButton}</span></div>`;
+      return `${startsGroup ? `<div class="quote-commerce-group-title">${escapeHtml(groupLabel)}</div>` : ""}<div class="quote-edit-row"><div class="quote-item-name">${availability ? `<small>${availability}</small>` : ""}${itemCode && item.kind !== "product" ? `<small class="catalog-code">${escapeHtml(itemCode)}</small>` : ""}<strong>${escapeHtml(lineName)}</strong>${detail ? `<span>${escapeHtml(detail)}</span>` : ""}</div><label class="quote-numeric-field"><span>数量</span><input class="quote-qty-input" data-q="qty" data-i="${index}" aria-label="数量" type="number" min="1" step="1" value="${item.quantity}"></label><label class="quote-numeric-field"><span>单价</span><input class="quote-price-input" data-q="price" data-i="${index}" aria-label="单价" type="number" min="0" step="0.01" value="${item.price}"></label><span class="quote-line-action">${deleteButton}</span></div>`;
     }).join("") : '<div class="quote-edit-empty">暂无可报价项目，请添加项目后保存。</div>';
     itemStateInput.value = JSON.stringify(normalizedItems);
   };

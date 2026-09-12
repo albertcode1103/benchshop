@@ -93,7 +93,21 @@ input:focus, select:focus, textarea:focus { border-color: var(--orange); box-sha
 .text-button:hover { border-color: var(--orange); color: var(--orange-dark); background: var(--orange-soft); }
 
 .admin-app { --sidebar-width: 250px; min-height: 100vh; display: grid; grid-template-columns: var(--sidebar-width) minmax(0, 1fr); transition: grid-template-columns .18s ease; }
-.sidebar { position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; padding: 26px 18px; color: #fff; background: var(--nav); z-index: 30; }
+.sidebar { position: sticky; top: 0; height: 100dvh; display: flex; flex-direction: column; padding: 26px 18px; padding-bottom: max(26px, env(safe-area-inset-bottom)); color: #fff; background: var(--nav); z-index: 30; }
+.sidebar-navigation { display: flex; flex: 1 1 auto; min-height: 0; flex-direction: column; overflow-y: auto; overscroll-behavior: contain; scroll-padding-block: 8px; }
+.sidebar-brand-row, .sidebar-footer { flex: 0 0 auto; }
+.sidebar-navigation > nav { flex-shrink: 0; }
+.product-order-hint { margin: 0; padding: 12px 24px; color: var(--muted); font-size: 13px; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
+.product-order-position { display: inline-flex; align-items: center; gap: 8px; margin-left: 8px; }
+.product-order-position label { display: inline-flex; align-items: center; gap: 8px; margin: 0; }
+.panel-header > #product-order-controls { order: 4; flex: 0 0 auto; margin-left: 0; }
+.product-catalog-table.is-ordering .product-col-model { width: 22%; }
+.product-catalog-table.is-ordering .product-col-title { width: auto; }
+.product-catalog-table.is-ordering .product-col-status { width: 180px; }
+.product-catalog-table.is-ordering .product-col-actions { width: 240px; }
+.product-order-position input { width: 76px; min-width: 0; height: 40px; padding: 8px; font-variant-numeric: tabular-nums; }
+@media (max-width: 640px) { .product-order-hint { padding-inline: 16px; } }
+@media (pointer: coarse) { .product-order-position input, .product-order-position .button { min-height: 44px; } }
 .sidebar-brand-row { min-height: 40px; display: flex; align-items: center; gap: 8px; padding: 0 4px 22px 8px; border-bottom: 1px solid rgba(255,255,255,.1); }
 .sidebar-brand { min-width: 0; display: flex; align-items: center; gap: 12px; color: #fff; text-decoration: none; }
 .sidebar-brand-logo { width: 78px; height: auto; max-height: 28px; object-fit: contain; filter: brightness(0) invert(1); }
@@ -174,7 +188,10 @@ input:focus, select:focus, textarea:focus { border-color: var(--orange); box-sha
 .role-filter button.active { color: #fff; background: var(--ink); }
 .product-mini-list, .share-mini-list { padding: 8px 24px 18px; }
 .mini-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 15px 0; border-bottom: 1px solid var(--line); }
-.mini-row:last-child { border-bottom: 0; }.mini-row strong, .mini-row span { display: block; }.mini-row span { color: var(--muted); font-size: 12px; margin-top: 3px; }
+.mini-row:last-child { border-bottom: 0; }
+.mini-row strong, .mini-row > div > span { display: block; }
+.mini-row > div > span { color: var(--muted); font-size: 12px; margin-top: 3px; }
+.mini-row > .badge { flex-shrink: 0; justify-content: center; }
 .model-mark { min-width: 62px; color: var(--orange); font-weight: 850; letter-spacing: -.02em; }
 
 .table-wrap { overflow-x: auto; }
@@ -565,6 +582,9 @@ td small, .badge { font-size: 12px; }
 .inquiry-detail-items small { color: var(--muted); }
 @media (max-width: 640px) { .inquiry-detail-body dl { grid-template-columns: 1fr; } .inquiry-share-layout { padding: 14px; } }
 .quote-editor-card { max-height: min(780px, 90dvh); overflow: hidden; }
+.quote-editor-body { display: contents; }
+.quote-editor-card .quote-numeric-field { display: contents; }
+.quote-numeric-field > span { display: none; }
 .quote-editor-meta { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; margin: 4px var(--editor-gutter, 24px) 12px; }
 .quote-editor-meta label { display: grid; grid-template-columns: 96px minmax(0, 1fr); align-items: center; gap: 10px; }
 .quote-primary-row { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(320px, 1fr); align-items: center; gap: 12px; }
@@ -1152,9 +1172,9 @@ dialog:not(.product-dialog):not(.catalog-editor-dialog) .dialog-card .form-grid 
 
 /* Device and configuration catalog V2 ------------------------------------ */
 .product-catalog-table .product-col-model { width: 25%; }
-.product-catalog-table .product-col-title { width: 49%; }
-.product-catalog-table .product-col-status { width: 12%; }
-.product-catalog-table .product-col-actions { width: 14%; }
+.product-catalog-table .product-col-title { width: auto; }
+.product-catalog-table .product-col-status { width: 180px; }
+.product-catalog-table .product-col-actions { width: 100px; }
 .product-catalog-table td:nth-child(3),
 .product-catalog-table td:nth-child(4) { white-space: nowrap; }
 
@@ -1166,6 +1186,14 @@ dialog:not(.product-dialog):not(.catalog-editor-dialog) .dialog-card .form-grid 
 .product-dialog .editor-panel { overflow-y: auto; }
 .product-dialog .dialog-card > footer { min-height: 66px; padding-top: 12px; padding-bottom: 12px; }
 .product-dialog .product-dialog-footer { justify-content: space-between; gap: 16px; }
+.product-dialog .product-publication-settings { display: flex; flex: 1 1 auto; flex-wrap: wrap; align-items: center; gap: 8px 24px; min-width: 0; }
+.product-dialog .product-visibility-settings { min-width: 0; margin: 0; padding: 0; border: 0; }
+.product-dialog .product-visibility-settings legend { padding: 0; font-size: 12px; font-weight: 600; color: var(--muted); }
+.product-dialog .product-visibility-options { display: flex; flex-wrap: wrap; gap: 16px; }
+.product-dialog .product-visibility-options label { display: inline-flex; align-items: center; gap: 8px; min-height: 36px; width: auto; margin: 0; cursor: pointer; }
+.product-dialog .product-publication-settings input[type="checkbox"] { appearance: auto; width: 18px; height: 18px; min-width: 18px; min-height: 18px; flex: 0 0 18px; margin: 0; padding: 0; accent-color: var(--orange-dark); }
+.product-dialog .product-publication-settings label:has(input:focus-visible) { outline: 2px solid var(--orange-dark); outline-offset: 2px; border-radius: 4px; }
+@media (pointer: coarse) { .product-dialog .product-publication-settings label { min-height: 44px; } }
 .product-dialog .product-enabled-toggle { display: inline-flex; flex: 0 1 auto; align-items: center; justify-content: flex-start; width: auto; min-width: 0; margin: 0 auto 0 0; }
 .product-dialog .product-enabled-toggle > span { white-space: nowrap; }
 .product-dialog .product-dialog-footer-actions { display: flex; flex: 0 0 auto; align-items: center; justify-content: flex-end; gap: 8px; margin-left: auto; }
@@ -1415,55 +1443,62 @@ dialog.catalog-v2-dialog.catalog-category-editor-dialog { width: min(720px, calc
   .catalog-image-preview { width: 100%; max-width: 240px; }
 }
 
-/* On phone-sized viewports the quotation metadata and add-item controls are
-   taller than the dialog. Let the card itself scroll, reserve a useful editing
-   viewport for quote lines, and keep the final actions reachable. This rule is
-   intentionally placed after the shared dialog rules so its 44px touch target
-   is not overwritten by the generic 40px footer button height. */
-@media (max-width: 600px) {
+/* One scrolling body on narrow OR short viewports; actions remain outside it. */
+@media (max-width: 600px), (max-height: 520px) {
   .product-dialog .quote-editor-card {
     --editor-gutter: 14px;
+    overflow: hidden;
+  }
+  .quote-editor-body {
+    display: block;
+    flex: 1 1 auto;
+    min-height: 0;
     overflow-y: auto;
     overscroll-behavior: contain;
+    scroll-padding-block: 16px;
+    padding-bottom: 12px;
   }
-  .quote-editor-card > header,
-  .quote-editor-meta,
-  .quote-add-toolbar,
-  .quote-total-row,
-  .quote-editor-card > footer {
+  .quote-editor-card > header, .quote-editor-card > footer {
+    position: static;
     flex-shrink: 0;
   }
-  .quote-editor-card > header {
-    position: sticky;
-    top: 0;
-    z-index: 4;
-    background: #fff;
-  }
   .quote-edit-list {
-    flex: 0 0 min(320px, 42dvh);
-    min-height: min(260px, 42dvh);
+    overflow: visible;
+    min-height: 116px;
   }
-  .quote-edit-head,
-  .quote-edit-row {
-    grid-template-columns: minmax(72px, 1fr) 44px 80px 42px;
-    gap: 4px;
-    padding-left: 8px;
-    padding-right: 8px;
-  }
-  .quote-edit-row input {
-    padding-inline: 4px;
-    font-size: 12px;
-  }
+  .quote-edit-head, .quote-commerce-group-title { position: static; }
   .quote-editor-card > footer {
-    position: sticky;
-    bottom: 0;
-    z-index: 4;
-    min-height: 112px;
-    background: rgba(255, 255, 255, .98);
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    min-height: 0;
+    padding-bottom: max(12px, env(safe-area-inset-bottom));
   }
   .quote-editor-card > footer .button {
-    min-height: 44px;
+    min-width: 0; min-height: 44px; height: auto; padding: 7px 8px; white-space: normal;
   }
+}
+@media (max-width: 600px) {
+  .quote-edit-head,
+  .quote-edit-row { grid-template-columns: minmax(72px, 1fr) 44px 80px 42px; gap: 4px; padding-inline: 8px; }
+  .quote-edit-row input { padding-inline: 4px; }
+}
+@media (max-width: 380px) {
+  .quote-edit-head { display: none; }
+  .quote-edit-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) auto; gap: 8px; }
+  .quote-item-name { grid-column: 1 / -1; }
+  .quote-edit-row input { font-size: 14px; }
+  .quote-editor-card .quote-numeric-field { display: grid; min-width: 0; grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  .quote-numeric-field > span { display: block; }
+  .quote-line-action { grid-column: 3; }
+}
+@media (pointer: coarse) {
+  .product-dialog header .icon-button, .account-dialog header .icon-button,
+  .catalog-v2-dialog header .icon-button, .quote-customer-picker header .icon-button,
+  .share-drawer-header .icon-button, .pdf-language-card header .icon-button {
+    width: 44px; height: 44px; min-width: 44px; flex-shrink: 0;
+  }
+  .share-drawer-footer .button, .catalog-dialog-footer .button, .account-dialog-card > footer .button { min-height: 44px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

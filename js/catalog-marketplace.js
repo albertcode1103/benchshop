@@ -364,15 +364,9 @@ window.selectMarketplaceCatalog = function selectMarketplaceCatalog(type) {
     tab.tabIndex = active ? 0 : -1;
   });
   const title = document.getElementById("catalog-marketplace-title");
-  const description = document.getElementById("catalog-marketplace-description");
   if (title) title.textContent = type === "tools"
     ? marketplaceText("serviceTools", "维修工具", "Service Tools")
     : marketplaceText("accessories", "设备附件", "Accessories");
-  if (description) description.textContent = marketplaceText(
-    "catalogStandaloneDesc",
-    "可独立选择数量并加入购物车，无需选择设备。",
-    "Choose quantities and add items without selecting a device."
-  );
   loadMarketplaceItems();
 };
 

@@ -12,7 +12,7 @@ function buildSummaryGroups(model, snapshot) {
   const groups = [];
 
   // 颜色
-  groups.push({
+  if (snapshot.currentColor) groups.push({
     type: "single",
     category: localStorage.getItem("boten-language") === "en" ? "Appearance" : "外观颜色",
     value: getColorLabel(snapshot.currentColor, model)

@@ -91,6 +91,7 @@ function mapApiProduct(product, localAssets) {
     description: product.overview || "",
     colors: product.colors.map((color) => color.code),
     defaultColor: product.colors.find((color) => color.is_default)?.code || product.colors[0]?.code || null,
+    configurationReady: product.colors.length > 0 && product.base_option_groups.some((group) => group.options.length > 0),
     colorImages,
     colorNames,
     colorStyles,
@@ -120,10 +121,8 @@ async function loadCatalogFromApi() {
       list.items.map((item) => catalogRequest(`/api/v1/products/${encodeURIComponent(item.id)}/snapshot?lang=${language}`))
     );
     const models = products
-      .map((product) => ({ ...mapApiProduct(product, localAssets.get(product.id)), navigationVisible: Boolean(list.items.find((item) => item.id === product.id)?.[language === "en" ? "visible_en" : "visible_zh"] ?? true) }))
-      .filter((model) => model.colors.length > 0 && model.categories.length > 0);
+      .map((product) => ({ ...mapApiProduct(product, localAssets.get(product.id)), navigationVisible: Boolean(list.items.find((item) => item.id === product.id)?.[language === "en" ? "visible_en" : "visible_zh"] ?? true) }));
 
-    if (!models.length) throw new Error("Catalog API returned no usable products");
     configData.models.splice(0, configData.models.length, ...models);
     window.catalogSource = "api";
     return true;

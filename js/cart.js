@@ -22,6 +22,11 @@ function setConfigSaveStatus(message = "", kind = "") {
   status.textContent = message;
   status.className = `cart-operation-status${kind ? ` ${kind}` : ""}`;
   status.hidden = !message;
+  if (message && window.matchMedia("(max-width: 1023px)").matches && document.getElementById("summary-panel")?.classList.contains("open")) {
+    requestAnimationFrame(() => {
+      if (!status.hidden && document.getElementById("summary-panel")?.classList.contains("open")) status.scrollIntoView({ block: "nearest", behavior: "instant" });
+    });
+  }
 }
 
 function escapeCartHtml(value) {
@@ -386,7 +391,30 @@ async function updateCatalogCartQuantity(id, button) {
   }
 }
 
+let currentConfigSaving = false;
+
+function currentConfigurationIssue() {
+  const model = configData.models.find((item) => item.id === state?.currentModelId);
+  if (!model) return cartText("noVisibleDevices", "当前语言暂无设备", "No devices available in this language");
+  return model.configurationReady === false
+    ? cartText("configurationPending", "配置资料待完善，暂不可保存配置或提交询价。", "Configuration details are incomplete. Saving and inquiries are currently unavailable.") : "";
+}
+
+function updateCurrentConfigurationAvailability() {
+  const issue = currentConfigurationIssue();
+  for (const id of ["configuration-availability", "device-availability"]) {
+    const notice = document.getElementById(id);
+    if (notice) { notice.textContent = issue; notice.hidden = !issue; }
+  }
+  for (const id of ["save-cart", "sales-contact-open"]) {
+    const button = document.getElementById(id);
+    if (button) button.disabled = Boolean(issue) || (id === "save-cart" && currentConfigSaving);
+  }
+}
+
 function currentConfigPayload() {
+  const issue = currentConfigurationIssue();
+  if (issue) throw new Error(issue);
   const snapshot = state.getSnapshot();
   const model = configData.models.find((item) => item.id === snapshot.currentModelId);
   if (!model) throw new Error(cartText("deviceNotFound", "未找到设备", "Device not found"));
@@ -394,6 +422,8 @@ function currentConfigPayload() {
 }
 
 async function saveCurrentConfigToServer() {
+  if (currentConfigSaving) return;
+  currentConfigSaving = true;
   const button = document.getElementById("save-cart");
   if (button) { button.disabled = true; button.textContent = cartText("saving", "保存中…", "Saving…"); }
   try {
@@ -409,12 +439,17 @@ async function saveCurrentConfigToServer() {
   } catch (error) {
     setConfigSaveStatus(`${cartText("saveFailed", "保存失败", "Save failed")}: ${error.message}`, "error");
   } finally {
-    if (button) button.disabled = false;
+    currentConfigSaving = false;
+    updateCurrentConfigurationAvailability();
     updateEditStatus();
   }
 }
 
-function addCurrentConfigToCart() { requireLogin(saveCurrentConfigToServer); }
+function addCurrentConfigToCart() {
+  const issue = currentConfigurationIssue();
+  if (issue) { setConfigSaveStatus(issue, "error"); updateCurrentConfigurationAvailability(); return; }
+  requireLogin(saveCurrentConfigToServer);
+}
 
 async function beginConfigEdit(id) {
   const item = serverCart.find((candidate) => candidate.id === id);
@@ -518,14 +553,14 @@ function requestShareNote(quota, forPdf = false) {
     dialog.setAttribute("aria-labelledby", "cart-share-note-title");
     dialog.innerHTML = `<form method="dialog" class="share-dialog-card cart-share-note-card">
       <header class="share-dialog-header"><div><span class="auth-kicker">SHARE</span><h2 id="cart-share-note-title">${cartText("shareSettings", "创建分享", "Create Share")}</h2><p>${cartText("shareNoteHint", "可以填写一条给接收人的分享备注。", "Add a short note for the recipient.")}</p></div><button class="btn btn-text btn-sm" type="submit" value="cancel" aria-label="${cartText("close", "关闭", "Close")}">✕</button></header>
-      <label class="cart-share-note-field"><span>${cartText("shareNote", "分享备注（选填）", "Share note (optional)")}</span><textarea maxlength="30" rows="3" placeholder="${cartText("shareNotePlaceholder", "最多输入30个字符", "Up to 30 characters")}"></textarea><small><span data-share-note-count>0</span> / 30</small></label>
+      <div class="simple-dialog-body"><label class="cart-share-note-field"><span>${cartText("shareNote", "分享备注（选填）", "Share note (optional)")}</span><textarea maxlength="30" rows="3" placeholder="${cartText("shareNotePlaceholder", "最多输入30个字符", "Up to 30 characters")}"></textarea><small><span data-share-note-count>0</span> / 30</small></label></div>
       <footer class="cart-share-note-actions"><button class="btn btn-secondary" type="submit" value="cancel">${cartText("cancelAction", "取消", "Cancel")}</button><button class="btn btn-primary" type="submit" value="confirm">${cartText("createShare", "生成分享码", "Create Share Code")}</button></footer>
     </form>`;
     document.body.appendChild(dialog);
     if (quota?.limited) {
       const usage = document.createElement("p");
       usage.textContent = `${cartText("activeShares", "有效分享", "Active shares")}: ${quota.used}/${quota.limit}`;
-      dialog.querySelector(".share-dialog-header").after(usage);
+      dialog.querySelector(".simple-dialog-body").prepend(usage);
     }
     const textarea = dialog.querySelector("textarea");
     if (forPdf) dialog.querySelector('[value="confirm"]').textContent = cartText("createPdf", "创建 PDF", "Create PDF");
@@ -777,6 +812,8 @@ function openInquiryDialog(sourceType) {
 }
 
 function requestCurrentInquiry() {
+  const issue = currentConfigurationIssue();
+  if (issue) { setConfigSaveStatus(issue, "error"); updateCurrentConfigurationAvailability(); return; }
   requireLogin(() => openInquiryDialog("current_device"));
 }
 

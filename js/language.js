@@ -62,7 +62,7 @@
       decreaseQuantity: "减少数量", increaseQuantity: "增加数量", removeFromSelection: "从本次选择中移除",
       selectedItem: "已选择",
       deviceSequence: "设备 {number}", totalQuantity: "总数", quantityUnit: "件",
-      openProductNavigation: "打开产品导航", closeProductNavigation: "关闭产品导航", productNavigation: "产品导航", viewCatalog: "查看目录",
+      openProductNavigation: "打开产品导航", closeProductNavigation: "关闭产品导航", productNavigation: "产品导航", viewCatalog: "目录", marketplaceCatalog: "目录",
       testEquipment: "检测设备", backToProductCategories: "返回产品类别", noEnabledDevices: "暂无已启用设备",
       preparingToAdd: "本次准备添加", nothingInCartType: "购物车中暂无此类项目",
       nothingPreparing: "尚未设置待添加数量", addQuantity: "本次添加", inCartQuantity: "购物车中：{count}",
@@ -136,7 +136,7 @@
       decreaseQuantity: "Decrease quantity", increaseQuantity: "Increase quantity", removeFromSelection: "Remove from current selection",
       selectedItem: "Selected",
       deviceSequence: "Device {number}", totalQuantity: "Total", quantityUnit: "items",
-      openProductNavigation: "Open product navigation", closeProductNavigation: "Close product navigation", productNavigation: "Product Navigation", viewCatalog: "View Catalog",
+      openProductNavigation: "Open product navigation", closeProductNavigation: "Close product navigation", productNavigation: "Product Navigation", viewCatalog: "Catalog", marketplaceCatalog: "Catalog",
       testEquipment: "Test Equipment", backToProductCategories: "Back to product categories", noEnabledDevices: "No enabled devices",
       preparingToAdd: "Preparing to Add", nothingInCartType: "No items of this type in the cart",
       nothingPreparing: "No quantities are being prepared", addQuantity: "Add Now", inCartQuantity: "In cart: {count}",
@@ -273,7 +273,7 @@
     if (catalogCategories) catalogCategories.setAttribute("aria-label", text.catalogCategories);
     if (catalogStageToggleLabel) catalogStageToggleLabel.textContent = text.viewCatalog;
     const marketplaceToggleLabel = document.getElementById("catalog-marketplace-toggle-label");
-    if (marketplaceToggleLabel) marketplaceToggleLabel.textContent = text.viewCatalog;
+    if (marketplaceToggleLabel) marketplaceToggleLabel.textContent = text.marketplaceCatalog;
   }
 
   window.botenI18n = {

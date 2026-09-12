@@ -4,13 +4,13 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#ffffff" />
-  <title>个人中心 | BOTEN</title>
+  <title>BenchShop-博特恩检测设备</title>
   <link rel="icon" type="image/png" href="../tb/site/LOGO.png?v=20260831" />
   <link rel="stylesheet" href="../css/main.css?v=20260904-1" />
-  <link rel="stylesheet" href="../css/components.css?v=20260911-2" />
-  <link rel="stylesheet" href="account.css?v=20260911-6" />
+  <link rel="stylesheet" href="../css/components.css?v=20260912-ui1" />
+  <link rel="stylesheet" href="account.css?v=20260912-headericons1" />
   <script src="../js/runtime-config.js?v=20260911-8"></script>
-  <script src="account.js?v=20260911-7" defer></script>
+  <script src="account.js?v=20260912-headericons1" defer></script>
 </head>
 <body class="profile-page">
   <a id="profile-skip-link" class="skip-link" href="#account-main">跳到主要内容</a>
@@ -22,10 +22,10 @@
       </a>
       <div class="profile-header-actions">
         <div class="language-switcher" id="profile-language-switcher" role="group" aria-label="语言切换">
-          <button type="button" data-language="zh">中文</button>
-          <button type="button" data-language="en">EN</button>
+          <button type="button" data-language="zh" data-short-label="中">中文</button>
+          <button type="button" data-language="en" data-short-label="EN">EN</button>
         </div>
-        <a class="btn btn-secondary btn-sm" href="../" id="profile-back-home">主页</a>
+        <a class="btn btn-secondary btn-sm" href="../" id="profile-back-home" aria-label="主页" title="主页"><svg class="profile-home-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1Z"/><path d="M9 21V12h6v9"/></svg><span id="profile-back-home-label">主页</span></a>
       </div>
     </div>
   </header>
@@ -37,14 +37,18 @@
         <div><strong id="profile-sidebar-name">用户</strong><span id="profile-sidebar-contact">--</span></div>
       </div>
       <nav class="profile-navigation">
-        <button class="active" type="button" data-account-panel="profile" aria-current="page">我的资料</button>
-        <p id="profile-account-group">我的账号</p>
-        <button type="button" data-account-panel="account-contact">联系方式</button>
-        <button type="button" data-account-panel="account-security">密码与安全</button>
-        <p id="profile-business-group">我的业务</p>
-        <button type="button" data-account-panel="my-shares">我的分享</button>
-        <button type="button" data-account-panel="my-inquiries">我的询价</button>
-        <button class="profile-quote-nav" type="button" data-account-panel="my-quotes">我的报价单 <span id="profile-quote-unread" class="profile-unread-badge" hidden>0</span></button>
+        <div class="profile-navigation-group" role="group" aria-labelledby="profile-account-group">
+          <p id="profile-account-group">我的账号</p>
+          <button class="active" type="button" data-account-panel="profile" aria-current="page">我的资料</button>
+          <button type="button" data-account-panel="account-contact">联系方式</button>
+          <button type="button" data-account-panel="account-security">密码与安全</button>
+        </div>
+        <div class="profile-navigation-group" role="group" aria-labelledby="profile-business-group">
+          <p id="profile-business-group">我的业务</p>
+          <button type="button" data-account-panel="my-shares">我的分享</button>
+          <button type="button" data-account-panel="my-inquiries">我的询价</button>
+          <button class="profile-quote-nav" type="button" data-account-panel="my-quotes">我的报价单 <span id="profile-quote-unread" class="profile-unread-badge" hidden>0</span></button>
+        </div>
       </nav>
       <button id="profile-sign-out" class="profile-sign-out" type="button">退出登录</button>
     </aside>

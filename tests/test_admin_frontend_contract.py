@@ -36,8 +36,8 @@ class AdminFrontendContractTests(unittest.TestCase):
     def test_product_navigation_uses_a_two_level_accessible_drawer(self) -> None:
         self.assertIn('id="catalog-drawer-toggle"', CUSTOMER_HTML)
         self.assertIn('id="catalog-stage-toggle"', CUSTOMER_HTML)
-        self.assertIn('viewCatalog: "查看目录"', CUSTOMER_LANGUAGE)
-        self.assertIn('viewCatalog: "View Catalog"', CUSTOMER_LANGUAGE)
+        self.assertIn('viewCatalog: "目录"', CUSTOMER_LANGUAGE)
+        self.assertIn('viewCatalog: "Catalog"', CUSTOMER_LANGUAGE)
         self.assertIn('id="catalog-navigation-drawer"', CUSTOMER_HTML)
         self.assertIn('id="catalog-model-drawer"', CUSTOMER_HTML)
         self.assertIn('id="device-select" hidden', CUSTOMER_HTML)
@@ -331,7 +331,7 @@ class AdminFrontendContractTests(unittest.TestCase):
         self.assertIn('renderDeviceCartCard(unit.item, ++deviceIndex)', CUSTOMER_CART)
         self.assertIn('class="cart-item-kind-title"', CUSTOMER_CART)
         self.assertIn('class="cart-catalog-group-total"', CUSTOMER_CART)
-        self.assertIn('.cart-items .cart-item :where(span, strong, small, b)', CUSTOMER_COMPONENTS_CSS)
+        self.assertIn('#cart-items :where(*) {\n  font-size: 12px;', CUSTOMER_COMPONENTS_CSS)
         self.assertIn('class="cart-detail-option"', CUSTOMER_CART)
         self.assertIn('window.normalizeCatalogCode?.(option.code)', CUSTOMER_CART)
         self.assertIn('.share-dialog.cart-detail-dialog { width: min(92vw, 538px)', CUSTOMER_COMPONENTS_CSS)
@@ -405,9 +405,12 @@ class AdminFrontendContractTests(unittest.TestCase):
         self.assertIn('.product-dialog .quote-editor-card {', ADMIN_CSS)
         self.assertIn('--editor-gutter: 14px;', ADMIN_CSS)
         self.assertIn('overflow-y: auto;', ADMIN_CSS)
-        self.assertIn('flex: 0 0 min(320px, 42dvh);', ADMIN_CSS)
+        self.assertIn('@media (max-width: 600px), (max-height: 520px)', ADMIN_CSS)
+        self.assertIn('class="quote-editor-body"', ADMIN_JS)
+        self.assertRegex(ADMIN_CSS, r'\.quote-editor-body\s*\{[^}]*min-height:\s*0;[^}]*overflow-y:\s*auto;')
+        self.assertRegex(ADMIN_CSS, r'\.quote-edit-list\s*\{[^}]*overflow:\s*visible;[^}]*min-height:\s*116px;')
         self.assertIn('grid-template-columns: minmax(72px, 1fr) 44px 80px 42px;', ADMIN_CSS)
-        self.assertIn('.quote-editor-card > footer .button {\n    min-height: 44px;', ADMIN_CSS)
+        self.assertRegex(ADMIN_CSS, r'\.quote-editor-card > footer \.button\s*\{[^}]*min-height:\s*44px;')
 
     def test_admin_api_status_lives_in_sidebar_without_a_desktop_topbar(self) -> None:
         self.assertIn('id="sidebar-api-status"', ADMIN_HTML)
@@ -612,11 +615,14 @@ class AdminFrontendContractTests(unittest.TestCase):
         self.assertIn('@router.post("/staff/inquiries/{inquiry_id}/convert-to-quote"', backend_routes)
         self.assertIn('def inquiry_quote_items(', inquiry_repository)
 
-    def test_customer_page_restores_the_last_catalog_and_defaults_to_cr1016(self) -> None:
+    def test_customer_page_restores_visible_device_or_first_in_catalog_order(self) -> None:
         customer_state = (PROJECT_ROOT / "js" / "state.js").read_text(encoding="utf-8")
         customer_renderer = (PROJECT_ROOT / "js" / "renderer.js").read_text(encoding="utf-8")
         self.assertIn('sessionStorage.getItem("boten-page-device-state")', customer_state)
-        self.assertIn('model.id === "cr1016"', customer_state)
+        self.assertIn('configData.models.filter((model) => model.navigationVisible !== false)', customer_state)
+        self.assertIn('visibleModels.find((model) => model.id === preferredModelId)', customer_state)
+        self.assertIn('visibleModels[0] || { id: null, categories: [], colors: [] }', customer_state)
+        self.assertIn('if (saved?.currentModelId !== firstModel.id) saved = null;', customer_state)
         self.assertIn('const selectionViewStorageKey = "boten-page-selection-view"', customer_renderer)
         self.assertIn('return "device"', customer_renderer)
         self.assertNotIn('applySelectionView("none")', customer_renderer)

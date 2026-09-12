@@ -136,16 +136,22 @@
       if (value.startsWith("device:")) {
         applySelectionView("device");
         rendererStateRef.setModel(value.slice(7));
-        scrollToModelHeader();
+        scrollToCatalogPageTop();
       } else if (value.startsWith("catalog:")) {
         applySelectionView(value);
         window.selectMarketplaceCatalog?.(value.slice(8));
-        document.getElementById("catalog-marketplace")?.scrollIntoView({ block: "start", behavior: prefersReducedMotion() ? "auto" : "smooth" });
+        scrollToCatalogPageTop();
       } else {
         applySelectionView("device");
         renderDeviceSelect(configData.models.find((model) => model.id === rendererStateRef.currentModelId));
       }
     });
+  }
+
+  function scrollToCatalogPageTop() {
+    // Run after the drawer's focus restoration and synchronous view rendering.
+    // Instant positioning also respects reduced-motion and cancels old smooth scrolling.
+    requestAnimationFrame(() => window.scrollTo({ top: 0, left: 0, behavior: "instant" }));
   }
 
   function prefersReducedMotion() {
@@ -170,8 +176,9 @@
   }
 
   function render(snapshot) {
-    const model = configData.models.find((m) => m.id === snapshot.currentModelId);
-    if (!model) return;
+    const currentModel = configData.models.find((m) => m.id === snapshot.currentModelId);
+    const emptyTitle = localStorage.getItem("boten-language") === "en" ? "No devices available in this language" : "当前语言暂无设备";
+    const model = currentModel || { id: null, type: emptyTitle, name: emptyTitle, titleName: "", description: "", colors: [], categories: [], detailImages: [] };
 
     renderDeviceSelect(model);
     renderHeader(model);
@@ -184,12 +191,13 @@
     renderSpecChips(model, snapshot);
     renderOptions(model, snapshot.currentCategoryId, snapshot.selections);
     renderSummary(model, snapshot);
+    updateCurrentConfigurationAvailability();
   }
 
   function renderDeviceSelect(currentModel) {
     if (!rendererElements.deviceSelect) return;
     const copy = selectionCopy();
-    const selectedValue = currentSelectionView === "device" ? `device:${currentModel.id}` : currentSelectionView;
+    const selectedValue = currentSelectionView === "device" ? (currentModel?.id ? `device:${currentModel.id}` : "none") : currentSelectionView;
     rendererElements.deviceSelect.innerHTML = `
       <option value="none" ${selectedValue === "none" ? "selected" : ""}>${copy.placeholder}</option>
       <optgroup label="${copy.devices}">${configData.models.filter((m) => m.navigationVisible !== false).map((m) =>
@@ -227,7 +235,7 @@
     const viewport = rendererElements.previewArea.querySelector(".gallery-viewport");
     if (!viewport) return;
 
-    const urls = resolveGalleryImages(model, color || getDefaultColor(model));
+    const urls = model.id ? resolveGalleryImages(model, color || getDefaultColor(model)) : ["assets/images/placeholder-option.svg"];
     galleryState.urls = urls;
     galleryState.currentIndex = 0;
 

@@ -41,8 +41,16 @@
     return options.map(([color, label]) => `<option value="${escapeHtml(color)}" ${color === current ? "selected" : ""}>${escapeHtml(label)}</option>`).join("");
   }
 
+  function productStatusLabel(product) {
+    const languages = [];
+    if (product.visible_zh !== false && product.visible_zh !== 0) languages.push("中文");
+    if (product.visible_en !== false && product.visible_en !== 0) languages.push("EN");
+    return `${product.enabled ? "已启用" : "已下架"}：${languages.join(" ") || "未设置"}`;
+  }
+
   window.renderProducts = function renderProductsV2() {
     const table = $("#products-table");
+    table.closest("table").classList.toggle("is-ordering", Boolean(state.productOrderDraft));
     let controls = document.getElementById("product-order-controls");
     if (!controls) {
       controls = document.createElement("div");
@@ -51,34 +59,73 @@
       table.closest("section, .view").querySelector("header").appendChild(controls);
     }
     controls.innerHTML = state.productOrderDraft ? '<button type="button" class="button button-secondary" data-save-product-order>保存排序</button><button type="button" class="button button-secondary" data-cancel-product-order>取消</button>' : '<button type="button" class="button button-secondary" data-start-product-order>排序</button>';
+    let hint = document.getElementById("product-order-hint");
+    if (!hint) {
+      hint = document.createElement("p"); hint.id = "product-order-hint";
+      hint.className = "product-order-hint"; hint.setAttribute("role", "status"); hint.tabIndex = -1;
+      controls.closest("header").after(hint);
+    }
+    hint.hidden = !state.productOrderDraft;
+    hint.textContent = state.productOrderSaving ? "正在保存排序…" : "填写目标序号，点击“插入”或按 Enter，其他设备自动顺移；最后点击“保存排序”生效。";
     const english = state.catalogLanguage === "en";
     $("#products-table").innerHTML = (state.productOrderDraft || state.products).map((product, index, list) => `
       <tr>
         <td><strong>${escapeHtml(english ? (product.name_en || product.name) : product.name)}</strong></td>
         <td>${escapeHtml(localized(product.title_name, product.title_name_en))}</td>
-        <td><span class="badge ${product.enabled ? "good" : "off"}">${product.enabled ? "已启用" : "已下架"}</span></td>
-        <td class="align-right"><small>${product.visible_zh !== false && product.visible_zh !== 0 ? "中文 " : ""}${product.visible_en !== false && product.visible_en !== 0 ? "EN" : ""}</small>${state.productOrderDraft ? `<button type="button" class="button button-secondary" data-product-order-step="${index}" data-step="-1" ${index === 0 ? "disabled" : ""}>上移</button><button type="button" class="button button-secondary" data-product-order-step="${index}" data-step="1" ${index === list.length - 1 ? "disabled" : ""}>下移</button>` : `<button class="table-action" type="button" data-edit-product="${escapeHtml(product.id)}">编辑</button>`}</td>
+        <td><span class="badge ${product.enabled ? "good" : "off"}">${productStatusLabel(product)}</span></td>
+        <td class="align-right">${state.productOrderDraft ? `<div class="product-order-position"><label><span>序号</span><input type="number" min="1" max="${list.length}" step="1" required inputmode="numeric" value="${index + 1}" data-product-order-position="${escapeHtml(product.id)}" aria-label="${escapeHtml(product.name)}的目标序号" aria-describedby="product-order-hint"></label><button type="button" class="button button-secondary" data-insert-product-order="${escapeHtml(product.id)}">插入</button></div>` : `<button class="table-action" type="button" data-edit-product="${escapeHtml(product.id)}">编辑</button>`}</td>
       </tr>
     `).join("") || '<tr><td colspan="4" class="empty">暂无产品数据</td></tr>';
+    if (state.productOrderSaving) $$('button, input', controls).concat($$('input, button', table)).forEach(control => { control.disabled = true; });
   };
 
-  document.addEventListener("click", async (event) => {
-    if (event.target.closest("[data-start-product-order]")) { state.productOrderDraft = state.products.map(item => ({ ...item })); window.renderProducts(); }
-    if (event.target.closest("[data-cancel-product-order]")) { state.productOrderDraft = null; window.renderProducts(); }
-    const move = event.target.closest("[data-product-order-step]");
-    if (move && state.productOrderDraft) {
-      const from = Number(move.dataset.productOrderStep), to = from + Number(move.dataset.step);
-      if (to >= 0 && to < state.productOrderDraft.length) [state.productOrderDraft[from], state.productOrderDraft[to]] = [state.productOrderDraft[to], state.productOrderDraft[from]];
-      window.renderProducts();
+  function insertProductOrder(id) {
+    if (!state.productOrderDraft || state.productOrderSaving) return;
+    const input = $$('[data-product-order-position]').find(item => item.dataset.productOrderPosition === id);
+    if (!input || !input.reportValidity()) return;
+    const to = Number(input.value) - 1;
+    const from = state.productOrderDraft.findIndex(item => item.id === id);
+    if (from < 0 || !Number.isInteger(to) || to < 0 || to >= state.productOrderDraft.length) return;
+    const [product] = state.productOrderDraft.splice(from, 1);
+    state.productOrderDraft.splice(to, 0, product);
+    window.renderProducts();
+    const movedInput = $$('[data-product-order-position]').find(item => item.dataset.productOrderPosition === id);
+    movedInput?.focus(); movedInput?.select();
+    $("#product-order-hint").textContent = `已将 ${product.name} 插入第 ${to + 1} 位，其他设备已顺移。点击“保存排序”生效。`;
+  }
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && !event.isComposing && event.target.matches('[data-product-order-position]')) {
+      event.preventDefault(); insertProductOrder(event.target.dataset.productOrderPosition);
     }
+  });
+
+  document.addEventListener("click", async (event) => {
+    if (state.productOrderSaving) return;
+    if (event.target.closest("[data-start-product-order]")) {
+      state.productOrderDraft = state.products.map(item => ({ ...item })); window.renderProducts();
+      ($('[data-product-order-position]') || $('[data-cancel-product-order]'))?.focus();
+    }
+    if (event.target.closest("[data-cancel-product-order]")) {
+      state.productOrderDraft = null; window.renderProducts(); $('[data-start-product-order]')?.focus();
+    }
+    const insert = event.target.closest("[data-insert-product-order]");
+    if (insert) insertProductOrder(insert.dataset.insertProductOrder);
     const save = event.target.closest("[data-save-product-order]");
     if (save && state.productOrderDraft) {
-      save.disabled = true;
+      state.productOrderSaving = true; window.renderProducts();
+      $("#product-order-hint").focus();
       try {
         const result = await api("/api/v1/admin/products-order", { method: "PUT", body: JSON.stringify({ items: state.productOrderDraft.map(({id, version}) => ({id, version})) }) });
-        state.products = result.items; state.productOrderDraft = null; window.renderProducts();
+        state.products = result.items; state.productOrderDraft = null;
         showToast("设备顺序已保存");
-      } catch (error) { showToast(error.message, "error"); save.disabled = false; }
+      } catch (error) { showToast(error.message, "error"); }
+      finally {
+        const restoreFocus = document.activeElement === document.body || document.activeElement === $("#product-order-hint");
+        state.productOrderSaving = false; window.renderProducts();
+        // Do not steal focus if the user moved to another control while waiting.
+        if (restoreFocus) $(state.productOrderDraft ? '[data-save-product-order]' : '[data-start-product-order]')?.focus();
+      }
     }
   });
 
@@ -477,12 +524,6 @@
       form.elements.overview_en.value = product.overview_en || "";
       form.elements.translation_status.value = product.translation_status || "machine_draft";
       form.elements.enabled.checked = Boolean(product.enabled);
-      if (!form.elements.visible_zh) {
-        const field = document.createElement("fieldset");
-        field.className = "catalog-field-list";
-        field.innerHTML = '<legend>用户端目录显示语言</legend><label><input type="checkbox" name="visible_zh"> 中文</label><label><input type="checkbox" name="visible_en"> English</label>';
-        form.elements.enabled.closest("label").before(field);
-      }
       form.elements.visible_zh.checked = Boolean(product.visible_zh ?? true);
       form.elements.visible_en.checked = Boolean(product.visible_en ?? true);
       $("#product-dialog-title").textContent = `编辑 ${product.model}`;
@@ -547,6 +588,7 @@
         captureProductEditor();
         const product = state.editingProduct;
         const colors = product.colors || [];
+        if (!product.visible_zh && !product.visible_en) throw new ApiError("至少选择一种用户端目录显示语言", { field: "visible_zh" });
         if (!product.model || !product.product_name_zh || !product.product_name_en) throw new ApiError("请完整填写设备型号和中英文产品名称", { field: "product" });
         if (!colors.some((color) => color.enabled)) throw new ApiError("设备至少需要保留一个启用的外观颜色", { field: "colors" });
         if (colors.filter((color) => color.enabled && color.is_default).length !== 1) throw new ApiError("启用的外观颜色必须且只能设置一个默认项", { field: "colors" });

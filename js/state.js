@@ -10,9 +10,12 @@ function createState() {
   sessionStorage.removeItem("boten-language-config");
 
   const preferredModelId = saved?.currentModelId || pageState?.currentModelId;
-  const firstModel = configData.models.find((model) => model.id === preferredModelId)
-    || configData.models.find((model) => model.id === "cr1016")
-    || configData.models[0];
+  const visibleModels = configData.models.filter((model) => model.navigationVisible !== false);
+  const firstModel = visibleModels.find((model) => model.id === preferredModelId)
+    || visibleModels[0] || { id: null, categories: [], colors: [] };
+  // Never carry one device's selections across a language fallback to another.
+  if (saved?.currentModelId !== firstModel.id) saved = null;
+  if (pageState?.currentModelId !== firstModel.id) pageState = null;
   const currentModelId = firstModel.id;
   const preferredCategoryId = saved?.currentCategoryId || pageState?.currentCategoryId;
   const currentCategoryId = firstModel.categories.some((category) => category.id === preferredCategoryId)

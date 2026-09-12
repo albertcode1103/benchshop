@@ -84,13 +84,15 @@ function applyProfileCopy() {
   document.getElementById("profile-address-label").textContent = profileLanguage === "en" ? "Contact Address" : "联系地址";
   document.getElementById("profile-address-help").textContent = profileLanguage === "en" ? "Additional contact information. Saving your address does not require signing in again." : "附加联系信息，保存地址无需重新登录。";
   document.getElementById("profile-address-submit").textContent = profileLanguage === "en" ? "Save Address" : "保存地址";
-  document.title = `${pc.pageTitle} | BOTEN`;
+  document.title = "BenchShop-博特恩检测设备";
   document.getElementById("profile-skip-link").textContent = pc.skip;
   document.getElementById("profile-brand-link").setAttribute("aria-label", pc.backHome);
+  document.getElementById("profile-back-home").setAttribute("aria-label", pc.backHome);
+  document.getElementById("profile-back-home").title = pc.backHome;
   document.getElementById("profile-sidebar").setAttribute("aria-label", pc.profileNav);
   document.getElementById("profile-business-dialog-close").setAttribute("aria-label", pc.close);
   const values = {
-    "profile-back-home": pc.backHome, "profile-account-group": pc.myAccount, "profile-sign-out": pc.signOut,
+    "profile-back-home-label": pc.backHome, "profile-account-group": pc.myAccount, "profile-sign-out": pc.signOut,
     "profile-details-title": pc.myProfile, "profile-details-description": pc.profileDesc, "profile-name-label": pc.name,
     "profile-gender-label": pc.gender, "profile-birth-label": pc.birth, "profile-signature-label": pc.signature, "profile-details-submit": pc.saveProfile,
     "profile-contact-title": pc.contact, "profile-contact-description": pc.contactDesc, "profile-email-label": pc.email, "profile-country-label": pc.country,
@@ -115,13 +117,23 @@ function applyProfileCopy() {
   const gender = document.getElementById("profile-gender");
   gender.options[0].textContent = pc.unset; gender.options[1].textContent = pc.male; gender.options[2].textContent = pc.female; gender.options[3].textContent = pc.other;
   document.querySelectorAll("[data-language]").forEach((button) => { button.classList.toggle("active", button.dataset.language === profileLanguage); button.setAttribute("aria-pressed", String(button.dataset.language === profileLanguage)); });
+  const compactHeader = window.matchMedia("(max-width: 899px)");
+  const updateLanguageLabels = () => document.querySelectorAll("#profile-language-switcher [data-language]").forEach((button) => {
+    const label = compactHeader.matches && button.dataset.language === profileLanguage
+      ? (profileLanguage === "en" ? "English, switch to Chinese" : "中文，切换为 English")
+      : (button.dataset.language === "en" ? "English" : "中文");
+    button.setAttribute("aria-label", label);
+    button.title = label;
+  });
+  compactHeader.addEventListener("change", updateLanguageLabels);
+  updateLanguageLabels();
 }
 
 function showProfilePanel(name) {
   const supported = ["profile", "account-contact", "account-security", "my-shares", "my-inquiries", "my-quotes"];
   const panel = supported.includes(name) ? name : "profile";
   document.querySelectorAll("[data-account-content]").forEach((section) => { section.hidden = section.dataset.accountContent !== panel; });
-  document.querySelectorAll("[data-account-panel]").forEach((button) => { const active = button.dataset.accountPanel === panel; button.classList.toggle("active", active); button.toggleAttribute("aria-current", active); });
+  document.querySelectorAll("[data-account-panel]").forEach((button) => { const active = button.dataset.accountPanel === panel; button.classList.toggle("active", active); if (active) button.setAttribute("aria-current", "page"); else button.removeAttribute("aria-current"); });
   if (location.hash !== `#${panel}`) history.replaceState(null, "", `#${panel}`);
 }
 
@@ -688,7 +700,17 @@ async function initProfilePage() {
   document.getElementById("profile-quotes-list").addEventListener("click", handleProfileBusinessAction);
   document.getElementById("profile-business-dialog-actions").addEventListener("click", handleProfileBusinessAction);
   document.getElementById("profile-business-dialog-close").addEventListener("click", () => document.getElementById("profile-business-dialog").close());
-  document.getElementById("profile-language-switcher").addEventListener("click", (event) => { const button = event.target.closest("[data-language]"); if (!button || button.dataset.language === profileLanguage) return; localStorage.setItem("boten-language", button.dataset.language); location.reload(); });
+  document.getElementById("profile-language-switcher").addEventListener("click", (event) => {
+    const button = event.target.closest("[data-language]");
+    if (!button) return;
+    let nextLanguage = button.dataset.language;
+    if (nextLanguage === profileLanguage) {
+      if (!window.matchMedia("(max-width: 899px)").matches) return;
+      nextLanguage = profileLanguage === "en" ? "zh" : "en";
+    }
+    localStorage.setItem("boten-language", nextLanguage);
+    location.reload();
+  });
   window.addEventListener("hashchange", () => showProfilePanel(location.hash.slice(1)));
   document.querySelectorAll("input, select, textarea").forEach((field) => field.addEventListener("input", () => field.removeAttribute("aria-invalid")));
   document.querySelectorAll(".profile-form").forEach((form) => form.addEventListener("input", () => { form.dataset.dirty = String(JSON.stringify([...new FormData(form)]) !== form.dataset.baseline); }));
