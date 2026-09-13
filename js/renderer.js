@@ -60,10 +60,14 @@
 
   function restoredSelectionView() {
     try {
+      const navigation = performance.getEntriesByType("navigation")[0]?.type;
+      if (navigation !== "reload" && navigation !== "back_forward") return "home";
+      const entryView = navigation === "back_forward" ? history.state?.botenScroll?.view : null;
+      if (["home", "device", "catalog:tools", "catalog:accessories"].includes(entryView)) return entryView;
       const savedView = sessionStorage.getItem(selectionViewStorageKey);
-      if (["device", "catalog:tools", "catalog:accessories"].includes(savedView)) return savedView;
+      if (["home", "device", "catalog:tools", "catalog:accessories"].includes(savedView)) return savedView;
     } catch (_) {}
-    return "device";
+    return "home";
   }
 
   function selectionCopy() {
@@ -74,11 +78,14 @@
   }
 
   function applySelectionView(view) {
-    currentSelectionView = ["device", "catalog:tools", "catalog:accessories"].includes(view) ? view : "device";
+    currentSelectionView = ["home", "device", "catalog:tools", "catalog:accessories"].includes(view) ? view : "home";
     try {
       sessionStorage.setItem(selectionViewStorageKey, currentSelectionView);
     } catch (_) {}
     document.body.dataset.selectionView = currentSelectionView;
+    const home = document.getElementById("home-page");
+    if (home) home.hidden = currentSelectionView !== "home";
+    document.getElementById("catalog-home-entry")?.setAttribute("aria-current", currentSelectionView === "home" ? "page" : "false");
     const showDevice = currentSelectionView === "device";
     document.querySelectorAll("[data-device-content]").forEach((element) => { element.hidden = !showDevice; });
     const marketplace = document.getElementById("catalog-marketplace");
@@ -100,6 +107,12 @@
   }
 
   window.botenShowDeviceSelection = showDeviceSelection;
+  window.botenShowHome = () => {
+    applySelectionView("home");
+    if (rendererStateRef) renderDeviceSelect(configData.models.find(model => model.id === rendererStateRef.currentModelId));
+    scrollToCatalogPageTop();
+    document.getElementById("home-title")?.focus({ preventScroll: true });
+  };
 
   function bindRenderer(state) {
     rendererStateRef = state;
@@ -149,6 +162,7 @@
   }
 
   function scrollToCatalogPageTop() {
+    window.botenCancelScrollRestore?.();
     // Run after the drawer's focus restoration and synchronous view rendering.
     // Instant positioning also respects reduced-motion and cancels old smooth scrolling.
     requestAnimationFrame(() => window.scrollTo({ top: 0, left: 0, behavior: "instant" }));
@@ -159,6 +173,7 @@
   }
 
   function scrollToModelHeader() {
+    window.botenCancelScrollRestore?.();
     const stageHeader = document.querySelector(".stage-header");
     const siteHeader = document.querySelector(".site-header");
     if (!stageHeader) return;
@@ -176,6 +191,10 @@
   }
 
   function render(snapshot) {
+    const focused = document.activeElement;
+    const focusKey = focused?.matches?.('.tab-btn, .option-card') ? {
+      id: focused.id, option: focused.dataset.option, color: focused.dataset.color
+    } : null;
     const currentModel = configData.models.find((m) => m.id === snapshot.currentModelId);
     const emptyTitle = localStorage.getItem("boten-language") === "en" ? "No devices available in this language" : "当前语言暂无设备";
     const model = currentModel || { id: null, type: emptyTitle, name: emptyTitle, titleName: "", description: "", colors: [], categories: [], detailImages: [] };
@@ -192,6 +211,12 @@
     renderOptions(model, snapshot.currentCategoryId, snapshot.selections);
     renderSummary(model, snapshot);
     updateCurrentConfigurationAvailability();
+    if (focusKey) {
+      const replacement = focusKey.id ? document.getElementById(focusKey.id)
+        : document.querySelector(focusKey.color ? `[data-color="${CSS.escape(focusKey.color)}"]`
+          : `.option-card[data-option="${CSS.escape(focusKey.option || '')}"]`);
+      replacement?.focus({ preventScroll: true });
+    }
   }
 
   function renderDeviceSelect(currentModel) {
@@ -200,6 +225,7 @@
     const selectedValue = currentSelectionView === "device" ? (currentModel?.id ? `device:${currentModel.id}` : "none") : currentSelectionView;
     rendererElements.deviceSelect.innerHTML = `
       <option value="none" ${selectedValue === "none" ? "selected" : ""}>${copy.placeholder}</option>
+      <option value="home" ${selectedValue === "home" ? "selected" : ""}>Home</option>
       <optgroup label="${copy.devices}">${configData.models.filter((m) => m.navigationVisible !== false).map((m) =>
         `<option value="device:${m.id}" ${selectedValue === `device:${m.id}` ? "selected" : ""}>${m.type}</option>`).join("")}</optgroup>
       <optgroup label="${copy.tools} / ${copy.accessories}">
@@ -414,10 +440,7 @@
     rendererElements.colorOptions.querySelectorAll(".option-card").forEach((card) => {
       const color = card.dataset.color;
       const activate = () => {
-        const overview = document.querySelector(".device-overview");
-        if (overview?.open) overview.open = false;
         rendererStateRef.setColor(color);
-        scrollToModelHeader();
       };
       card.addEventListener("click", activate);
       card.addEventListener("keydown", (e) => {
@@ -518,12 +541,19 @@
       const tabs = Array.from(rendererElements.categoryTabs.querySelectorAll(".tab-btn")); const current = tabs.indexOf(document.activeElement); if (current < 0) return;
       event.preventDefault();
       const next = event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 : (current + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
-      tabs[next].focus(); rendererStateRef.setCategory(tabs[next].dataset.category);
+      tabs[next].focus({ preventScroll: true }); rendererStateRef.setCategory(tabs[next].dataset.category);
     };
     if (currentCategoryId) rendererElements.optionsPanel.setAttribute("aria-labelledby", `category-tab-${currentCategoryId}`);
     else rendererElements.optionsPanel.removeAttribute("aria-labelledby");
 
-    rendererElements.categoryTabs.querySelector(".tab-btn.active")?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    const activeTab = rendererElements.categoryTabs.querySelector('.tab-btn.active');
+    if (activeTab) {
+      const container = rendererElements.categoryTabs;
+      const bounds = container.getBoundingClientRect(), tabBounds = activeTab.getBoundingClientRect();
+      const delta = tabBounds.left < bounds.left ? tabBounds.left - bounds.left
+        : tabBounds.right > bounds.right ? tabBounds.right - bounds.right : 0;
+      if (delta) container.scrollLeft += delta;
+    }
   }
 
   function renderSpecChips(model, snapshot) {
@@ -561,7 +591,8 @@
         const targetId = btn.dataset.target;
         const target = document.getElementById(targetId);
         if (!target) return;
-        const headerHeight = parseInt(getComputedStyle(document.documentElement).getPropertyValue("--header-height"), 10) || 64;
+        window.botenCancelScrollRestore?.();
+        const headerHeight = document.querySelector('.site-header')?.getBoundingClientRect().height || 64;
         const top = target.getBoundingClientRect().top + window.scrollY - headerHeight - 8;
         window.scrollTo({ top, behavior: prefersReducedMotion() ? "auto" : "smooth" });
       });
@@ -607,11 +638,13 @@
               </svg>
             </div>
             <div class="option-media option-media-2by1">${media}</div>
+            <div class="option-config-body">
             ${opt.code ? `<div class="option-code">${escapeOptionHtml(window.normalizeCatalogCode(opt.code))}</div>` : ""}
             <div class="option-name">${escapeOptionHtml(window.catalogDisplayName(opt.name, opt.code))}</div>
             ${opt.description ? `<div class="option-desc">${escapeOptionHtml(opt.description)}</div>` : ""}
             ${opt.specialNote ? `<div class="option-special-note">${escapeOptionHtml(opt.specialNote)}</div>` : ""}
             ${opt.note ? `<div class="option-note">${escapeOptionHtml(opt.note)}</div>` : ""}
+            </div>
           </div>
         `;
       })
@@ -641,7 +674,12 @@
   }
 
   function renderSummary(model, snapshot) {
-    const groups = buildSummaryGroups(model, snapshot);
+    const baseIds = new Set(["motor", "voltage", "channel"]);
+    const baseGroups = buildSummaryGroups({ ...model, categories: model.categories.filter(category => baseIds.has(category.id)) }, snapshot);
+    const groups = buildSummaryGroups({ ...model, categories: model.categories.filter(category => !baseIds.has(category.id)) }, { ...snapshot, currentColor: null });
+    const baseList = document.getElementById("summary-base-options");
+    baseList.innerHTML = baseGroups.map(group => `<div class="summary-base-row"><dt>${escapeOptionHtml(group.category)}</dt><dd>${escapeOptionHtml(Array.isArray(group.value) ? group.value.join("、") : group.value)}</dd></div>`).join("");
+    baseList.hidden = !baseGroups.length;
 
     rendererElements.summaryModelCode.textContent = model.name || "--";
     rendererElements.summaryModelName.textContent = model.titleName || model.name || "--";
@@ -713,9 +751,12 @@
       panel.removeAttribute("aria-modal");
       pageRegions.forEach((region) => { region.inert = false; });
       document.body.style.overflow = "";
-      previousFocus?.focus(); previousFocus = null;
+      previousFocus?.focus({ preventScroll: true }); previousFocus = null;
     };
 
+    window.botenCloseSummaryDrawer = () => {
+      if (panel.classList.contains("open")) closeDrawer();
+    };
     toggle.addEventListener("click", openDrawer);
     if (rendererElements.summaryClose) {
       rendererElements.summaryClose.addEventListener("click", closeDrawer);
@@ -723,6 +764,7 @@
     backdrop.addEventListener("click", closeDrawer);
 
     document.addEventListener("keydown", (e) => {
+      if (document.querySelector("dialog[open]")) return;
       if (e.key === "Escape" && panel.classList.contains("open")) {
         closeDrawer();
       }

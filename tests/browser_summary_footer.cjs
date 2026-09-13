@@ -19,7 +19,8 @@ const { chromium } = require('playwright');
     if(p.endsWith('/snapshot'))data={id:'qa',model:'BOTEN CR1016',name:'Multi-Functional Injector & Pump Test Bench',colors:[{code:'red',name:'Red',is_default:true}],base_option_groups:[{type:'motor',name:'Motor',options:[{id:'motor',name:'22kW'}]}],optional_categories:[{id:'cri',name:'Test kits / 测试套件',multiple:true,options:Array.from({length:40},(_,i)=>({id:'opt'+i,code:'BTK-'+i,name:'Long selected configuration / 已选配置 '.repeat(2)}))}]};
     await route.fulfill({json:data});
    });
-   await page.goto('http://127.0.0.1:8081/');await page.waitForLoadState('networkidle');
+   await page.goto('http://127.0.0.1:8082/');await page.waitForLoadState('networkidle');
+   await page.locator('#home-device:not([disabled])').click();
    await page.evaluate(()=>document.fonts.ready);
    for(const [width,height] of [[430,932],[320,568],[768,600],[844,390],[390,350],[1440,900]]){
     await page.setViewportSize({width,height});
@@ -37,6 +38,12 @@ const { chromium } = require('playwright');
       assert(await page.locator('.summary-content').evaluate(e=>e.scrollTop>0),'save feedback not scrolled into view');
      }
      const before=await page.locator('.summary-actions').boundingBox();
+     assert.equal(await page.locator('#summary-model #summary-base-options .summary-base-row').count(),2);
+     assert.equal(await page.locator('#summary-list .summary-base-row').count(),0);
+     for(const entry of await page.locator('#summary-model .summary-label, #summary-model-code, #summary-model-name, #summary-base-options dt, #summary-base-options dd').all()) {
+      assert.equal(await entry.evaluate(e=>getComputedStyle(e).fontSize),'14px');
+     }
+     const modelBefore=await page.locator('#summary-model').boundingBox();
      const body=page.locator(width<1024?'.summary-content':'#summary-list');
      if(long){
       assert(await body.evaluate(e=>e.scrollHeight>e.clientHeight),'long list must scroll');
@@ -44,6 +51,7 @@ const { chromium } = require('playwright');
       if(width<1024)await page.locator('#summary-panel').evaluate(e=>e.scrollTop=200);
      }
      const after=await page.locator('.summary-actions').boundingBox();
+     if(width>=1024) assert.equal((await page.locator('#summary-model').boundingBox()).y,modelBefore.y,'base module moved with optional list');
      assert.equal(after.y,before.y,`${lang} ${width} ${long}: footer moved during scrolling`);
      assert(after.y>=0&&after.y+after.height<=height,'footer clipped');
      assert(await page.locator('#summary-panel').evaluate(e=>e.scrollWidth<=e.clientWidth+1),'horizontal overflow');

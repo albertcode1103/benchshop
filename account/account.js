@@ -11,14 +11,14 @@ const PROFILE_INQUIRY_PAGE_SIZE = 10;
 
 const profileCopy = {
   zh: {
-    pageTitle: "个人中心", backHome: "主页", myProfile: "我的资料", myAccount: "我的账号", contact: "联系方式", security: "密码与安全", signOut: "退出登录",
+    pageTitle: "个人中心", backHome: "主页", myProfile: "我的资料", myAccount: "我的账号", contact: "联系方式", security: "密码设置", signOut: "退出登录",
     profileDesc: "维护用于识别和联系您的基本资料。", name: "姓名", gender: "性别", unset: "未设置", male: "男", female: "女", other: "其他", birth: "生日", signature: "个性签名", saveProfile: "保存资料",
     contactDesc: "修改登录邮箱、国家或手机号后需重新登录；联系地址可独立保存。", email: "邮箱", country: "国家", phone: "手机号", currentPassword: "当前密码", saveRelogin: "保存并重新登录",
     securityDesc: "设置至少 8 个字符的新密码。修改后需要重新登录。", newPassword: "新密码", confirmPassword: "确认新密码", changeRelogin: "修改密码并重新登录",
     loading: "正在加载账号资料…", saved: "资料已保存。", redirecting: "修改已保存，即将返回登录页面。", nameRequired: "请填写姓名。", passwordRequired: "请输入当前密码。", passwordLength: "新密码至少需要 8 个字符。", passwordMismatch: "两次输入的新密码不一致。", requestFailed: "操作失败，请检查填写内容后重试。", networkError: "无法连接服务，请稍后重试。", selectCountry: "请选择国家", skip: "跳到主要内容", profileNav: "个人中心导航", phoneInvalid: "请输入有效手机号。", countryRequired: "请选择国家。", loadErrorTitle: "暂时无法加载个人中心", loadErrorMessage: "登录状态仍会保留，请检查服务状态后重试。", retry: "重新加载", myBusiness: "我的业务", myShares: "我的分享", myQuotes: "我的报价单", sharesDesc: "查看当前账号生成过的配置分享码及有效状态。", quotesDesc: "查看业务员发送给您的正式报价和 PDF。", active: "有效", expired: "已过期", closed: "已关闭", items: "项内容", views: "次查看", quoteCount: "份报价", createdAt: "创建于", expiresAt: "有效期至", details: "查看详情", copyCode: "复制分享码", copied: "分享码已复制", emptyShares: "当前账号还没有分享记录。", emptyQuotes: "当前账号还没有收到报价单。", previous: "上一页", next: "下一页", page: "第 {page} 页", newQuote: "新报价", viewed: "已查看", updated: "已更新", archivedQuote: "已撤回（仅历史记录）", sentAt: "发送于", quotationDetails: "报价详情", shareDetails: "分享详情", downloadPdf: "下载 PDF", unavailable: "当前已失效", total: "合计", quantity: "数量", unitPrice: "单价", loadingBusiness: "正在加载…", close: "关闭"
   },
   en: {
-    pageTitle: "Profile", backHome: "Home", myProfile: "My Profile", myAccount: "My Account", contact: "Contact Details", security: "Password & Security", signOut: "Sign Out",
+    pageTitle: "Profile", backHome: "Home", myProfile: "My Profile", myAccount: "My Account", contact: "My Contact", security: "Password", signOut: "Sign Out",
     profileDesc: "Maintain the personal details used to identify your account.", name: "Name", gender: "Gender", unset: "Not set", male: "Male", female: "Female", other: "Other", birth: "Birthday", signature: "Signature", saveProfile: "Save Profile",
     contactDesc: "Changing your sign-in email, country, or phone requires signing in again. Save your address separately.", email: "Email", country: "Country", phone: "Phone", currentPassword: "Current Password", saveRelogin: "Save and Sign In Again",
     securityDesc: "Set a new password with at least 8 characters. You will need to sign in again.", newPassword: "New Password", confirmPassword: "Confirm New Password", changeRelogin: "Change Password and Sign In Again",
@@ -295,7 +295,10 @@ function inquiryStatusLabel(status) {
   }[status] || status || "--";
 }
 
-function inquirySourceLabel(source) {
+function inquirySourceLabel(inquiry) {
+  const source = inquiry.source_type;
+  const model = inquiry.items?.find(item => item.item_type === "device_config")?.snapshot?.product?.name;
+  if (source === "current_device" && model) return `${profileLanguage === "en" ? "Device" : "设备"} ${model}`;
   return source === "current_device" ? pc.currentDevice : source === "cart" ? pc.cart : source || "--";
 }
 
@@ -325,13 +328,19 @@ async function loadProfileInquiries(page = profileInquiryPage) {
   try {
     const requestId = ++businessRequests.inquiries;
     const result = await profileRequest(`/customer/me/inquiries?page=${page}&page_size=${PROFILE_INQUIRY_PAGE_SIZE}${businessFilterQuery("inquiries")}`);
+    await Promise.all(result.items.filter(item => item.source_type === "current_device").map(async item => {
+      try {
+        const detail = await profileRequest(`/customer/me/inquiries/${encodeURIComponent(item.id)}?lang=${profileLanguage}`);
+        item.items = detail.items;
+      } catch (_) { /* Keep the source label when detail is temporarily unavailable. */ }
+    }));
     if (requestId !== businessRequests.inquiries) return;
     profileInquiryPage = Number(result.page || 1);
     profileInquiryTotal = Number(result.total || 0);
     const list = document.getElementById("profile-inquiries-list");
     list.innerHTML = result.items.length ? result.items.map((inquiry) => `
       <article class="profile-business-card">
-        <div class="profile-business-card-main"><strong translate="no">${escapeProfileHtml(inquiry.inquiry_number)}</strong><span>${escapeProfileHtml(inquirySourceLabel(inquiry.source_type))}</span></div>
+        <div class="profile-business-card-main"><strong translate="no">${escapeProfileHtml(inquiry.inquiry_number)}</strong><span>${escapeProfileHtml(inquirySourceLabel(inquiry))}</span></div>
         <div class="profile-business-card-actions"><button class="btn btn-secondary btn-sm" type="button" data-copy-inquiry="${escapeProfileHtml(inquiry.inquiry_number)}">${pc.copyInquiry}</button><button class="btn btn-secondary btn-sm" type="button" data-open-inquiry="${escapeProfileHtml(inquiry.id)}">${profileLanguage === "en" ? "View" : "查看"}</button>${inquiry.status === "new" ? `<button class="btn btn-secondary btn-sm profile-danger-action" type="button" data-cancel-inquiry="${escapeProfileHtml(inquiry.id)}" data-inquiry-version="${Number(inquiry.version || 0)}" data-inquiry-number="${escapeProfileHtml(inquiry.inquiry_number)}">${pc.cancelInquiry}</button>` : ""}</div>
         <div class="profile-business-card-meta"><span class="profile-status-badge${inquiry.status === "new" ? " is-new" : inquiry.status === "cancelled" ? " is-off" : ""}">${escapeProfileHtml(inquiryStatusLabel(inquiry.status))}</span><span>${Number(inquiry.item_count || 0)} ${pc.submittedItems}</span><span>${pc.createdAt} ${profileDate(inquiry.created_at)}</span>${inquiry.updated_at && inquiry.updated_at !== inquiry.created_at ? `<span>${pc.updated} ${profileDate(inquiry.updated_at)}</span>` : ""}</div>
       </article>`).join("") : `<div class="profile-list-empty">${pc.emptyInquiries}</div>`;
@@ -360,7 +369,7 @@ async function loadProfileShares(page = profileSharePage) {
     const list = document.getElementById("profile-shares-list");
     list.innerHTML = result.items.length ? result.items.map((share) => `
       <article class="profile-business-card">
-        <div class="profile-business-card-main"><strong>${escapeProfileHtml(share.title || share.code)}</strong><span>${escapeProfileHtml(share.code)}</span></div>
+        <div class="profile-business-card-main"><strong class="profile-share-heading">${profileLanguage === "en" ? "My Share" : "我的分享"} <span translate="no">${escapeProfileHtml(share.code)}</span></strong></div>
         <div class="profile-business-card-actions"><button class="btn btn-secondary btn-sm" type="button" data-copy-share="${escapeProfileHtml(share.code)}">${pc.copyCode}</button><button class="btn btn-secondary btn-sm" type="button" data-open-share="${escapeProfileHtml(share.id)}">${profileLanguage === "en" ? "View" : "查看"}</button></div>
         <div class="profile-business-card-meta"><span class="profile-status-badge${share.status === "active" ? "" : " is-off"}">${shareStatusLabel(share.status)}</span><span>${Number(share.item_count || 0)} ${pc.items}</span><span>${Number(share.view_count || 0)} ${pc.views}</span><span>${Number(share.quote_count || 0)} ${pc.quoteCount}</span><span>${pc.createdAt} ${profileDate(share.created_at)}</span><span>${pc.expiresAt} ${profileDate(share.expires_at)}</span></div>
       </article>`).join("") : `<div class="profile-list-empty">${pc.emptyShares}</div>`;
@@ -449,7 +458,7 @@ function decorateBusinessRecords(kind, records) {
   document.querySelectorAll(`#profile-${kind}-list .profile-business-card`).forEach((card, index) => {
     const record = records[index];
     const actions = card.querySelector(".profile-business-card-actions");
-    const action = (operation, label) => `<button type="button" class="btn btn-secondary btn-sm" data-personal-operation="${operation}" data-record-kind="${kind}" data-record-id="${escapeProfileHtml(record.id)}" data-record-version="${Number(record.customer_version || 1)}">${label}</button>`;
+    const action = (operation, label) => `<button type="button" class="btn ${operation === "hide" ? "btn-danger" : "btn-secondary"} btn-sm" data-personal-operation="${operation}" data-record-kind="${kind}" data-record-id="${escapeProfileHtml(record.id)}" data-record-version="${Number(record.customer_version || 1)}">${label}</button>`;
     if (record.hidden) {
       actions.innerHTML = action("restore", businessText("恢复", "Restore"));
       return;
@@ -462,7 +471,7 @@ function decorateBusinessRecords(kind, records) {
     if (actions.children.length > 3) {
       const extra = [...actions.children].slice(2);
       const more = document.createElement("details"); more.className = "profile-record-more";
-      const summary = document.createElement("summary"); summary.textContent = businessText("更多", "More"); more.appendChild(summary);
+      const summary = document.createElement("summary"); summary.className = "btn btn-secondary btn-sm"; summary.textContent = businessText("更多", "More"); more.appendChild(summary);
       const menu = document.createElement("div"); extra.forEach((button) => menu.appendChild(button)); more.appendChild(menu); actions.appendChild(more);
       more.addEventListener("keydown", (event) => { if (event.key === "Escape") { more.open = false; summary.focus(); event.stopPropagation(); } });
     }
@@ -552,7 +561,7 @@ async function openOwnInquiry(inquiryId) {
   const groups = [["device_config", profileLanguage === "en" ? "Devices" : "设备"], ["tool", profileLanguage === "en" ? "Service Tools" : "维修工具"], ["accessory", profileLanguage === "en" ? "Accessories" : "设备附件"]];
   const summary = `<section class="profile-detail-group"><div class="profile-detail-list">
     <div class="profile-detail-row"><span>${pc.inquiryNumber}</span><strong translate="no">${escapeProfileHtml(inquiry.inquiry_number)}</strong></div>
-    <div class="profile-detail-row"><span>${pc.inquirySource}</span><strong>${escapeProfileHtml(inquirySourceLabel(inquiry.source_type))}</strong></div>
+    <div class="profile-detail-row"><span>${pc.inquirySource}</span><strong>${escapeProfileHtml(inquirySourceLabel(inquiry))}</strong></div>
     <div class="profile-detail-row"><span>${profileLanguage === "en" ? "Status" : "状态"}</span><strong>${escapeProfileHtml(inquiryStatusLabel(inquiry.status))}</strong></div>
     <div class="profile-detail-row"><span>${pc.createdAt}</span><strong>${profileDate(inquiry.created_at)}</strong></div>
   </div></section>`;
@@ -716,6 +725,12 @@ async function initProfilePage() {
   document.querySelectorAll(".profile-form").forEach((form) => form.addEventListener("input", () => { form.dataset.dirty = String(JSON.stringify([...new FormData(form)]) !== form.dataset.baseline); }));
   window.addEventListener("beforeunload", (event) => { if (document.querySelector('.profile-form[data-dirty="true"]')) { event.preventDefault(); event.returnValue = ""; } });
 }
+
+document.addEventListener("click", (event) => {
+  document.querySelectorAll(".profile-record-more[open]").forEach((menu) => {
+    if (!menu.contains(event.target)) menu.open = false;
+  });
+});
 
 if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", initProfilePage);
 else initProfilePage();

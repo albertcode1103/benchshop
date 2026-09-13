@@ -388,7 +388,7 @@ async function initAuth() {
     setAuthIdentifierMode(tabs[next].dataset.authIdentifier); tabs[next].focus();
   });
   document.getElementById("account-menu")?.addEventListener("keydown", (event) => {
-    const items = Array.from(event.currentTarget.querySelectorAll('[role="menuitem"]:not([hidden])'));
+    const items = Array.from(event.currentTarget.querySelectorAll('[role="menuitem"]:not([hidden]), [role="menuitemcheckbox"]:not([hidden])'));
     const current = items.indexOf(document.activeElement);
     if (event.key === "Escape") { event.preventDefault(); closeAccountMenu({ restoreFocus: true }); return; }
     if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key) || !items.length) return;

@@ -61,7 +61,8 @@
 .profile-business-filters label { display: grid; gap: var(--space-xs); min-width: 0; font-size: .8125rem; }
 .profile-business-filters :is(input, select) { width: 100%; min-width: 0; min-height: 42px; padding: var(--space-sm); border: 1px solid var(--color-border); border-radius: var(--radius-sm); color: var(--color-text); background: var(--color-surface); font: inherit; }
 .profile-record-more { position: relative; }
-.profile-record-more summary { min-height: 36px; padding: var(--space-sm); cursor: pointer; border: 1px solid var(--color-border); border-radius: var(--radius-sm); font-size: .8125rem; }
+.profile-record-more summary { min-height: 36px; cursor: pointer; list-style: none; }
+.profile-record-more summary::-webkit-details-marker { display: none; }
 .profile-record-more > div { position: absolute; right: 0; z-index: 2; display: grid; min-width: 120px; padding: var(--space-sm); gap: var(--space-xs); background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-sm); }
 .profile-business-filters :focus-visible, .profile-record-more summary:focus-visible { outline: 2px solid var(--color-accent-action); outline-offset: 2px; }
 @media (max-width: 700px) {
@@ -73,6 +74,8 @@
 .profile-business-card-main { display: grid; gap: 3px; min-width: 0; }
 .profile-business-card-main strong { overflow-wrap: anywhere; font-size: .9375rem; }
 .profile-business-card-main span, .profile-business-card-meta { color: var(--color-text-secondary); font-size: .75rem; }
+.profile-business-card-main .profile-share-heading { font-size: 18px; font-weight: 700; }
+.profile-business-card-main .profile-share-heading span { font-size: inherit; font-weight: inherit; color: var(--color-accent-dark); white-space: nowrap; }
 .profile-business-card-meta { display: flex; flex-wrap: wrap; gap: var(--space-xs) var(--space-md); grid-column: 1 / -1; }
 .profile-business-card-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-sm); }
 .profile-business-card-actions .btn { min-height: 36px; }

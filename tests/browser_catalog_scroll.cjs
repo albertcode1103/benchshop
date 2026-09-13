@@ -20,7 +20,8 @@ const {chromium}=require('playwright');
     }
     await r.fulfill({json:result});
    });
-   await page.goto('http://127.0.0.1:8081/');await page.waitForLoadState('networkidle');
+   await page.goto('http://127.0.0.1:8082/');await page.waitForLoadState('networkidle');
+   await page.locator('#home-device:not([disabled])').click();
    await page.evaluate(()=>{window.getCatalogCartSnapshot=()=>[{optionId:'item0',quantity:3}];state.selectOption('cri','opt0',true);});
    const selected=await page.evaluate(()=>JSON.stringify(state.selections));
    for(const target of ['catalog:tools','catalog:accessories','device:second','device:first']){

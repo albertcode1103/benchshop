@@ -2,6 +2,48 @@
 
 当前执行约定以 [项目执行规则](../docs/project-execution-rules.md) 为准；以下历史路径示例必须与实际目标核对。
 
+## 2026-09-13 正式数据与发布门禁（优先执行）
+
+本机运行状态更新：前端代理已切换为默认 NAS 上游，命令 `python -m deploy.local_dev_server`，本机入口 `http://127.0.0.1:8082`（仅回环监听）；旧 8081 为显式 isolated 模式。页面注入 NAS 正式数据可写提示，API 请求无自动回退或重试。此修改仅本机部署工具，不需更新 NAS API 或数据库；以下“尚待配置”是原则制定时历史描述。
+
+- NAS 为正式数据源。本机前端默认架构为连接 NAS API，允许账号权限内的真实保存/删除/上传/发送；此代理模式尚待配置，不代表当前 8081 已连接 NAS。
+- 普通发布只更新代码和静态资源，**不再同步或覆盖本机产品、账号、数据库及上传目录**。API/数据库调试用隔离副本，正式数据只在 NAS 维护。
+- 每次发布先核对实际部署基线与目标版本，分别报告 API 和数据库是否变化。检查接口/模型/权限/后端行为及依赖、schema、Alembic、入口升级逻辑；无 Git 以文件哈希核对，无法确认则停止。
+- 比较后必须标记构建方式。HTML/CSS/JavaScript、既有静态图片等小型前端修改走快速部署，只使用正常 Docker 缓存并重建 `web`；单一 API 源码修改且无依赖、镜像定义或结构变化时只重建 `api`。不得把 `--no-cache` 当作每次部署的固定参数。
+- Dockerfile、基础镜像、依赖/约束、构建上下文、入口脚本或 Compose 构建配置改变，或者部署后哈希证明缓存未纳入新文件时，才对受影响服务使用 `--no-cache`。能只重建一个服务时不得全量重建两个服务。
+- 有 API 或数据库变更时，必须先提醒用户：变更内容、兼容风险、当前/目标 revision、是否停机、演练结果、备份及回退方案；取得明确确认后才能发布。**API 容器启动会自动迁移，不能先执行 up/build 再提醒。**
+- 纯前端仅重建 web；后端/结构变更先兼容旧页面，再发布新页面。破坏性变更单独安排维护，不能以代码回滚代替数据回退。
+- 以下 Git/Compose 示例均受此门禁约束；不能直接复制执行绕过检查。本机数据打包工具及历史专项合并步骤不是普通发版的数据导入方式。
+- 这是发布时必须执行的规则与检查清单，尚无自动提醒/CI 门禁程序。本次仅文档更新，不修改服务或正式数据库。
+
+发布前须向用户填写：源/目标代码版本；API 变更及兼容性；数据库当前/目标 revision 与变更；验证结果；备份/回退；维护窗口；待确认事项。发布后记录实际生效版本及未验收内容。
+
+### 构建模式选择
+
+先比较文件清单和 SHA-256，再选择下面的最小充分命令。
+
+纯前端快速部署：
+
+```sh
+sudo docker compose build --progress=plain web
+sudo docker compose up -d --no-deps --force-recreate web
+```
+
+仅后端源码变化且确认无依赖、Dockerfile、入口和数据库结构变化：
+
+```sh
+sudo docker compose build --progress=plain api
+sudo docker compose up -d --no-deps --force-recreate api
+```
+
+前后端均有已确认变化时分别正常构建；API 仍须遵守数据库发布门禁。只有依赖或镜像定义变化、需要从零验证，或部署后文件/API 哈希与候选不一致且确认由缓存造成时，才执行：
+
+```sh
+sudo docker compose build --no-cache --progress=plain <受影响服务>
+```
+
+无缓存重建后仍须验证，不能将 `--no-cache` 本身视为部署成功证据。
+
 本目录用于将 BOTEN 配置与报价系统部署到支持 Docker Compose 的 NAS 或 Linux 服务器。当前部署由两个容器组成：
 
 - `web`：Nginx，提供用户页面、管理后台和同域 `/api/` 反向代理；默认映射宿主机 `8080` 端口。
@@ -9,7 +51,9 @@
 
 业务数据不在镜像内：数据库和后台上传的图片均存放在持久化的 `data/` 目录。升级或重建容器不会删除这些数据。
 
-## 开发阶段每次发布的同步要求
+## 历史开发阶段专项同步要求（已废止为默认流程）
+
+本节保留 2026-09-12 专项合并依据；2026-09-13 起不得据此常规覆盖 NAS。另行数据导入必须重新取得明确授权和策略确认。
 
 每次发布必须同时核对代码、静态资源、目录数据和上传图片；仅 Git 更新或容器重建不代表数据已同步。
 
@@ -157,10 +201,12 @@ sudo docker compose up -d --force-recreate
 
 ```sh
 sudo docker compose exec api python -m backend.database_maintenance backup --output-dir /data/backups --keep 30
-sudo docker compose build --no-cache
+sudo docker compose build --progress=plain web api
 sudo docker compose up -d --force-recreate
 sudo docker compose ps
 ```
+
+上例是前后端均确认变化时的正常缓存构建。不要例行追加 `--no-cache`；先按“构建模式选择”判断，必要时仅对受影响服务无缓存重建。
 
 如更新了网页样式或脚本，请在浏览器按 `Ctrl+F5`（macOS 为 `Cmd+Shift+R`）刷新缓存。
 

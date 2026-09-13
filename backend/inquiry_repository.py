@@ -9,6 +9,7 @@ from .catalog_refactor_repository import CatalogValidationError
 from .commerce_repository import _canonical_cart_order, _load_share_item, _normalize_refs
 from .config_repository import build_snapshot
 from .database import get_connection
+from .dashboard_rules import INQUIRY_BUSINESS_SQL, inquiry_queue_clause, utc_now
 
 
 INQUIRY_STATES = {"new", "assigned", "contacted", "quoted", "closed", "cancelled"}
@@ -445,6 +446,7 @@ def list_staff_inquiries(
     query: str = "",
     status: str = "all",
     language: str = "zh",
+    queue: str = "all",
 ) -> Dict[str, Any]:
     safe_page = max(int(page), 1)
     safe_size = min(max(int(page_size), 1), 50)
@@ -454,11 +456,7 @@ def list_staff_inquiries(
     is_business = selected_status.startswith("business_")
     if selected_status != "all" and selected_status not in INQUIRY_STATES and not (is_business and selected_status[9:] in business_states):
         raise InquiryError("INQUIRY_STATUS_CONFLICT")
-    business_sql = """CASE WHEN i.status IN ('closed','cancelled') THEN i.status
-        WHEN EXISTS (SELECT 1 FROM commerce_quotes q WHERE q.source_type='inquiry' AND q.source_document_id=i.id AND q.lifecycle_status='sent') THEN 'sent'
-        WHEN EXISTS (SELECT 1 FROM commerce_quotes q WHERE q.source_type='inquiry' AND q.source_document_id=i.id AND q.lifecycle_status='draft') THEN 'pending'
-        WHEN EXISTS (SELECT 1 FROM commerce_quotes q WHERE q.source_type='inquiry' AND q.source_document_id=i.id AND q.lifecycle_status='archived') THEN 'archived'
-        WHEN i.status='quoted' THEN 'pending' ELSE i.status END"""
+    business_sql = INQUIRY_BUSINESS_SQL
     like = "%{}%".format(str(query or "").strip())
     scope, scope_params = _staff_scope_clause(actor_id, actor_role)
     filters = """
@@ -477,6 +475,10 @@ def list_staff_inquiries(
     if is_business:
         filters = filters.replace("i.status = ?", "(" + business_sql + ") = ?")
     params = (*scope_params, selected_status, selected_status[9:] if is_business else selected_status, like, like, like, like, like, like, like)
+    queue_clause, queue_params = inquiry_queue_clause(actor_id, actor_role, queue, utc_now())
+    filters += queue_clause
+    params = (*params, *queue_params)
+    order = "julianday(COALESCE(NULLIF(i.updated_at,''),i.created_at)), i.id" if queue != "all" else "CASE i.status WHEN 'new' THEN 0 WHEN 'assigned' THEN 1 ELSE 2 END, i.created_at DESC"
     with get_connection() as db:
         total = int(db.execute("SELECT COUNT(*) " + filters, params).fetchone()[0])
         rows = db.execute(
@@ -484,7 +486,7 @@ def list_staff_inquiries(
             SELECT i.*, creator.display_name AS customer_display_name,
                    creator.email AS customer_email_current, creator.phone AS customer_phone_current,
                    assignee.display_name AS assignee_name,
-            """ + business_sql + " AS business_status " + filters + " ORDER BY CASE i.status WHEN 'new' THEN 0 WHEN 'assigned' THEN 1 ELSE 2 END, i.created_at DESC LIMIT ? OFFSET ?",
+            """ + business_sql + " AS business_status " + filters + " ORDER BY " + order + " LIMIT ? OFFSET ?",
             (*params, safe_size, (safe_page - 1) * safe_size),
         ).fetchall()
         inquiry_ids = [row["id"] for row in rows]

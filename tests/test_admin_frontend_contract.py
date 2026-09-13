@@ -115,12 +115,14 @@ class AdminFrontendContractTests(unittest.TestCase):
     def test_home_entries_and_reload_reset_scroll_without_changing_selection(self) -> None:
         self.assertIn('js/scroll-reset.js', CUSTOMER_HTML)
         self.assertNotIn('navigation?.type !== "reload"', CUSTOMER_SCROLL_RESET)
-        self.assertIn('behavior: "instant"', CUSTOMER_SCROLL_RESET)
+        self.assertIn("behavior: 'instant'", CUSTOMER_SCROLL_RESET)
         self.assertNotIn('delete window.botenResetReloadScroll', CUSTOMER_SCROLL_RESET)
-        self.assertIn('window.history.scrollRestoration = "manual"', CUSTOMER_SCROLL_RESET)
-        self.assertIn('window.addEventListener("pagehide"', CUSTOMER_SCROLL_RESET)
-        self.assertIn('window.history.scrollRestoration = previousScrollRestoration', CUSTOMER_SCROLL_RESET)
-        self.assertIn('window.addEventListener("pageshow"', CUSTOMER_SCROLL_RESET)
+        self.assertIn("history.scrollRestoration = 'manual'", CUSTOMER_SCROLL_RESET)
+        self.assertIn("window.addEventListener('pagehide'", CUSTOMER_SCROLL_RESET)
+        self.assertIn("history.state?.botenScroll", CUSTOMER_SCROLL_RESET)
+        self.assertIn("window.addEventListener('pageshow'", CUSTOMER_SCROLL_RESET)
+        self.assertIn("window.botenRememberLanguageScroll", CUSTOMER_SCROLL_RESET)
+        self.assertIn("if (event.persisted) stop()", CUSTOMER_SCROLL_RESET)
         customer_main = (PROJECT_ROOT / "js" / "main.js").read_text(encoding="utf-8")
         self.assertIn('requestAnimationFrame(window.botenResetReloadScroll)', customer_main)
 
@@ -331,7 +333,7 @@ class AdminFrontendContractTests(unittest.TestCase):
         self.assertIn('renderDeviceCartCard(unit.item, ++deviceIndex)', CUSTOMER_CART)
         self.assertIn('class="cart-item-kind-title"', CUSTOMER_CART)
         self.assertIn('class="cart-catalog-group-total"', CUSTOMER_CART)
-        self.assertIn('#cart-items :where(*) {\n  font-size: 12px;', CUSTOMER_COMPONENTS_CSS)
+        self.assertIn('#cart-items :where(*) {\n  font-size: 14px;', CUSTOMER_COMPONENTS_CSS)
         self.assertIn('class="cart-detail-option"', CUSTOMER_CART)
         self.assertIn('window.normalizeCatalogCode?.(option.code)', CUSTOMER_CART)
         self.assertIn('.share-dialog.cart-detail-dialog { width: min(92vw, 538px)', CUSTOMER_COMPONENTS_CSS)
@@ -370,7 +372,8 @@ class AdminFrontendContractTests(unittest.TestCase):
         self.assertIn('inquiryTitle: "联系销售获取报价"', CUSTOMER_LANGUAGE)
         self.assertIn('inquiryTitle: "Contact Sales for a Quote"', CUSTOMER_LANGUAGE)
         self.assertIn('href="./account/#my-inquiries"', CUSTOMER_CART)
-        self.assertIn('data-copy-inquiry-number', CUSTOMER_CART)
+        self.assertNotIn('data-copy-inquiry-number', CUSTOMER_CART)
+        self.assertIn('footer.innerHTML = `<a class="btn btn-primary"', CUSTOMER_CART)
 
     def test_quote_lifecycle_management_exposes_archive_restore_and_history(self) -> None:
         self.assertIn('data-view-panel="quotes"', ADMIN_HTML)
@@ -624,7 +627,8 @@ class AdminFrontendContractTests(unittest.TestCase):
         self.assertIn('visibleModels[0] || { id: null, categories: [], colors: [] }', customer_state)
         self.assertIn('if (saved?.currentModelId !== firstModel.id) saved = null;', customer_state)
         self.assertIn('const selectionViewStorageKey = "boten-page-selection-view"', customer_renderer)
-        self.assertIn('return "device"', customer_renderer)
+        self.assertIn('return "home"', customer_renderer)
+        self.assertIn('navigation !== "reload" && navigation !== "back_forward"', customer_renderer)
         self.assertNotIn('applySelectionView("none")', customer_renderer)
 
     def test_cart_cards_and_destructive_confirmation_use_the_page_design_system(self) -> None:
@@ -780,9 +784,9 @@ class AdminFrontendContractTests(unittest.TestCase):
 
     def test_customer_drawers_manage_focus_and_background_inertness(self) -> None:
         self.assertIn('region.inert = true', CUSTOMER_RENDERER)
-        self.assertIn('previousFocus?.focus()', CUSTOMER_RENDERER)
+        self.assertIn('previousFocus?.focus({ preventScroll: true })', CUSTOMER_RENDERER)
         self.assertIn('trapCartFocus(event)', CUSTOMER_CART)
-        self.assertIn('panel._returnFocus?.focus()', CUSTOMER_CART)
+        self.assertIn('panel._returnFocus?.focus({ preventScroll: true })', CUSTOMER_CART)
 
     def test_account_management_uses_separate_safe_workflows(self) -> None:
         for dialog_id in ("user-dialog", "user-role-dialog", "user-password-dialog", "user-archive-dialog"):

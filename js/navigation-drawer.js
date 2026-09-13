@@ -36,7 +36,7 @@
       image.dataset.fallback = "true";
       image.src = placeholder;
     }, true));
-    drawer.querySelectorAll(".catalog-drawer-item").forEach((button) => {
+    drawer.querySelectorAll(".catalog-drawer-item:not(#catalog-home-entry)").forEach((button) => {
       button.insertAdjacentHTML("afterbegin", thumbnailMarkup());
     });
     const pageRegions = [document.querySelector(".site-header"), document.querySelector(".main"), document.querySelector(".site-footer")].filter(Boolean);
@@ -65,9 +65,9 @@
       document.getElementById("catalog-navigation-title").textContent = text("productNavigation", "产品导航", "Product Navigation");
       document.getElementById("catalog-model-title").textContent = text("testEquipment", "检测设备", "Test Equipment");
       deviceEntry.querySelector("span").textContent = text("testEquipment", "检测设备", "Test Equipment");
-      const categoryButtons = drawer.querySelectorAll("[data-catalog-drawer-select]");
-      categoryButtons[0].querySelector("span").textContent = text("serviceTools", "维修工具", "Service Tools");
-      categoryButtons[1].querySelector("span").textContent = text("accessories", "设备附件", "Accessories");
+      document.getElementById("catalog-home-entry").querySelector("span").textContent = text("navigationHome", "主页", "Home");
+      drawer.querySelector('[data-catalog-drawer-select="catalog:tools"] span').textContent = text("serviceTools", "维修工具", "Service Tools");
+      drawer.querySelector('[data-catalog-drawer-select="catalog:accessories"] span').textContent = text("accessories", "设备附件", "Accessories");
       document.getElementById("catalog-drawer-close").setAttribute("aria-label", text("closeProductNavigation", "关闭产品导航", "Close product navigation"));
       document.getElementById("catalog-model-close").setAttribute("aria-label", text("closeProductNavigation", "关闭产品导航", "Close product navigation"));
       document.getElementById("catalog-model-back").setAttribute("aria-label", text("backToProductCategories", "返回产品类别", "Back to product categories"));
@@ -76,7 +76,7 @@
     function renderModels() {
       const models = Array.isArray(window.configData?.models) ? window.configData.models : (typeof configData !== "undefined" ? configData.models : []);
       const current = select.value;
-      const visibleModels = models.filter((model) => model.enabled !== false && model.navigationVisible !== false);
+      const visibleModels = window.catalogSource === "api" ? models.filter((model) => model.enabled !== false && model.navigationVisible !== false) : [];
       const deviceImage = deviceEntry.querySelector("img");
       delete deviceImage.dataset.fallback;
       deviceImage.src = modelThumbnail(visibleModels[0]);
@@ -131,7 +131,7 @@
       toggles.forEach((button) => button.setAttribute("aria-expanded", "false"));
       pageRegions.forEach((region) => { region.inert = false; });
       document.body.style.overflow = "";
-      returnFocus?.focus?.();
+      returnFocus?.focus?.({ preventScroll: true });
       returnFocus = null;
       syncDrawerFocus();
     }
@@ -149,7 +149,9 @@
       pageRegions.forEach((region) => { region.inert = true; });
       document.body.style.overflow = "hidden";
       syncDrawerFocus();
-      requestAnimationFrame(() => deviceEntry.focus());
+      requestAnimationFrame(() => {
+        if (!modelDrawer.classList.contains("open")) document.getElementById("catalog-home-entry").focus();
+      });
     }
 
     function openModels() {
@@ -167,6 +169,16 @@
       closeDrawer();
       select.dispatchEvent(new Event("change", { bubbles: true }));
     }
+
+    window.botenOpenEquipment = () => { openDrawer(); openModels(); };
+    window.botenNavigateCatalog = activateSelection;
+    const goHome = (event) => {
+      event.preventDefault();
+      closeDrawer();
+      window.botenShowHome?.();
+    };
+    document.getElementById("catalog-home-entry").addEventListener("click", goHome);
+    document.querySelector("a.brand")?.addEventListener("click", goHome);
 
     toggles.forEach((button) => button.addEventListener("click", openDrawer));
     document.getElementById("catalog-drawer-close").addEventListener("click", closeDrawer);

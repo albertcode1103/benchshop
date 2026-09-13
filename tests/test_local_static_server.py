@@ -5,6 +5,31 @@ from unittest.mock import patch
 from deploy.local_dev_server import DevelopmentHandler
 
 
+def test_nas_bridge_guard_failure_and_banner():
+    server = ThreadingHTTPServer(('127.0.0.1', 0), DevelopmentHandler)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    def request(method, path, headers=None):
+        c = HTTPConnection('127.0.0.1', server.server_port, timeout=5)
+        c.request(method, path, headers=headers or {})
+        r = c.getresponse(); result = (r.status, r.read(), r.getheader('Cache-Control'))
+        c.close(); return result
+    try:
+        with patch('deploy.local_dev_server.MODE', 'nas'):
+            status, body, cache = request('GET', '/')
+            assert status == 200 and b'NAS LIVE' in body and cache == 'no-store'
+        with patch('deploy.local_dev_server.HTTPConnection') as upstream:
+            assert request('POST', '/not-api')[0] == 404
+            assert request('POST', '/api/v1/test', {'Origin':'http://evil.example'})[0] == 403
+            upstream.assert_not_called()
+            upstream.return_value.request.side_effect = OSError('offline')
+            status, body, _ = request('GET', '/api/v1/ready')
+            assert status == 502 and b'no fallback' in body
+            assert upstream.call_count == 1
+    finally:
+        server.shutdown(); server.server_close(); thread.join()
+
+
 def test_local_proxy_bounds_and_forwarded_headers():
     server = ThreadingHTTPServer(('127.0.0.1', 0), DevelopmentHandler)
     thread = Thread(target=server.serve_forever, daemon=True)

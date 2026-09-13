@@ -48,7 +48,7 @@ function renderMarketplaceCategories() {
     button.addEventListener("click", () => {
       catalogMarketplaceState.category = button.dataset.catalogCategory;
       renderCatalogMarketplace();
-      container.querySelector(`[data-catalog-category="${CSS.escape(catalogMarketplaceState.category)}"]`)?.focus();
+      container.querySelector(`[data-catalog-category="${CSS.escape(catalogMarketplaceState.category)}"]`)?.focus({ preventScroll: true });
     });
   });
 }
@@ -207,7 +207,7 @@ function bindCatalogSummaryDrawer() {
     panel.removeAttribute("aria-modal");
     pageRegions.forEach((region) => { region.inert = false; });
     document.body.style.overflow = "";
-    if (restoreFocus && !toggle.hidden) previousFocus?.focus?.();
+    if (restoreFocus && !toggle.hidden) previousFocus?.focus?.({ preventScroll: true });
     previousFocus = null;
   };
   const openDrawer = () => {

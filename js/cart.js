@@ -24,7 +24,13 @@ function setConfigSaveStatus(message = "", kind = "") {
   status.hidden = !message;
   if (message && window.matchMedia("(max-width: 1023px)").matches && document.getElementById("summary-panel")?.classList.contains("open")) {
     requestAnimationFrame(() => {
-      if (!status.hidden && document.getElementById("summary-panel")?.classList.contains("open")) status.scrollIntoView({ block: "nearest", behavior: "instant" });
+      if (!status.hidden && document.getElementById("summary-panel")?.classList.contains("open")) {
+        const content = status.closest('.summary-content');
+        if (!content) return;
+        const bounds = content.getBoundingClientRect(), message = status.getBoundingClientRect();
+        if (message.top < bounds.top) content.scrollTop += message.top - bounds.top;
+        else if (message.bottom > bounds.bottom) content.scrollTop += message.bottom - bounds.bottom;
+      }
     });
   }
 }
@@ -163,6 +169,7 @@ function renderCartActions() {
     ["cart-pdf", "exportCombinedPdf", "导出 PDF", "Export PDF"],
     ["cart-share", "shareSelected", "分享", "Share"],
     ["cart-close", "closeCart", "关闭", "Close"],
+    ["cart-clear", "clearCartAction", "清空", "Clear"],
   ];
   headerActions.forEach(([id, key, zh, en]) => {
     const button = document.getElementById(id);
@@ -171,7 +178,7 @@ function renderCartActions() {
     button.setAttribute("aria-label", label);
     const text = button.querySelector(".cart-action-label");
     if (text) text.textContent = label;
-    if (id !== "cart-close") button.disabled = !hasItems || (id === "cart-pdf" && cartPdfPending);
+    if (id !== "cart-close") button.disabled = !hasItems || (id === "cart-pdf" && cartPdfPending) || (id === "cart-clear" && cartClearPending);
   });
   const inquiry = document.getElementById("cart-inquiry");
   if (inquiry) {
@@ -222,6 +229,7 @@ function renderCartPanel() {
   const itemsEl = document.getElementById("cart-items");
   const emptyEl = document.getElementById("cart-empty");
   if (!itemsEl || !emptyEl) return;
+  itemsEl.hidden = !isAuthenticated() || serverCart.length === 0;
   if (!isAuthenticated()) {
     itemsEl.innerHTML = ""; emptyEl.hidden = false;
     emptyEl.textContent = cartText("signInToSave", "登录后可保存配置", "Sign in to save");
@@ -421,6 +429,39 @@ function currentConfigPayload() {
   return { model, payload: { name: `${model.name} ${cartText("configuration", "配置", "Configuration")}`, product_id: snapshot.currentModelId, color: snapshot.currentColor, selections: snapshot.selections, lang: cartLanguage() } };
 }
 
+function chooseDuplicateConfiguration(matches) {
+  return new Promise(resolve => {
+    const previousFocus = document.activeElement;
+    const dialog = document.createElement("dialog");
+    dialog.className = "share-dialog cart-confirm-dialog";
+    dialog.setAttribute("aria-labelledby", "duplicate-config-title");
+    dialog.innerHTML = `<form method="dialog" class="share-dialog-card cart-confirm-card">
+      <header class="share-dialog-header"><h2 id="duplicate-config-title">${cartText("duplicateConfigTitle", "购物车已有相同型号", "This Model Is Already in Your Cart")}</h2></header>
+      <p>${cartText("duplicateConfigMessage", "覆盖会替换所选配置；新增会保留原配置并添加一条。", "Replace updates the selected configuration. Add New keeps the existing configuration and adds another.")}</p>
+      <label>${cartText("duplicateConfigTarget", "需要覆盖的配置", "Configuration to replace")}
+        <select id="duplicate-config-target" style="width:100%;min-height:44px">
+          ${matches.length > 1 ? `<option value="">${cartText("chooseConfig", "请选择配置", "Choose a configuration")}</option>` : ""}
+          ${matches.map((item, index) => `<option value="${escapeCartHtml(item.id)}">${escapeCartHtml(`${index + 1}. ${item.name || item.snapshot.product.name} · ${item.snapshot.color?.label || item.snapshot.color?.code || ""} · ${item.id}`)}</option>`).join("")}
+        </select>
+      </label>
+      <div class="cart-confirm-actions">
+        <button class="btn btn-secondary" value="cancel">${cartText("cancelAction", "取消", "Cancel")}</button>
+        <button class="btn btn-secondary" value="new">${cartText("addNewConfig", "新增", "Add New")}</button>
+        <button class="btn btn-primary" value="replace">${cartText("replaceConfig", "覆盖", "Replace")}</button>
+      </div></form>`;
+    document.body.appendChild(dialog);
+    const select = dialog.querySelector('select');
+    const replace = dialog.querySelector('[value="replace"]');
+    const update = () => { replace.disabled = !select.value; };
+    select.addEventListener('change', update); update();
+    dialog.addEventListener('close', () => {
+      const result = dialog.returnValue === 'new' ? 'new' : dialog.returnValue === 'replace' ? matches.find(item => item.id === select.value) : null;
+      dialog.remove(); previousFocus?.focus?.({ preventScroll: true }); resolve(result);
+    }, { once: true });
+    dialog.showModal();
+  });
+}
+
 async function saveCurrentConfigToServer() {
   if (currentConfigSaving) return;
   currentConfigSaving = true;
@@ -433,7 +474,16 @@ async function saveCurrentConfigToServer() {
       await authRequest(`/configs/${encodeURIComponent(editingConfig.id)}`, { method: "PUT", body: JSON.stringify({ ...payload, version: editingConfig.version }) });
       cancelConfigEdit(false);
     } else {
-      await authRequest("/configs", { method: "POST", body: JSON.stringify(payload) });
+      // Fetch fresh saved configurations; a failed lookup must not silently create duplicates.
+      const saved = await authRequest(`/configs?lang=${cartLanguage()}`);
+      const matches = saved.items.filter(item => item.snapshot?.product?.id === payload.product_id);
+      const choice = matches.length ? await chooseDuplicateConfiguration(matches) : "new";
+      if (!choice) return;
+      if (choice === "new") {
+        await authRequest("/configs", { method: "POST", body: JSON.stringify(payload) });
+      } else {
+        await authRequest(`/configs/${encodeURIComponent(choice.id)}`, { method: "PUT", body: JSON.stringify({ ...payload, version: choice.version }) });
+      }
     }
     await refreshServerCart(); openCartPanel();
   } catch (error) {
@@ -445,10 +495,53 @@ async function saveCurrentConfigToServer() {
   }
 }
 
+let emptyConfigurationConfirmPending = false;
+
+async function continueCurrentConfiguration(action, inquiry = false) {
+  if (emptyConfigurationConfirmPending || currentConfigSaving) return;
+  const { model } = currentConfigPayload();
+  const snapshot = state.getSnapshot();
+  const baseIds = new Set(["motor", "voltage", "channel"]);
+  const hasOptional = model.categories.some((category) => {
+    if (baseIds.has(category.id)) return false;
+    const selected = snapshot.selections[category.id];
+    const ids = Array.isArray(selected) ? selected : [selected];
+    return category.options.some((option) => ids.includes(option.id));
+  });
+  if (!hasOptional) {
+    emptyConfigurationConfirmPending = true;
+    try {
+      window.botenCloseSummaryDrawer?.();
+      window.botenCancelScrollRestore?.();
+      const section = document.getElementById("config-section");
+      if (section) {
+        section.setAttribute("tabindex", "-1");
+        section.focus({ preventScroll: true });
+        await new Promise(requestAnimationFrame);
+        const headerHeight = document.querySelector(".site-header")?.getBoundingClientRect().height || 0;
+        window.scrollTo({ top: Math.max(0, window.scrollY + section.getBoundingClientRect().top - headerHeight - 12), behavior: "instant" });
+      }
+      const confirmed = await confirmCartRemoval(
+        inquiry
+          ? cartText("emptyInquiryMessage", "尚未选择设备可选配置，是否仅使用基础配置继续发送询价？", "No optional configurations selected. Continue with an inquiry using only the base configuration?")
+          : cartText("emptySaveMessage", "尚未选择设备可选配置，是否仅将基础配置保存到购物车？", "No optional configurations selected. Save only the base configuration to your cart?"),
+        cartText("emptyConfigurationTitle", "确认空白配置", "Confirm Empty Configuration"),
+        { danger: false, confirmLabel: inquiry
+          ? cartText("continueEmptyInquiry", "继续询价", "Continue Inquiry")
+          : cartText("continueEmptySave", "继续保存", "Continue Saving") },
+      );
+      if (!confirmed) return;
+    } finally {
+      emptyConfigurationConfirmPending = false;
+    }
+  }
+  return requireLogin(action);
+}
+
 function addCurrentConfigToCart() {
   const issue = currentConfigurationIssue();
   if (issue) { setConfigSaveStatus(issue, "error"); updateCurrentConfigurationAvailability(); return; }
-  requireLogin(saveCurrentConfigToServer);
+  return continueCurrentConfiguration(saveCurrentConfigToServer);
 }
 
 async function beginConfigEdit(id) {
@@ -486,7 +579,7 @@ async function beginConfigEdit(id) {
   }
   closeCartPanel();
   updateEditStatus();
-  requestAnimationFrame(() => document.querySelector(".stage-header")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  scrollToModelHeader();
 }
 
 function cancelConfigEdit(reset = true) {
@@ -660,6 +753,20 @@ async function exportCartPdf() {
   finally { cartPdfPending = false; if (cartPdfAttempt) button.textContent = cartText("retryPdf", "重试 PDF", "Retry PDF"); else button.innerHTML = original; renderCartActions(); }
 }
 
+let cartClearPending = false;
+
+async function clearCurrentCart() {
+  if (cartClearPending || !isAuthenticated() || !serverCart.length) return;
+  const items = serverCart.map(item => ({ item_type: item.itemType, id: item.id }));
+  cartClearPending = true;
+  renderCartActions();
+  try {
+    await archiveCartItems(items, document.getElementById("cart-clear"),
+      cartText("clearCartMessage", "确定清空购物车中的全部设备配置、维修工具和设备附件？此操作不会删除产品资料或已发送的询价。", "Clear all device configurations, service tools and accessories from your cart? Product records and previously sent inquiries will not be deleted."),
+      cartText("clearCartTitle", "清空购物车", "Clear Cart"));
+  } finally { cartClearPending = false; renderCartActions(); }
+}
+
 async function archiveCartItems(items, button, message, title) {
   if (!items.length) return;
   const confirmed = await confirmCartRemoval(message, title);
@@ -780,24 +887,8 @@ function openInquiryDialog(sourceType) {
       dialog.querySelector(".inquiry-summary-list").hidden = true;
       dialog.querySelector(".inquiry-message-field").hidden = true;
       const footer = dialog.querySelector(".cart-confirm-actions");
-      footer.innerHTML = `<button class="btn btn-secondary" type="button" data-copy-inquiry-number>${cartText("copyInquiryNumber", "复制询价编号", "Copy inquiry number")}</button><a class="btn btn-primary" href="./account/#my-inquiries">${cartText("viewMyInquiries", "查看我的询价", "View My Inquiries")}</a><button class="btn btn-secondary" type="submit" value="cancel">${cartText("close", "关闭", "Close")}</button>`;
-      footer.querySelector("[data-copy-inquiry-number]").addEventListener("click", async (copyButton) => {
-        const button = copyButton.currentTarget;
-        try {
-          await navigator.clipboard.writeText(inquiryNumber);
-        } catch (_) {
-          const field = document.createElement("textarea");
-          field.value = inquiryNumber;
-          field.setAttribute("readonly", "");
-          Object.assign(field.style, { position: "fixed", width: "1px", height: "1px", opacity: "0" });
-          document.body.appendChild(field);
-          field.select();
-          document.execCommand("copy");
-          field.remove();
-        }
-        button.textContent = cartText("inquiryNumberCopied", "询价编号已复制", "Inquiry number copied");
-      });
-      footer.querySelector("[data-copy-inquiry-number]").focus();
+      footer.innerHTML = `<a class="btn btn-primary" href="./account/#my-inquiries">${cartText("viewMyInquiries", "查看我的询价", "View My Inquiries")}</a>`;
+      footer.querySelector("a").focus({ preventScroll: true });
     } catch (error) {
       status.textContent = `${cartText("inquiryFailed", "询价提交失败", "Inquiry submission failed")}: ${error.message}`;
       status.classList.add("error");
@@ -814,7 +905,7 @@ function openInquiryDialog(sourceType) {
 function requestCurrentInquiry() {
   const issue = currentConfigurationIssue();
   if (issue) { setConfigSaveStatus(issue, "error"); updateCurrentConfigurationAvailability(); return; }
-  requireLogin(() => openInquiryDialog("current_device"));
+  return continueCurrentConfiguration(() => openInquiryDialog("current_device"), true);
 }
 
 function requestCartInquiry() {
@@ -849,7 +940,7 @@ function confirmCartRemoval(
     dialog.addEventListener("close", () => {
       const confirmed = dialog.returnValue === "confirm";
       dialog.remove();
-      if (!confirmed && returnFocus instanceof HTMLElement) returnFocus.focus();
+      if (!confirmed && returnFocus instanceof HTMLElement) returnFocus.focus({ preventScroll: true });
       resolve(confirmed);
     }, { once: true });
     dialog.showModal();
@@ -874,7 +965,7 @@ function closeCartPanel() {
   panel.classList.remove("open"); backdrop.classList.remove("open"); panel.setAttribute("aria-hidden", "true"); backdrop.setAttribute("aria-hidden", "true");
   [document.querySelector(".site-header"), document.querySelector(".main"), document.querySelector(".site-footer")].filter(Boolean).forEach((region) => { region.inert = false; });
   document.body.style.overflow = "";
-  panel._returnFocus?.focus(); panel._returnFocus = null;
+  panel._returnFocus?.focus({ preventScroll: true }); panel._returnFocus = null;
 }
 
 function trapCartFocus(event) {
@@ -898,6 +989,7 @@ function initCart() {
   document.getElementById("share-code")?.addEventListener("click", copyShareCode);
   document.getElementById("cart-toggle")?.addEventListener("click", () => isAuthenticated() ? openCartPanel() : requireLogin(openCartPanel));
   document.getElementById("cart-close")?.addEventListener("click", closeCartPanel);
+  document.getElementById("cart-clear")?.addEventListener("click", clearCurrentCart);
   document.getElementById("cart-backdrop")?.addEventListener("click", closeCartPanel);
   document.getElementById("cart-share")?.addEventListener("click", () => requireLogin(shareCart));
   document.getElementById("cart-pdf")?.addEventListener("click", () => requireLogin(exportCartPdf));

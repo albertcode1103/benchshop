@@ -439,6 +439,7 @@ def list_quotes(
     status_filter: str = "all",
     include_archived: bool = True,
     query: str = "",
+    due: bool = False,
 ) -> List[Dict[str, Any]]:
     restriction = "WHERE q.user_id = ?" if user_id else ""
     params = (user_id,) if user_id else ()
@@ -474,6 +475,11 @@ def list_quotes(
             GROUP BY d.quote_id
             """
         ).fetchall()
+        if due:
+            from .dashboard_rules import due_quote_order, utc_now
+            due_order = due_quote_order(db, utc_now())
+            new_rows = [row for row in new_rows if row["id"] in due_order]
+            legacy_rows = []
     delivery_map = {row["quote_id"]: dict(row) for row in delivery_rows}
     results = [_decode(row, 2) for row in new_rows] + [_decode(row, 1) for row in legacy_rows]
     for item in results:
@@ -492,6 +498,8 @@ def list_quotes(
             "source_code", "display_name", "email", "phone", "recipient_summary",
         )
         results = [item for item in results if any(search in str(item.get(field) or "").casefold() for field in searchable_fields)]
+    if due:
+        return sorted(results, key=lambda item: due_order[item["id"]])
     return sorted(results, key=lambda item: str(item.get("updated_at") or ""), reverse=True)
 
 

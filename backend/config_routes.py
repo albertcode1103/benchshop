@@ -471,6 +471,14 @@ def cancel_own_inquiry(inquiry_id: str, payload: InquiryCancelRequest, user=Depe
     return without_prices(result)
 
 
+@router.get("/staff/dashboard")
+def staff_dashboard(days: int = 30, user=Depends(staff_user)):
+    if days not in (7, 30):
+        raise HTTPException(status_code=422, detail="days must be 7 or 30")
+    from .dashboard_repository import dashboard
+    return dashboard(user, days)
+
+
 @router.get("/staff/inquiries")
 def staff_inquiries(
     page: int = 1,
@@ -478,10 +486,11 @@ def staff_inquiries(
     query: str = "",
     status: str = "all",
     lang: str = "zh",
+    queue: str = Query("all", pattern="^(all|followup|stale)$"),
     user=Depends(staff_user),
 ):
     try:
-        result = list_staff_inquiries(user["id"], user["role"], page, page_size, query, status, lang)
+        result = list_staff_inquiries(user["id"], user["role"], page, page_size, query, status, lang, queue)
         summaries = quote_source_summaries("inquiry", [item["id"] for item in result["items"]], user["id"])
         for item in result["items"]:
             summary = summaries.get(item["id"], {})
@@ -869,6 +878,7 @@ def quotes(
     status_filter: str = Query("all", alias="status", pattern="^(all|draft|sent|archived)$"),
     query: str = Query("", max_length=200),
     include_archived: bool = True,
+    due: bool = False,
     user=Depends(staff_user),
 ):
     return {
@@ -877,6 +887,7 @@ def quotes(
             status_filter=status_filter,
             include_archived=include_archived,
             query=query,
+            due=due,
         )
     }
 

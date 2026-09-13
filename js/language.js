@@ -191,7 +191,10 @@
     if (account && !account.dataset.userName) account.textContent = text.account;
     if (deviceLabel) deviceLabel.textContent = text.device;
     if (cartTitle) cartTitle.textContent = text.cartTitle;
-    if (cartClear) cartClear.textContent = text.clear;
+    if (cartClear) {
+      const label = cartClear.querySelector(".cart-action-label");
+      if (label) label.textContent = lang === "en" ? "Clear" : "清空";
+    }
     if (shareCopy) shareCopy.textContent = text.share;
     if (chips) chips.setAttribute("aria-label", text.selected);
     if (summaryPanel) summaryPanel.setAttribute("aria-label", text.summary);
@@ -212,6 +215,20 @@
       const element = document.getElementById(id);
       if (element) element.textContent = text[key];
     });
+    // The share viewer shell is static HTML, unlike its translated result content.
+    Object.entries({
+      "customer-share-title": "viewShare",
+      "customer-share-search": "viewAction",
+      "customer-share-note-label": "shareNote",
+    }).forEach(([id, key]) => {
+      const element = document.getElementById(id);
+      if (element) element.textContent = text[key] || (lang === "en" ? "Share Note" : "分享备注");
+    });
+    const customerShareLabel = document.querySelector('label[for="customer-share-code"]');
+    if (customerShareLabel) customerShareLabel.textContent = text.shareCode;
+    const customerShareCode = document.getElementById("customer-share-code");
+    if (customerShareCode) customerShareCode.placeholder = text.shareCodeHint;
+    document.getElementById("customer-share-close")?.setAttribute("aria-label", text.close);
     const nameInput = document.getElementById("auth-name");
     const identifierInput = document.getElementById("auth-identifier");
     const passwordInput = document.getElementById("auth-password");
@@ -297,13 +314,14 @@
       if (!button) return;
       let nextLanguage = button.dataset.language === "en" ? "en" : "zh";
       if (nextLanguage === lang) {
-        if (!window.matchMedia("(max-width: 639px)").matches) return;
+        if (!window.matchMedia("(max-width: 899px)").matches) return;
         nextLanguage = lang === "en" ? "zh" : "en";
       }
       if (typeof state !== "undefined" && state?.getSnapshot) {
         sessionStorage.setItem("boten-language-config", JSON.stringify(state.getSnapshot()));
       }
       localStorage.setItem(STORAGE_KEY, nextLanguage);
+      window.botenRememberLanguageScroll?.();
       window.location.reload();
     });
   });

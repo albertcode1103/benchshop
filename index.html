@@ -6,30 +6,34 @@
   <meta name="description" content="BOTEN Diesel Test Bench - 设备配置选择器" />
   <meta name="theme-color" content="#ffffff" />
   <title>BenchShop-博特恩检测设备</title>
-  <script src="js/scroll-reset.js?v=20260911-5"></script>
+  <script src="js/theme.js?v=20260913-theme1"></script>
+  <script src="js/scroll-reset.js?v=20260913-home1"></script>
   <link rel="icon" type="image/png" href="tb/site/LOGO.png?v=20260831" />
   <link rel="shortcut icon" type="image/png" href="tb/site/LOGO.png?v=20260831" />
   <link rel="apple-touch-icon" href="tb/site/LOGO.png?v=20260831" />
-  <link rel="stylesheet" href="css/main.css?v=20260904-1" />
+  <link rel="stylesheet" href="css/main.css?v=20260913-translate1" />
   <link rel="stylesheet" href="css/layout.css?v=20260911-6" />
-  <link rel="stylesheet" href="css/components.css?v=20260912-carttype1" />
+  <link rel="stylesheet" href="css/components.css?v=20260913-cart-header44" />
   <link rel="stylesheet" href="css/print.css?v=20260831-1" />
+  <link rel="stylesheet" href="css/theme.css?v=20260913-theme2" />
+  <link rel="stylesheet" href="css/home.css?v=20260913-carousel3" />
   <script src="js/runtime-config.js?v=20260911-8"></script>
   <script src="js/data.js?v=20260909-1" defer></script>
   <script src="js/catalog-api.js?v=20260912-visible1" defer></script>
   <script src="js/state.js?v=20260912-visible1" defer></script>
   <script src="js/price.js?v=20260912-visible1" defer></script>
-  <script src="js/renderer.js?v=20260912-catalogscroll1" defer></script>
-  <script src="js/navigation-drawer.js?v=20260912-cataloglabel2" defer></script>
-  <script src="js/auth.js?v=20260911-3" defer></script>
-  <script src="js/share-viewer.js?v=20260909-4" defer></script>
-  <script src="js/cart.js?v=20260912-summaryfooter1" defer></script>
-  <script src="js/catalog-marketplace.js?v=20260912-heading1" defer></script>
+  <script src="js/renderer.js?v=20260913-duplicate1" defer></script>
+  <script src="js/navigation-drawer.js?v=20260913-home1" defer></script>
+  <script src="js/auth.js?v=20260913-theme1" defer></script>
+  <script src="js/share-viewer.js?v=20260913-share-cards1" defer></script>
+  <script src="js/cart.js?v=20260913-inquiry-success1" defer></script>
+  <script src="js/catalog-marketplace.js?v=20260913-scroll1" defer></script>
   <script src="js/pdf.js?v=20260903-1" defer></script>
-  <script src="js/main.js?v=20260905-2" defer></script>
-  <script src="js/language.js?v=20260912-cataloglabel2" defer></script>
+  <script src="js/home.js?v=20260913-carousel3" defer></script>
+  <script src="js/main.js?v=20260913-home1" defer></script>
+  <script src="js/language.js?v=20260913-share-language1" defer></script>
 </head>
-<body>
+<body data-selection-view="home">
   <a class="skip-link" href="#main-content">跳到主要内容</a>
   <header class="site-header">
     <div class="container header-inner">
@@ -38,7 +42,7 @@
           <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.25 4.25"/></svg>
           <span class="sr-only" id="catalog-drawer-toggle-label">打开产品导航</span>
         </button>
-        <a class="brand" href="#" aria-label="首页">
+        <a class="brand" href="./" aria-label="首页">
           <img class="brand-logo" src="tb/site/BOTEN.png" alt="BOTEN" width="1617" height="545" />
           <span class="brand-name">BOTEN DIESEL TEST BENCH</span>
         </a>
@@ -61,6 +65,7 @@
           <button id="account-profile-entry" role="menuitem" type="button">个人中心</button>
           <button id="account-admin-entry" role="menuitem" type="button" hidden aria-hidden="true">管理后台</button>
           <button id="account-share-entry" role="menuitem" type="button">查看分享</button>
+          <button id="account-theme-toggle" class="theme-toggle" role="menuitemcheckbox" aria-checked="false" type="button"><span class="theme-label">深色模式</span><span class="theme-switch" aria-hidden="true"></span></button>
           <button id="account-logout" class="account-menu-logout" role="menuitem" type="button">退出登录</button>
         </div>
       </div>
@@ -87,6 +92,8 @@ stroke-width="2" aria-hidden="true">
       <button id="catalog-drawer-close" class="btn btn-text btn-sm" type="button" aria-label="关闭产品导航">✕</button>
     </header>
     <nav class="catalog-drawer-menu" aria-label="产品类别">
+      <button type="button" class="catalog-drawer-item" id="catalog-home-entry"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m3 10 9-7 9 7v10H3Z M9 20v-8h6v8"/></svg><span>主页</span></button>
+      <div class="catalog-home-divider" aria-hidden="true"></div>
       <button type="button" class="catalog-drawer-item" id="catalog-device-entry" aria-controls="catalog-model-drawer" aria-expanded="false"><span>检测设备</span><span aria-hidden="true">›</span></button>
       <button type="button" class="catalog-drawer-item" data-catalog-drawer-select="catalog:tools"><span>维修工具</span></button>
       <button type="button" class="catalog-drawer-item" data-catalog-drawer-select="catalog:accessories"><span>设备附件</span></button>
@@ -102,6 +109,36 @@ stroke-width="2" aria-hidden="true">
   </aside>
 
   <main class="main container" id="main-content" tabindex="-1">
+    <section id="home-page" class="home-page" aria-labelledby="home-title">
+      <div class="home-hero">
+        <div class="home-intro">
+          <h1 id="home-title">检测设备与维修工具</h1>
+          <p id="home-description">浏览设备，选择配置，找到所需工具与附件。</p>
+          <button id="home-browse" type="button" class="btn btn-primary" aria-haspopup="dialog" aria-controls="catalog-model-drawer" disabled>浏览设备</button>
+          <p id="home-device-status" class="home-status" role="status">正在加载设备…</p>
+          <button id="home-retry" class="btn btn-secondary" type="button" hidden>重试</button>
+        </div>
+        <section class="home-carousel" aria-roledescription="carousel" aria-label="设备目录">
+          <div class="home-canvas">
+        <button id="home-device" class="home-device" type="button" disabled>
+          <img id="home-device-image" src="assets/images/placeholder-option.svg" width="720" height="480" alt="" fetchpriority="high">
+          <span class="home-device-caption"><strong id="home-device-model"></strong><span id="home-device-name"></span></span>
+        </button>
+          <div id="home-carousel-arrows" hidden><button id="home-device-prev" class="btn btn-secondary" type="button" aria-label="上一台设备">‹</button><button id="home-device-next" class="btn btn-secondary" type="button" aria-label="下一台设备">›</button></div>
+          </div>
+        </section>
+      </div>
+      <div class="home-directories">
+        <article class="home-directory" data-home-type="tools">
+          <img src="assets/images/placeholder-option.svg" width="144" height="144" alt="" loading="lazy">
+          <div><h2>维修工具</h2><p class="home-status" role="status"></p><button class="btn btn-secondary" type="button" data-home-catalog="tools">浏览工具</button><button class="btn btn-text" type="button" data-home-retry="tools" hidden>重试</button></div>
+        </article>
+        <article class="home-directory" data-home-type="accessories">
+          <img src="assets/images/placeholder-option.svg" width="144" height="144" alt="" loading="lazy">
+          <div><h2>设备附件</h2><p class="home-status" role="status"></p><button class="btn btn-secondary" type="button" data-home-catalog="accessories">浏览附件</button><button class="btn btn-text" type="button" data-home-retry="accessories" hidden>重试</button></div>
+        </article>
+      </div>
+    </section>
     <select id="device-select" hidden aria-hidden="true" tabindex="-1"><!-- Internal selection state rendered by JS --></select>
 
     <section class="config-stage" aria-label="配置区域">
@@ -234,8 +271,8 @@ stroke-width="2" aria-hidden="true">
 
         <div class="summary-content">
           <div class="summary-model" id="summary-model">
-            <span class="summary-label" id="summary-model-label">型号</span>
             <span class="summary-value"><span class="summary-model-code" id="summary-model-code">--</span><span class="summary-model-name" id="summary-model-name">--</span></span>
+            <dl id="summary-base-options" class="summary-base-options"></dl>
           </div>
 
           <ul class="summary-list" id="summary-list">
@@ -398,6 +435,7 @@ aria-controls="catalog-summary-panel" aria-label="查看购物车中的工具" h
       <header class="cart-panel-header">
         <h2 id="cart-title">我的购物车</h2>
         <div class="cart-header-actions">
+          <button id="cart-clear" class="btn btn-secondary btn-sm" type="button" disabled><span class="cart-action-label">清空</span></button>
           <button id="cart-close" class="btn btn-secondary btn-sm cart-header-action" type="button" aria-label="关闭购物车"><span class="cart-action-icon" aria-hidden="true">×</span></button>
         </div>
       </header>

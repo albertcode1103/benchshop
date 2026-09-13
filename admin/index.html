@@ -7,10 +7,11 @@
   <meta name="theme-color" content="#182028" />
   <title>BenchShop-工作台</title>
   <link rel="icon" type="image/png" href="../tb/site/LOGO.png" />
-  <link rel="stylesheet" href="admin.css?v=20260912-badge1" />
+  <link rel="stylesheet" href="admin.css?v=20260913-quote-sections1" />
   <script src="../js/runtime-config.js?v=20260911-8"></script>
   <script>window.addEventListener('error',function(e){var s=document.getElementById('api-status');if(s)s.textContent='后台脚本加载失败：'+(e.message||'请按 Ctrl+F5 刷新');});</script>
-  <script src="admin.js?v=20260912-ui1" defer></script>
+  <script src="admin.js?v=20260913-inquiry-source1" defer></script>
+  <script src="dashboard.js?v=20260913-dashboard1" defer></script>
   <script src="catalog-v2.js?v=20260912-focus1" defer></script>
 </head>
 <body>
@@ -57,7 +58,7 @@
       </div>
       <div class="sidebar-navigation">
       <nav class="sidebar-nav" aria-label="后台导航">
-        <button class="nav-item active" data-view="dashboard" data-admin-only type="button" aria-label="概览" title="概览"><span class="nav-icon" aria-hidden="true">▦</span><span class="nav-label">概览</span><span class="nav-api-status" id="sidebar-api-status" role="status" aria-live="polite"><i></i><span>正在检查 API…</span></span></button>
+        <button class="nav-item active" data-view="dashboard" type="button" aria-label="概览" title="概览"><span class="nav-icon" aria-hidden="true">▦</span><span class="nav-label">概览</span><span class="nav-api-status" id="sidebar-api-status" role="status" aria-live="polite"><i></i><span>正在检查 API…</span></span></button>
         <button class="nav-item" data-view="products" type="button" aria-label="设备目录" title="设备目录"><span class="nav-icon" aria-hidden="true">◇</span><span class="nav-label">设备目录</span></button>
         <button class="nav-item" data-view="config-catalog" type="button" aria-label="配置目录" title="配置目录"><span class="nav-icon" aria-hidden="true">≡</span><span class="nav-label">配置目录</span></button>
         <button class="nav-item" aria-label="工具目录" title="工具目录" data-view="tool-catalog" type="button"><span class="nav-icon nav-icon-svg" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M14.7 6.2a5.2 5.2 0 0 0-6.6 6.6L3.6 17.3a2.1 2.1 0 0 0 3 3l4.5-4.5a5.2 5.2 0 0 0 6.6-6.6l-3.1 3.1-3.2-.8-.8-3.2 4.1-2.1Z"/></svg></span><span class="nav-label">工具目录</span></button>
@@ -86,23 +87,24 @@
     <button class="icon-button mobile-only mobile-menu-trigger" id="menu-button" type="button" aria-label="打开导航">☰</button>
     <main class="admin-main" id="admin-content" tabindex="-1">
       <div class="content">
-        <section class="view active" data-view-panel="dashboard">
-          <div class="metric-grid">
-            <article class="metric-card accent"><span>设备型号</span><strong id="metric-products">—</strong><small>当前上架目录</small></article>
-            <article class="metric-card"><span>客户与员工</span><strong id="metric-users">—</strong><small>不含临时游客</small></article>
-            <article class="metric-card"><span>有效分享</span><strong id="metric-shares">—</strong><small>90 天自动失效</small></article>
-            <article class="metric-card"><span>已查看次数</span><strong id="metric-views">—</strong><small>所有分享累计</small></article>
-          </div>
-
-          <div class="dashboard-grid">
-            <section class="panel">
-              <header class="panel-header"><div><span class="eyebrow">CATALOG</span><h2>设备目录</h2></div><button class="text-button" data-go="products">查看全部</button></header>
-              <div class="product-mini-list" id="dashboard-products"></div>
-            </section>
-            <section class="panel">
-              <header class="panel-header"><div><span class="eyebrow">SHARES</span><h2>近期分享</h2></div><button class="text-button" data-go="shares">管理记录</button></header>
-              <div class="share-mini-list" id="dashboard-shares"></div>
-            </section>
+        <section class="view active dashboard-view" data-view-panel="dashboard" aria-labelledby="dashboard-title">
+          <header class="dashboard-heading"><div><span class="eyebrow">WORKSPACE</span><h1 id="dashboard-title">仪表盘</h1><p id="dashboard-scope">正在加载业务概况…</p></div><div class="dashboard-refresh"><span id="dashboard-updated"></span><button class="button button-secondary" id="dashboard-refresh" type="button">刷新</button></div></header>
+          <p class="dashboard-message" id="dashboard-message" role="status" aria-live="polite">正在加载仪表盘…</p>
+          <div id="dashboard-body" hidden>
+            <div class="metric-grid dashboard-metrics">
+              <button class="metric-card" type="button" data-dashboard-queue="followup"><span>待跟进询价</span><strong data-dashboard-count="followup">—</strong><small data-dashboard-task-scope></small></button>
+              <button class="metric-card" type="button" data-dashboard-queue="drafts"><span>报价草稿</span><strong data-dashboard-count="drafts">—</strong><small data-dashboard-quote-scope></small></button>
+              <button class="metric-card" type="button" data-dashboard-queue="stale"><span>3天未更新询价</span><strong data-dashboard-count="stale">—</strong><small>待跟进且超过72小时未更新</small></button>
+              <button class="metric-card" type="button" data-dashboard-queue="due"><span>7天内到期报价</span><strong data-dashboard-count="due">—</strong><small>已发送 · 尚未到期</small></button>
+            </div>
+            <div class="dashboard-grid dashboard-work">
+              <section class="panel"><header class="panel-header"><div><h2>待跟进询价</h2><p>最久未更新优先 · <span data-dashboard-task-scope></span></p></div><button class="text-button" type="button" data-dashboard-queue="followup">查看全部</button></header><div class="dashboard-list" id="dashboard-inquiries"></div></section>
+              <section class="panel"><header class="panel-header"><div><h2>报价处理</h2><p data-dashboard-quote-scope></p></div><button class="text-button" type="button" id="dashboard-quotes-all">查看全部</button></header><div class="dashboard-tabs" role="group" aria-label="报价处理分类"><button type="button" data-dashboard-work="drafts" aria-pressed="true">报价草稿</button><button type="button" data-dashboard-work="due" aria-pressed="false">即将到期</button></div><div class="dashboard-list" id="dashboard-work-quotes"></div></section>
+            </div>
+            <section class="panel dashboard-section"><header class="panel-header"><div><h2>业务新增趋势</h2><p>按创建日期统计单据 · 北京时间 · 包含今天</p></div><div class="dashboard-tabs" role="group" aria-label="统计天数"><button type="button" data-dashboard-days="7" aria-pressed="false">7天</button><button type="button" data-dashboard-days="30" aria-pressed="true">30天</button></div></header><div class="dashboard-trend-body"><div id="dashboard-trend-totals" class="dashboard-trend-totals"></div><div id="dashboard-chart"></div><div class="dashboard-chart-detail"><label for="dashboard-trend-date">查看每日数据</label><select id="dashboard-trend-date"></select><output id="dashboard-trend-detail" for="dashboard-trend-date"></output></div></div></section>
+            <section class="panel dashboard-section"><header class="panel-header"><div><h2>近期业务</h2><p>询价、分享按创建时间，报价按更新时间</p></div><button class="text-button" id="dashboard-recent-all" type="button">查看全部</button></header><div class="dashboard-tabs" role="group" aria-label="近期业务分类"><button type="button" data-dashboard-recent="inquiries" aria-pressed="true">公共询价</button><button type="button" data-dashboard-recent="quotes" aria-pressed="false" data-dashboard-quote-scope></button><button type="button" data-dashboard-recent="shares" aria-pressed="false">公共分享</button></div><div class="dashboard-list" id="dashboard-recent"></div></section>
+            <section class="panel dashboard-section"><header class="panel-header"><div><h2>目录与分享</h2><p>目录按启用条目／全部条目统计；配置、工具、附件不含已删除条目</p></div></header><div class="dashboard-catalog" id="dashboard-catalog"></div><div class="dashboard-share-summary"><button class="text-button" type="button" data-dashboard-shares="active">有效分享 <strong id="dashboard-active-shares"></strong></button><span>分享累计浏览 <strong id="dashboard-share-views"></strong> 次</span></div></section>
+            <section class="panel dashboard-section" id="dashboard-admin" hidden><header class="panel-header"><div><h2>账号与操作动态</h2><p>仅管理员可见</p></div><button class="text-button" type="button" data-go="audit">全部审计</button></header><div class="dashboard-accounts" id="dashboard-accounts"></div><div class="dashboard-list" id="dashboard-audits"></div></section>
           </div>
         </section>
 
@@ -147,7 +149,7 @@
           </section>
         </section>
         <section class="view" data-view-panel="quotes">
-          <section class="panel"><header class="panel-header"><div><span class="eyebrow">QUOTES</span><h2>报价管理</h2><p>管理报价草稿、已发送版本和归档记录。</p></div></header><form class="share-filter-toolbar quote-filter-toolbar" id="quote-filter-form" role="search"><label class="share-query-field"><span>搜索全部信息</span><input id="quote-query" name="query" type="search" autocomplete="off" placeholder="报价编号、标题、客户、来源或业务员" /></label><label><span>状态</span><select id="quote-status-filter" name="status"><option value="all">全部</option><option value="draft">草稿</option><option value="sent">已发送</option><option value="archived">已归档</option></select></label><div class="share-filter-actions"><button class="button button-secondary" type="submit">筛选</button><button class="button button-quiet" id="quote-filter-reset" type="button">重置</button></div></form><div class="table-wrap business-table-wrap" tabindex="0" role="region" aria-label="报价管理列表，可左右滑动"><table class="business-table quotes-business-table"><colgroup><col class="quote-col-document" /><col class="quote-col-customer" /><col class="quote-col-status" /><col class="quote-col-owner" /><col class="quote-col-total" /><col class="quote-col-actions" /></colgroup><thead><tr><th>报价单</th><th>客户</th><th>状态</th><th>业务员与更新</th><th>总价</th><th class="align-right">操作</th></tr></thead><tbody id="quotes-table"></tbody></table></div></section>
+          <section class="panel"><header class="panel-header"><div><span class="eyebrow">QUOTES</span><h2>报价管理</h2><p>管理报价草稿、已发送版本和归档记录。</p></div></header><form class="share-filter-toolbar quote-filter-toolbar" id="quote-filter-form" role="search"><label class="share-query-field"><span>搜索全部信息</span><input id="quote-query" name="query" type="search" autocomplete="off" placeholder="报价编号、标题、客户、来源或业务员" /></label><label><span>状态</span><select id="quote-status-filter" name="status"><option value="all">全部</option><option value="draft">草稿</option><option value="sent">已发送</option><option value="archived">已归档</option></select></label><label><span>到期提醒</span><select id="quote-due-filter"><option value="all">全部</option><option value="due">7天内到期 · 已发送</option></select></label><div class="share-filter-actions"><button class="button button-secondary" type="submit">筛选</button><button class="button button-quiet" id="quote-filter-reset" type="button">重置</button></div></form><div class="table-wrap business-table-wrap" tabindex="0" role="region" aria-label="报价管理列表，可左右滑动"><table class="business-table quotes-business-table"><colgroup><col class="quote-col-document" /><col class="quote-col-customer" /><col class="quote-col-status" /><col class="quote-col-owner" /><col class="quote-col-total" /><col class="quote-col-actions" /></colgroup><thead><tr><th>报价单</th><th>客户</th><th>状态</th><th>业务员与更新</th><th>总价</th><th class="align-right">操作</th></tr></thead><tbody id="quotes-table"></tbody></table></div></section>
         </section>
         <section class="view" data-view-panel="inquiries">
           <section class="panel">
@@ -155,6 +157,7 @@
             <form class="share-filter-toolbar" id="inquiry-filter-form" role="search">
               <label class="share-query-field"><span>搜索全部信息</span><input id="inquiry-query" type="search" autocomplete="off" placeholder="询价编号、客户姓名、邮箱或手机号" /></label>
               <label><span>状态</span><select id="inquiry-status-filter"><option value="all">全部</option><option value="business_new">新询价</option><option value="business_assigned">已分配</option><option value="business_contacted">已联系</option><option value="business_pending">待报价</option><option value="business_sent">已报价</option><option value="business_archived">报价已归档</option><option value="business_closed">已完成</option><option value="business_cancelled">客户已取消</option></select></label>
+              <label><span>待办范围</span><select id="inquiry-queue-filter"><option value="all">全部询价</option><option value="followup">待跟进</option><option value="stale">待跟进 · 3天未更新</option></select><small id="inquiry-queue-scope"></small></label>
               <div class="share-filter-actions"><button class="button button-secondary" type="submit">筛选</button><button class="button button-quiet" id="inquiry-filter-reset" type="button">重置</button></div>
             </form>
             <div class="table-wrap business-table-wrap inquiry-table-wrap" tabindex="0" role="region" aria-label="询价列表，可左右滑动"><table class="business-table inquiries-business-table"><colgroup><col class="inquiry-col-number" /><col class="inquiry-col-customer" /><col class="inquiry-col-content" /><col class="inquiry-col-progress" /><col class="inquiry-col-created" /><col class="inquiry-col-actions" /></colgroup><thead><tr><th>询价</th><th>客户</th><th>询价内容</th><th>业务进度</th><th>创建时间</th><th class="align-right">操作</th></tr></thead><tbody id="inquiries-table"></tbody></table></div>

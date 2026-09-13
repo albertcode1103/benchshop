@@ -5,12 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#ffffff" />
   <title>BenchShop-博特恩检测设备</title>
+  <script src="../js/theme.js?v=20260913-theme1"></script>
   <link rel="icon" type="image/png" href="../tb/site/LOGO.png?v=20260831" />
   <link rel="stylesheet" href="../css/main.css?v=20260904-1" />
   <link rel="stylesheet" href="../css/components.css?v=20260912-ui1" />
-  <link rel="stylesheet" href="account.css?v=20260912-headericons1" />
+  <link rel="stylesheet" href="account.css?v=20260913-share-title1" />
+  <link rel="stylesheet" href="../css/theme.css?v=20260913-theme2" />
   <script src="../js/runtime-config.js?v=20260911-8"></script>
-  <script src="account.js?v=20260912-headericons1" defer></script>
+  <script src="account.js?v=20260913-inquiry-model1" defer></script>
 </head>
 <body class="profile-page">
   <a id="profile-skip-link" class="skip-link" href="#account-main">跳到主要内容</a>
@@ -41,7 +43,7 @@
           <p id="profile-account-group">我的账号</p>
           <button class="active" type="button" data-account-panel="profile" aria-current="page">我的资料</button>
           <button type="button" data-account-panel="account-contact">联系方式</button>
-          <button type="button" data-account-panel="account-security">密码与安全</button>
+          <button type="button" data-account-panel="account-security">密码设置</button>
         </div>
         <div class="profile-navigation-group" role="group" aria-labelledby="profile-business-group">
           <p id="profile-business-group">我的业务</p>
@@ -92,7 +94,7 @@
       </section>
 
       <section class="profile-panel" data-account-content="account-security" aria-labelledby="profile-security-title" hidden>
-        <header class="profile-panel-header"><h1 id="profile-security-title">密码与安全</h1><p id="profile-security-description">设置至少 8 个字符的新密码。修改后需要重新登录。</p></header>
+        <header class="profile-panel-header"><h1 id="profile-security-title">密码设置</h1><p id="profile-security-description">设置至少 8 个字符的新密码。修改后需要重新登录。</p></header>
         <form id="profile-password-form" class="profile-form" novalidate>
           <label><span id="profile-current-password-label">当前密码</span><input id="profile-current-password" name="current_password" type="password" autocomplete="current-password" required /></label>
           <label><span id="profile-new-password-label">新密码</span><input id="profile-new-password" name="new_password" type="password" minlength="8" maxlength="128" autocomplete="new-password" required /></label>

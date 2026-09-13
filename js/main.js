@@ -2,6 +2,7 @@ async function initApp() {
   try {
     await loadCatalogFromApi();
   } catch (error) {
+    window.botenHomeDeviceStatus?.("error");
     const isEnglish = localStorage.getItem("boten-language") === "en";
     const deviceSelect = document.getElementById("device-select");
     const pageTitle = document.getElementById("page-title");
@@ -21,6 +22,7 @@ async function initApp() {
     }
     return;
   }
+  window.botenHomeDeviceStatus?.("ready");
   initializeState();
   bindRenderer(state);
   initSalesContact();
