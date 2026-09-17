@@ -103,6 +103,10 @@
 .device-overview #page-desc,
 .device-overview #product-specifications th,
 .device-overview #product-specifications td { font-size: 12px; }
+.device-overview #overview-title { font-size: 16px; }
+.device-overview #page-desc { font-size: 14px; }
+.device-overview #product-specifications th,
+.device-overview #product-specifications td { padding: 5px 10px; line-height: 1.4; }
 
 /* Two-level product navigation drawer */
 .catalog-drawer-toggle { flex: 0 0 42px; width: 42px; height: 42px; padding: 0; }
@@ -570,6 +574,12 @@
 #category-tabs .tab-btn,
 #options-panel .options-header > p { font-size: 12px; }
 
+#color-section, #motor-section, #voltage-section, #channel-section,
+#color-section :where(*), #motor-section :where(*),
+#voltage-section :where(*), #channel-section :where(*),
+#config-section > .spec-section-header :where(*),
+#config-sticky-header, #config-sticky-header :where(*) { font-size: 14px; }
+
 .option-special-note-label {
   display: block;
   margin-bottom: 2px;
@@ -651,6 +661,9 @@
   font-weight: 700;
 }
 
+#summary-panel .summary-header h2,
+#summary-panel .summary-header .btn { font-size: 16px; }
+
 .summary-header-actions {
   display: flex;
   align-items: center;
@@ -694,6 +707,7 @@
 
 #summary-model, #summary-model .summary-label, #summary-model .summary-model-code,
 #summary-model .summary-model-name, #summary-model dt, #summary-model dd { font-size: 14px; }
+#summary-model :where(*) { font-size: 14px; }
 #summary-model { margin-bottom: var(--space-md); }
 .summary-base-options { margin: 8px 0 0; }
 .summary-base-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr); align-items: start; gap: 12px; padding: 6px 0; border-top: 1px dashed var(--color-border); }

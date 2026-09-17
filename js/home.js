@@ -1,11 +1,11 @@
 (function () {
   const en = localStorage.getItem("boten-language") === "en";
   const copy = en ? {
-    title: "Test Equipment & Service Tools", description: "Explore equipment, choose configurations, and find the tools and accessories you need.",
+    company: "BOTEN TESTING EQUIPMENT SUZHOU CO., LTD.", title: "Diesel Common Rail System Test Equipment", description: "Explore equipment, choose configurations, and find the tools and accessories you need.",
     browse: "Browse Equipment", tools: "Service Tools", accessories: "Accessories", toolsAction: "Browse Tools", accessoriesAction: "Browse Accessories",
     loading: "Loading…", empty: "No products available", error: "Unable to load catalog. Please retry.", retry: "Retry"
   } : {
-    title: "检测设备与维修工具", description: "浏览设备，选择配置，找到所需工具与附件。",
+    company: "博特恩检测设备（苏州）有限公司", title: "柴油共轨系统检测设备", description: "浏览设备，选择配置，找到所需工具与附件。",
     browse: "浏览设备", tools: "维修工具", accessories: "设备附件", toolsAction: "浏览工具", accessoriesAction: "浏览附件",
     loading: "正在加载…", empty: "暂无可用产品", error: "目录加载失败，请重试。", retry: "重试"
   };
@@ -14,6 +14,7 @@
   let deviceModels = [];
   let deviceIndex = 0;
   let applicationReady = false;
+  let slideVersion = 0;
   const byId = id => document.getElementById(id);
   const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
   let timer = null, hovering = false, touching = false;
@@ -37,13 +38,35 @@
     byId("home-browse").disabled = !deviceModel;
     document.querySelectorAll("[data-home-catalog]").forEach(button => { button.disabled = !applicationReady; });
   }
-  function showDevice(index) {
+  async function showDevice(index) {
+    const version = ++slideVersion;
+    const previousModel = deviceModel;
+    const direction = index < deviceIndex ? -1 : 1;
+    const image = byId("home-device-image");
+    image.getAnimations().forEach(animation => animation.cancel());
+    document.querySelectorAll(".home-device-outgoing").forEach(element => element.remove());
+    const outgoing = previousModel ? image.cloneNode(false) : null;
     deviceIndex = deviceModels.length ? (index + deviceModels.length) % deviceModels.length : 0;
     deviceModel = deviceModels[deviceIndex] || null;
+    const source = deviceModel ? (resolveDetailImages(deviceModel)[0] || deviceModel.colorImages?.[deviceModel.defaultColor] || placeholder) : placeholder;
+    const preload = new Image();
+    preload.src = source;
+    await preload.decode().catch(() => {});
+    if (version !== slideVersion) return;
     byId("home-device").disabled = !deviceModel;
     byId("home-device-model").textContent = deviceModel?.type || "";
     byId("home-device-name").textContent = deviceModel?.titleName || "";
-    byId("home-device-image").src = deviceModel ? (resolveDetailImages(deviceModel)[0] || deviceModel.colorImages?.[deviceModel.defaultColor] || placeholder) : placeholder;
+    image.src = source;
+    if (outgoing && previousModel !== deviceModel && !reducedMotion.matches) {
+      outgoing.removeAttribute("id");
+      outgoing.classList.add("home-device-outgoing");
+      outgoing.setAttribute("aria-hidden", "true");
+      image.parentElement.appendChild(outgoing);
+      const timing = { duration: 600, easing: "cubic-bezier(.22,.61,.36,1)" };
+      image.animate([{ transform: `translateX(${direction * 100}%)` }, { transform: "translateX(0)" }], timing);
+      const exit = outgoing.animate([{ transform: "translateX(0)" }, { transform: `translateX(${-direction * 100}%)` }], timing);
+      exit.finished.then(() => outgoing.remove()).catch(() => outgoing.remove());
+    }
     byId("home-carousel-arrows").hidden = deviceModels.length < 2;
     syncAutoplay();
   }
@@ -105,6 +128,7 @@
       }
     }, { passive: true });
     byId("home-title").textContent = copy.title;
+    byId("home-company").textContent = copy.company;
     byId("home-title").tabIndex = -1;
     byId("home-description").textContent = copy.description;
     byId("home-browse").textContent = copy.browse;

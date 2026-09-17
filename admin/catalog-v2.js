@@ -766,6 +766,10 @@
     return catalogRoots().some((root) => root.id === requested) ? requested : ROOT_IDS.optional;
   }
 
+  function catalogInformationNote(item = {}) {
+    return String(item.notes || item.note_zh || item.note_en || "").trim();
+  }
+
   function renderCatalogItems(category) {
     const language = state.catalogLanguage;
     const items = category.options || [];
@@ -777,12 +781,64 @@
         <td><strong>${escapeHtml(item.code)}</strong></td>
         <td class="catalog-item-copy"><strong>${escapeHtml(localized(item.name, item.name_en, language))}</strong>${localized(item.description, item.description_en, language) !== "—" && localized(item.description, item.description_en, language) !== "[English pending]" ? `<small>${escapeHtml(localized(item.description, item.description_en, language))}</small>` : ""}</td>
         <td class="config-image-cell">${renderCatalogThumbnail(item)}</td>
-        <td class="catalog-price-cell"><span class="catalog-price-values"><span><span class="catalog-currency-mark" aria-hidden="true">¥</span><strong>${Number(item.price || 0).toLocaleString("zh-CN")}</strong></span><span><span class="catalog-currency-mark" aria-hidden="true">$</span><strong>${Number(item.price_usd || 0).toLocaleString("en-US")}</strong></span></span></td>
+        <td class="catalog-price-cell"><span class="catalog-price-with-note"><span class="catalog-price-values"><span><strong>${Number(item.price || 0).toLocaleString("zh-CN")}</strong><span class="catalog-currency-mark" aria-label="人民币">¥</span></span><span><strong>${Number(item.price_usd || 0).toLocaleString("en-US")}</strong><span class="catalog-currency-mark" aria-label="美元">$</span></span></span><button class="catalog-note-button" type="button" aria-label="查看 ${escapeHtml(item.code)} 的备注" data-catalog-note="${escapeHtml(catalogInformationNote(item) || "暂无备注")}">?</button></span></td>
         <td><span class="badge ${item.enabled ? "good" : "off"}">${item.enabled ? "启用" : "停用"}</span></td>
         <td class="align-right"><span class="catalog-row-actions"><button class="icon-button" type="button" data-move-catalog-item="${escapeHtml(item.id)}" data-category-id="${escapeHtml(category.id)}" data-direction="-1" aria-label="上移 ${escapeHtml(item.name)}" ${itemIndex === 0 ? "disabled" : ""}>↑</button><button class="icon-button" type="button" data-move-catalog-item="${escapeHtml(item.id)}" data-category-id="${escapeHtml(category.id)}" data-direction="1" aria-label="下移 ${escapeHtml(item.name)}" ${itemIndex === items.length - 1 ? "disabled" : ""}>↓</button><button class="table-action" type="button" data-edit-catalog-item="${escapeHtml(item.id)}">编辑</button></span></td>
       </tr>`).join("")}</tbody>
     </table></div>`;
   }
+
+  // Place notes outside the scrolling table so the popup is never clipped.
+  const noteTooltip = document.createElement("div");
+  noteTooltip.id = "catalog-note-tooltip";
+  noteTooltip.className = "catalog-note-tooltip";
+  noteTooltip.setAttribute("role", "tooltip");
+  noteTooltip.hidden = true;
+  document.body.appendChild(noteTooltip);
+  let noteTrigger = null;
+  function hideCatalogNote() {
+    noteTrigger?.removeAttribute("aria-describedby");
+    noteTrigger = null;
+    noteTooltip.hidden = true;
+  }
+  function showCatalogNote(button) {
+    hideCatalogNote();
+    noteTrigger = button;
+    noteTooltip.textContent = button.dataset.catalogNote;
+    button.setAttribute("aria-describedby", noteTooltip.id);
+    noteTooltip.hidden = false;
+    const bounds = button.getBoundingClientRect();
+    const popup = noteTooltip.getBoundingClientRect();
+    noteTooltip.style.left = `${Math.max(8, Math.min(bounds.right - popup.width, window.innerWidth - popup.width - 8))}px`;
+    noteTooltip.style.top = `${Math.max(8, Math.min(bounds.bottom, window.innerHeight - popup.height - 8))}px`;
+  }
+  document.addEventListener("pointerover", (event) => {
+    const button = event.target.closest("[data-catalog-note]");
+    if (button && button !== noteTrigger) showCatalogNote(button);
+  });
+  document.addEventListener("focusin", (event) => {
+    if (event.target.matches("[data-catalog-note]")) showCatalogNote(event.target);
+  });
+  document.addEventListener("pointerout", (event) => {
+    if (!noteTrigger || document.activeElement === noteTrigger) return;
+    if (event.relatedTarget && (noteTrigger.contains(event.relatedTarget) || noteTooltip.contains(event.relatedTarget))) return;
+    if (noteTrigger.contains(event.target) || noteTooltip.contains(event.target)) hideCatalogNote();
+  });
+  document.addEventListener("focusout", (event) => {
+    if (event.target === noteTrigger) hideCatalogNote();
+  });
+  document.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-catalog-note]");
+    if (button) showCatalogNote(button);
+    else if (!noteTooltip.contains(event.target)) hideCatalogNote();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") hideCatalogNote();
+  });
+  window.addEventListener("resize", hideCatalogNote);
+  document.addEventListener("scroll", (event) => {
+    if (event.target !== noteTooltip) hideCatalogNote();
+  }, true);
 
   function renderCatalogCategory(category, { root = false } = {}) {
     const collapsed = state.collapsedCategories.has(category.id);
@@ -931,8 +987,7 @@
   async function generateCatalogDraft(form, button) {
     const pairs = [
       ["name_zh", "name_en"],
-      ["description_zh", "description_en"],
-      ["note_zh", "note_en"]
+      ["description_zh", "description_en"]
     ].filter(([source]) => form.elements[source]);
     const values = Object.fromEntries(pairs.map(([source]) => [source, form.elements[source].value.trim()]));
     await runButtonAction(button, "生成中…", async () => {
@@ -1002,11 +1057,10 @@
     return dialog;
   }
 
-  function translationFields(values = {}, { includeNote = false, nameLabel = "配置名称", descriptionLabel = "配置描述" } = {}) {
+  function translationFields(values = {}, { nameLabel = "配置名称", descriptionLabel = "配置描述" } = {}) {
     return `<section class="catalog-form-section catalog-copy-section"><div class="catalog-form-heading"><div><h3>中英文内容</h3><p>字段标题保持中文，右上角切换当前编辑的内容语言。</p></div></div><div class="catalog-field-list">
       <label class="catalog-field language-value-field"><span>${escapeHtml(nameLabel)}</span><input name="name_zh" data-content-lang="zh" maxlength="300" required value="${escapeHtml(values.name || values.name_zh || "")}" placeholder="填写中文名称"><input name="name_en" data-content-lang="en" maxlength="300" required value="${escapeHtml(values.name_en || "")}" placeholder="Enter the English name"></label>
       <label class="catalog-field language-value-field"><span>${escapeHtml(descriptionLabel)}</span><textarea name="description_zh" data-content-lang="zh" rows="1" maxlength="10000" placeholder="填写中文描述">${escapeHtml(values.description || values.description_zh || "")}</textarea><textarea name="description_en" data-content-lang="en" rows="1" maxlength="10000" placeholder="Enter the English description">${escapeHtml(values.description_en || "")}</textarea></label>
-      ${includeNote ? `<label class="catalog-field language-value-field"><span>备注</span><textarea name="note_zh" data-content-lang="zh" rows="1" maxlength="5000" placeholder="填写中文备注">${escapeHtml(values.notes || values.note_zh || "")}</textarea><textarea name="note_en" data-content-lang="en" rows="1" maxlength="5000" placeholder="Enter the English note">${escapeHtml(values.note_en || "")}</textarea></label>` : ""}
     </div></section>`;
   }
 
@@ -1072,8 +1126,9 @@
       dialogClass: "catalog-item-editor-dialog",
       body: `<input type="hidden" name="version" value="${escapeHtml(item?.version || 1)}">
         <section class="catalog-form-section catalog-form-basics"><div class="catalog-form-heading"><div><h3>基本资料</h3><p>编号用于数据匹配，保存后建议保持不变。</p></div></div><div class="catalog-field-list">${categoryField}<label class="catalog-field"><span>${labels.singular}编号</span><input name="code" maxlength="200" required value="${escapeHtml(item?.code || "")}" placeholder="例如：BTK-1019" spellcheck="false" autocomplete="off"></label><div class="catalog-field catalog-image-field"><span>${labels.singular}图片</span>${catalogImageControl(item || {})}</div></div></section>
-        ${translationFields(item || {}, { includeNote: true, nameLabel: `${labels.singular}名称`, descriptionLabel: `${labels.singular}描述` })}
+        ${translationFields(item || {}, { nameLabel: `${labels.singular}名称`, descriptionLabel: `${labels.singular}描述` })}
         <section class="catalog-form-section catalog-price-section"><div class="catalog-form-heading"><div><h3>参考价格</h3><p>作为后台报价的默认单价，用户端不显示价格。</p></div></div><div class="catalog-field-list"><label class="catalog-field"><span>人民币参考价格</span><input name="price_cny" type="number" min="0" step="1" inputmode="decimal" value="${escapeHtml(item?.price || 0)}"></label><label class="catalog-field"><span>美元参考价格</span><input name="price_usd" type="number" min="0" step="1" inputmode="decimal" value="${escapeHtml(item?.price_usd || 0)}"></label></div></section>
+        <section class="catalog-form-section catalog-note-section"><div class="catalog-form-heading"><div><h3>信息备注</h3><p id="catalog-information-note-help">可填写该产品的包装尺寸与重量等信息，仅在工作台中查看</p></div></div><div class="catalog-field-list"><label class="catalog-field"><span>信息备注</span><textarea name="information_note" rows="3" maxlength="5000" aria-describedby="catalog-information-note-help" placeholder="填写包装尺寸、重量等信息">${escapeHtml(catalogInformationNote(item || {}))}</textarea></label></div></section>
         <input type="hidden" name="translation_status" value="${escapeHtml(item?.translation_status || "machine_draft")}"><section class="catalog-form-section catalog-settings-section"><div class="catalog-form-heading"><div><h3>显示设置</h3><p>排序值越小越靠前，也可在目录列表中使用上下箭头调整。</p></div></div><div class="catalog-field-list"><label class="catalog-field"><span>排序</span><input name="sort_order" type="number" step="1" value="${escapeHtml(item?.sort_order || 0)}"></label></div></section>`,
       footerControl: `<label class="compact-check catalog-footer-enabled"><input name="enabled" type="checkbox" ${item?.enabled !== false ? "checked" : ""}><span>启用${labels.singular}</span></label>`,
       onSave: async (form) => {
@@ -1084,8 +1139,9 @@
           name_en: form.elements.name_en.value.trim(),
           description_zh: form.elements.description_zh.value.trim(),
           description_en: form.elements.description_en.value.trim(),
-          note_zh: form.elements.note_zh.value.trim(),
-          note_en: form.elements.note_en.value.trim(),
+          // Keep the existing API compatible while both languages share one note.
+          note_zh: form.elements.information_note.value.trim(),
+          note_en: form.elements.information_note.value.trim(),
           image_path: form.elements.image_path.value || null,
           image_width: Number(form.elements.image_width.value) || null,
           image_height: Number(form.elements.image_height.value) || null,
@@ -1258,6 +1314,7 @@
       return;
     }
     if (event.target.closest("#add-specification-button") && state.editingProduct) {
+      captureSpecifications();
       state.editingProduct.specifications.push({ id: temporaryId("spec"), label: "", label_en: "", value: "", value_en: "", sort_order: state.editingProduct.specifications.length });
       renderSpecifications();
       return;

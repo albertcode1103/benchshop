@@ -642,8 +642,6 @@
             ${opt.code ? `<div class="option-code">${escapeOptionHtml(window.normalizeCatalogCode(opt.code))}</div>` : ""}
             <div class="option-name">${escapeOptionHtml(window.catalogDisplayName(opt.name, opt.code))}</div>
             ${opt.description ? `<div class="option-desc">${escapeOptionHtml(opt.description)}</div>` : ""}
-            ${opt.specialNote ? `<div class="option-special-note">${escapeOptionHtml(opt.specialNote)}</div>` : ""}
-            ${opt.note ? `<div class="option-note">${escapeOptionHtml(opt.note)}</div>` : ""}
             </div>
           </div>
         `;

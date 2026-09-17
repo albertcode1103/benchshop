@@ -24,7 +24,7 @@ from .quote_repository import (
     QUOTE_ITEM_FIELDS,
     save_quote, list_quotes, get_quote, delete_quote, list_reference_prices,
     deliver_quote, withdraw_quote_delivery, list_customer_quotes, get_customer_quote,
-    archive_quote, restore_quote, quote_history,
+    archive_quote, restore_quote, quote_history, get_quote_revision,
     find_active_quote_for_source, quote_source_summaries,
 )
 from .pdf_service import commerce_bundle_pdf, configuration_bundle_pdf, configuration_pdf, quote_pdf as render_quote_pdf, temporary_configuration_code
@@ -1051,6 +1051,18 @@ def staff_quote_history(quote_id: str, user=Depends(staff_user)):
         raise AccountError("QUOTE_NOT_FOUND", status_code=404)
     return result
 
+@router.get("/staff/quotes/{quote_id}/history/{revision_id}")
+def staff_quote_revision(quote_id: str, revision_id: str, user=Depends(staff_user)):
+    current = get_quote(quote_id, None if user["role"] == "admin" else user["id"])
+    if current is None:
+        raise AccountError("QUOTE_NOT_FOUND", status_code=404)
+    revision = get_quote_revision(revision_id)
+    if revision is None or revision.get("id") != quote_id:
+        raise AccountError("QUOTE_NOT_FOUND", status_code=404)
+    return {"quote": revision, "current_version": current.get("version"),
+            "can_apply": current.get("lifecycle_status") != "archived"}
+
+
 @router.get("/quotes/{quote_id}")
 def quote(quote_id: str, user=Depends(staff_user)):
     result = get_quote(quote_id, None if user["role"] == "admin" else user["id"])
@@ -1120,6 +1132,7 @@ def shared_config_pdf(code: str, request: Request, user=Depends(registered_user)
     content = commerce_bundle_pdf(
         entries, customer, "en" if lang == "en" else "zh",
         include_prices=False, document_code=pdf_identity("share", code), note=result.get("note") or "", is_share=True,
+        created_at=result.get("created_at") or "",
     )
     write_audit(user["id"], "share_pdf_export", "commerce_shares" if result.get("document_version") == 2 else "config_shares", result["id"], {"code": code, "item_count": len(entries)})
     return _pdf_response(content, pdf_identity("share", code) + ".pdf")

@@ -18,7 +18,7 @@ def test_unified_brand_layout(language, kind):
         content = pdf.quote_pdf({"quote_number": "BTQ-20260911-12345", "language": language, "created_at": "2026-09-11 09:00:00", "customer_name": "QA", "items": items, "currency": "CNY", "total_price": 650})
     else:
         entries = [{"item_type": "tool", "quantity": 1, "snapshot": item} for item in items]
-        content = pdf.commerce_bundle_pdf(entries, {"display_name": "QA"}, language, document_kind=kind, document_code=code, created_at="2026-09-11 09:00:00", is_share=kind == "configuration")
+        content = pdf.commerce_bundle_pdf(entries, {"display_name": "QA"}, language, document_kind=kind, document_code=code, note="Priority configuration note", created_at="2026-09-11 09:00:00", is_share=kind == "configuration")
     out = Path("tmp/pdfs/brand-layout")
     out.mkdir(parents=True, exist_ok=True)
     (out / f"{kind}-{language}.pdf").write_bytes(content)
@@ -29,6 +29,8 @@ def test_unified_brand_layout(language, kind):
     assert b"2 Tr" in reader.pages[0].get_contents().get_data()
     if kind == "configuration":
         assert ("分享人" if language == "zh" else "Shared by") in first_text
+        assert ("配置备注" if language == "zh" else "Configuration Note") in first_text
+        assert "Priority configuration note" in first_text
     else:
         assert "2026-09-11 17:00:00" in first_text
         assert ("分享人" if language == "zh" else "Shared by") not in first_text
@@ -53,8 +55,14 @@ def test_unified_brand_layout(language, kind):
         assert any(text == code and x < 60 for text, x, y in footer)
         assert not any(pdf.WEBSITE in text for text, x, y in footer)
         assert len(page.images) >= 1
-        timestamp = next(text for text, x, y in footer if x > 350)
-        timestamps.add(timestamp)
+        created_label, exported_label = ("创建时间", "PDF导出时间") if language == "zh" else ("Created", "PDF exported")
+        created = next((text, x, y) for text, x, y in footer if text.startswith(created_label + ":"))
+        exported = next((text, x, y) for text, x, y in footer if text.startswith(exported_label + ":"))
+        assert "2026-09-11 17:00:00" in created[0]
+        assert created[1] > 350 and exported[1] > 350
+        assert created[2] > exported[2]
+        assert not any("2026-09-11 17:00:00" in text for text, x, y in pieces if y >= 35)
+        timestamps.add(exported[0])
     assert len(timestamps) == 1
 
 

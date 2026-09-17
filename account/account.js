@@ -363,6 +363,15 @@ async function loadProfileShares(page = profileSharePage) {
   try {
     const requestId = ++businessRequests.shares;
     const result = await profileRequest(`/customer/me/shares?page=${page}&page_size=${PROFILE_SHARE_PAGE_SIZE}${businessFilterQuery("shares")}`);
+    // Older API deployments do not include the note in the list response. Fill it
+    // from the existing detail endpoint during a rolling frontend/backend update.
+    await Promise.all((result.items || []).map(async (share) => {
+      if (Object.prototype.hasOwnProperty.call(share, "note")) return;
+      try {
+        const detail = await profileRequest(`/customer/me/shares/${encodeURIComponent(share.id)}?lang=${profileLanguage}`);
+        share.note = detail.note || "";
+      } catch (_) { share.note = ""; }
+    }));
     if (requestId !== businessRequests.shares) return;
     profileSharePage = Number(result.page || 1);
     profileShareTotal = Number(result.total || 0);
@@ -371,6 +380,7 @@ async function loadProfileShares(page = profileSharePage) {
       <article class="profile-business-card">
         <div class="profile-business-card-main"><strong class="profile-share-heading">${profileLanguage === "en" ? "My Share" : "我的分享"} <span translate="no">${escapeProfileHtml(share.code)}</span></strong></div>
         <div class="profile-business-card-actions"><button class="btn btn-secondary btn-sm" type="button" data-copy-share="${escapeProfileHtml(share.code)}">${pc.copyCode}</button><button class="btn btn-secondary btn-sm" type="button" data-open-share="${escapeProfileHtml(share.id)}">${profileLanguage === "en" ? "View" : "查看"}</button></div>
+        ${share.note ? `<div class="profile-business-card-note"><strong>${profileLanguage === "en" ? "Note" : "配置备注"}</strong><span>${escapeProfileHtml(share.note)}</span></div>` : ""}
         <div class="profile-business-card-meta"><span class="profile-status-badge${share.status === "active" ? "" : " is-off"}">${shareStatusLabel(share.status)}</span><span>${Number(share.item_count || 0)} ${pc.items}</span><span>${Number(share.view_count || 0)} ${pc.views}</span><span>${Number(share.quote_count || 0)} ${pc.quoteCount}</span><span>${pc.createdAt} ${profileDate(share.created_at)}</span><span>${pc.expiresAt} ${profileDate(share.expires_at)}</span></div>
       </article>`).join("") : `<div class="profile-list-empty">${pc.emptyShares}</div>`;
     const pages = Math.max(1, Math.ceil(profileShareTotal / PROFILE_SHARE_PAGE_SIZE));
@@ -464,6 +474,7 @@ function decorateBusinessRecords(kind, records) {
       return;
     }
     if (kind === "shares") {
+      actions.insertAdjacentHTML("beforeend", `<button type="button" class="btn btn-secondary btn-sm" data-download-share="${escapeProfileHtml(record.code)}">${pc.downloadPdf}</button>`);
       if (record.active) actions.insertAdjacentHTML("beforeend", action("close", businessText("关闭", "Close")));
       else if (record.can_reopen) actions.insertAdjacentHTML("beforeend", action("reopen", businessText("开启", "Reopen")));
     }
@@ -551,7 +562,7 @@ async function openOwnShare(shareId) {
     }).join("")}</div></section>`;
   }).join("");
   const body = deviceSection + catalogSections;
-  const note = result.note ? `<section class="profile-detail-group profile-share-note"><h3>${profileLanguage === "en" ? "Share note" : "分享备注"}</h3><p>${escapeProfileHtml(result.note)}</p></section>` : "";
+  const note = result.note ? `<section class="profile-detail-group profile-share-note"><h3>${profileLanguage === "en" ? "Configuration Note" : "配置备注"}</h3><p>${escapeProfileHtml(result.note)}</p></section>` : "";
   const heading = [result.title, result.code].filter(Boolean).join(" · ");
   openProfileBusinessDialog(heading, pc.shareDetails, note + (body || `<div class="profile-list-empty">${pc.emptyShares}</div>`));
 }
@@ -625,6 +636,14 @@ async function downloadOwnQuote(quoteId) {
   await loadProfileQuotes();
 }
 
+async function downloadOwnShare(shareCode) {
+  const response = await fetch(`${window.BOTEN_API_BASE || ""}/api/v1/shares/${encodeURIComponent(shareCode)}/pdf?lang=${profileLanguage}`, { headers: { Authorization: `Bearer ${sessionStorage.getItem(PROFILE_TOKEN_KEY)}`, "X-UI-Language": profileLanguage === "en" ? "en" : "zh-CN" } });
+  if (!response.ok) { const body = await response.json().catch(() => ({})); throw new Error(body.detail || pc.requestFailed); }
+  const url = URL.createObjectURL(await response.blob());
+  const link = document.createElement("a"); link.href = url; link.download = response.headers.get("Content-Disposition")?.match(/filename="([^"]+)"/)?.[1] || `ShareBench-BOTEN${shareCode}.pdf`; document.body.appendChild(link); link.click(); link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 async function handleProfileBusinessAction(event) {
   const personalButton = event.target.closest("[data-personal-operation]");
   if (personalButton) { await handlePersonalOperation(personalButton, personalButton.hasAttribute("data-personal-confirm")); return; }
@@ -644,6 +663,7 @@ async function handleProfileBusinessAction(event) {
   const inquiryButton = event.target.closest("[data-open-inquiry]");
   const quoteButton = event.target.closest("[data-open-quote]");
   const downloadButton = event.target.closest("[data-download-quote]");
+  const downloadShareButton = event.target.closest("[data-download-share]");
   const cancelButton = event.target.closest("[data-cancel-inquiry]");
   const confirmCancelButton = event.target.closest("[data-confirm-cancel-inquiry]");
   const closeButton = event.target.closest("[data-close-business-dialog]");
@@ -652,11 +672,12 @@ async function handleProfileBusinessAction(event) {
     if (inquiryButton) await openOwnInquiry(inquiryButton.dataset.openInquiry);
     if (quoteButton) await openOwnQuote(quoteButton.dataset.openQuote);
     if (downloadButton) await downloadOwnQuote(downloadButton.dataset.downloadQuote);
+    if (downloadShareButton) await downloadOwnShare(downloadShareButton.dataset.downloadShare);
     if (cancelButton) confirmCancelOwnInquiry(cancelButton.dataset.cancelInquiry, cancelButton.dataset.inquiryVersion, cancelButton.dataset.inquiryNumber);
     if (confirmCancelButton) await cancelOwnInquiry(confirmCancelButton);
     if (closeButton) document.getElementById("profile-business-dialog").close();
   } catch (error) {
-    const statusId = shareButton ? "profile-shares-status" : inquiryButton || cancelButton || confirmCancelButton ? "profile-inquiries-status" : "profile-quotes-status";
+    const statusId = shareButton || downloadShareButton ? "profile-shares-status" : inquiryButton || cancelButton || confirmCancelButton ? "profile-inquiries-status" : "profile-quotes-status";
     setFormStatus(statusId, error.message || pc.requestFailed, "error");
   }
 }

@@ -38,8 +38,6 @@ function mapApiCategory(category) {
       code: option.code || "",
       name: option.name,
       description: option.description || "",
-      note: option.note || "",
-      specialNote: option.special_note || "",
       image: window.botenAssetUrl(option.image?.path) || null,
       imageWidth: Number(option.image?.width) || 640,
       imageHeight: Number(option.image?.height) || 320,

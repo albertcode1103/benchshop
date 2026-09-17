@@ -274,8 +274,9 @@ class AdminFrontendContractTests(unittest.TestCase):
         self.assertIn('/cart/catalog-options/${encodeURIComponent(optionId)}', CUSTOMER_MARKETPLACE)
         self.assertIn('window.refreshCatalogCartOnly', CUSTOMER_MARKETPLACE)
         self.assertNotIn('catalog-item-price', CUSTOMER_MARKETPLACE)
-        self.assertIn('specialNote: option.special_note || ""', customer_api)
-        self.assertIn('option-special-note', CUSTOMER_RENDERER)
+        self.assertNotIn('specialNote: option.special_note', customer_api)
+        self.assertNotIn('option-special-note', CUSTOMER_RENDERER)
+        self.assertNotIn('option-note', CUSTOMER_RENDERER)
 
     def test_customer_device_description_preserves_database_line_breaks(self) -> None:
         self.assertIn(
@@ -356,6 +357,10 @@ class AdminFrontendContractTests(unittest.TestCase):
         self.assertIn('function renderCustomerShareDevice(item, index)', CUSTOMER_SHARE_VIEWER)
         self.assertIn('class="customer-share-option-code"', CUSTOMER_SHARE_VIEWER)
         self.assertIn('class="profile-detail-group profile-share-note"', ACCOUNT_JS)
+        self.assertIn('class="profile-business-card-note"', ACCOUNT_JS)
+        self.assertIn('data-download-share=', ACCOUNT_JS)
+        self.assertIn('/api/v1/shares/${encodeURIComponent(shareCode)}/pdf?lang=', ACCOUNT_JS)
+        self.assertIn('Object.prototype.hasOwnProperty.call(share, "note")', ACCOUNT_JS)
         self.assertIn('class="share-note-block"', ADMIN_JS)
         self.assertIn('share.note ? escapeHtml(share.note) : "无备注"', ADMIN_JS)
         self.assertIn('class="share-item-quantity"', ADMIN_JS)
@@ -653,7 +658,7 @@ class AdminFrontendContractTests(unittest.TestCase):
         self.assertIn('data-edit-mapping-note', ADMIN_CATALOG_V2)
         self.assertIn('optional_config_overrides', ADMIN_CATALOG_V2)
         self.assertIn('mapping-option-code', ADMIN_CATALOG_V2)
-        self.assertIn('option-special-note', CUSTOMER_RENDERER)
+        self.assertNotIn('option-special-note', CUSTOMER_RENDERER)
 
     def test_catalog_v2_exposes_three_roots_and_manual_bilingual_crud(self) -> None:
         for root_id in ("catalog-optional", "catalog-tools", "catalog-accessories"):

@@ -58,7 +58,7 @@ function filteredMarketplaceItems() {
   return catalogMarketplaceState.items.filter((item) => {
     if (catalogMarketplaceState.category !== "all" && item.category_id !== catalogMarketplaceState.category) return false;
     if (!query) return true;
-    return [item.code, item.name, item.description, item.note, item.category_name]
+    return [item.code, item.name, item.description, item.category_name]
       .some((value) => String(value || "").toLocaleLowerCase().includes(query));
   });
 }
@@ -255,7 +255,7 @@ function renderCatalogMarketplace() {
     const image = window.botenAssetUrl(item.image_path) || "assets/images/placeholder-option.svg";
     const imageWidth = Number(item.image_width) || 640;
     const imageHeight = Number(item.image_height) || 320;
-    const description = item.description || item.note || "";
+    const description = item.description || "";
     const inCartQuantity = cartQuantities.get(item.id)?.quantity || 0;
     const selected = inCartQuantity > 0;
     return `<article class="catalog-product-card${selected ? " selected" : ""}" data-catalog-item="${escapeMarketplaceHtml(item.id)}">

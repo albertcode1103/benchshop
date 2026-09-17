@@ -593,7 +593,7 @@ async function openProductEditor(productId) {
     const renderSpecifications = () => { specificationEditor.innerHTML = (state.editingProduct.specifications || []).map((s, i) => `<div class="specification-row" data-id="${escapeHtml(s.id || "")}"><input data-spec="label" aria-label="中文项目" value="${escapeHtml(s.label || "")}" placeholder="中文项目"><input data-spec="label_en" aria-label="英文项目" value="${escapeHtml(s.label_en || "")}" placeholder="英文项目"><input data-spec="value" aria-label="中文数据" value="${escapeHtml(s.value || "")}" placeholder="中文数据"><input data-spec="value_en" aria-label="英文数据" value="${escapeHtml(s.value_en || "")}" placeholder="英文数据"><button type="button" class="button button-quiet" data-move-spec="${i}" data-direction="-1" ${i ? "" : "disabled"}>↑</button><button type="button" class="button button-quiet" data-move-spec="${i}" data-direction="1" ${i === state.editingProduct.specifications.length - 1 ? "" : "disabled"}>↓</button><button type="button" class="button button-quiet" data-remove-spec="${i}">删除</button></div>`).join(""); };
     state.editingProduct.specifications = Array.isArray(product.specifications) ? product.specifications : [];
     renderSpecifications();
-    $("#add-specification-button").onclick = () => { state.editingProduct.specifications.push({ label: "", label_en: "", value: "", value_en: "" }); renderSpecifications(); };
+    $("#add-specification-button").onclick = () => { captureSpecifications(); state.editingProduct.specifications.push({ label: "", label_en: "", value: "", value_en: "" }); renderSpecifications(); };
     const captureSpecifications = () => { state.editingProduct.specifications = Array.from(specificationEditor.querySelectorAll(".specification-row")).map((row) => ({ id: row.dataset.id || null, label: row.querySelector('[data-spec="label"]').value, label_en: row.querySelector('[data-spec="label_en"]').value, value: row.querySelector('[data-spec="value"]').value, value_en: row.querySelector('[data-spec="value_en"]').value })); };
     specificationEditor.onclick = (event) => { const remove = event.target.closest("[data-remove-spec]"); const move = event.target.closest("[data-move-spec]"); if (remove) { captureSpecifications(); state.editingProduct.specifications.splice(Number(remove.dataset.removeSpec), 1); renderSpecifications(); } if (move) { captureSpecifications(); const from = Number(move.dataset.moveSpec); const to = from + Number(move.dataset.direction); const items = state.editingProduct.specifications; [items[from], items[to]] = [items[to], items[from]]; renderSpecifications(); } };
     $("#product-dialog-title").textContent = `编辑 ${product.name}`;
@@ -897,7 +897,7 @@ function renderQuotes() {
     const destructive = status === "draft" ? `<button class="table-action danger" data-delete-quote="${escapeHtml(quote.id)}">删除</button>` : `<button class="table-action danger" data-archive-quote="${escapeHtml(quote.id)}">归档</button>`;
     const exportAction = status === "archived" ? "" : `<button class="table-action" data-export-quote="${escapeHtml(quote.id)}">导出 PDF</button>`;
     const actions = `<span class="table-actions">${primary}<details class="table-actions-menu"><summary aria-label="更多报价操作">更多</summary><div>${exportAction}<button class="table-action" data-quote-history="${escapeHtml(quote.id)}">版本与发送历史</button>${status === "archived" ? "" : destructive}</div></details></span>`;
-    return `<tr><td><strong class="business-cell-title">${escapeHtml(quote.title)}</strong><small class="business-cell-meta"><span translate="no">${escapeHtml(number)}</span> · V${formatNumber(quote.version || 1)}</small><small class="business-cell-meta">${escapeHtml(source)}</small></td><td>${renderCustomerLines(quote.customer_name, quote.customer_email, quote.customer_phone)}</td><td><span class="badge ${status === "archived" ? "off" : status === "sent" ? "good" : ""}">${escapeHtml(quoteLifecycleLabel(status))}</span><small class="business-cell-meta">${delivery}</small></td><td>${escapeHtml(quote.display_name || quote.email || quote.phone || "—")}<small class="business-cell-meta">更新于 ${escapeHtml(formatDate(quote.updated_at))}</small></td><td class="business-number-cell">${symbol}${formatNumber(quote.total_price, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td><td class="align-right">${actions}</td></tr>`;
+    return `<tr><td><strong class="business-cell-title">${escapeHtml(quote.title)}</strong><small class="business-cell-meta"><span translate="no">${escapeHtml(number)}</span> · <span title="记录版本：保存、发送或状态变更时递增">V${formatNumber(quote.version || 1)}</span></small><small class="business-cell-meta">${escapeHtml(source)}</small></td><td>${renderCustomerLines(quote.customer_name, quote.customer_email, quote.customer_phone)}</td><td><span class="badge ${status === "archived" ? "off" : status === "sent" ? "good" : ""}">${escapeHtml(quoteLifecycleLabel(status))}</span><small class="business-cell-meta">${delivery}</small></td><td>${escapeHtml(quote.display_name || quote.email || quote.phone || "—")}<small class="business-cell-meta">更新于 ${escapeHtml(formatDate(quote.updated_at))}</small></td><td class="business-number-cell">${symbol}${formatNumber(quote.total_price, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td><td class="align-right">${actions}</td></tr>`;
   }).join("") || '<tr><td colspan="6" class="empty">暂无报价单</td></tr>';
 }
 
@@ -930,11 +930,11 @@ function renderInquiryQuoteStatus(item) {
 function renderInquiryBusinessStatus(item) {
   const status = item.business_status || item.status;
   const sent = Number(item.sent_quote_count || 0), draft = Number(item.draft_quote_count || 0);
-  const label = status === "sent" ? `已报价 · ${sent} 份` : ({ pending: "待报价", archived: "报价已归档" }[status] || inquiryListStatusLabel(item));
+  const label = { sent: "已报价", pending: "待报价", archived: "报价已归档" }[status] || inquiryStatusLabel(status);
   const style = status === "sent" ? "good" : status === "pending" ? "inquiry-converted" : ["closed", "cancelled", "archived"].includes(status) ? "off" : "warn";
-  const owner = item.assignee_name && status !== "assigned" ? `<small>负责人：${escapeHtml(item.assignee_name)}</small>` : "";
-  const detail = (sent && status !== "sent" ? `<small>已报价 ${sent} 份</small>` : "") + (draft ? `<small>草稿 ${draft} 份</small>` : "");
-  return `<span class="badge ${style}">${escapeHtml(label)}</span>${owner}${detail}`;
+  const owner = `<small>负责人：${escapeHtml(item.assignee_name || "未分配")}</small>`;
+  const detail = `<small>草稿 ${draft} 份</small>` + (sent ? `<small>已报价 ${sent} 份</small>` : "");
+  return `<div class="inquiry-business-status"><span class="badge ${style}">${escapeHtml(label)}</span>${owner}${detail}</div>`;
 }
 
 function renderQuoteSourceStatus(item) {
@@ -1479,19 +1479,53 @@ async function restoreQuote(button) {
 async function viewQuoteHistory(quoteId) {
   try {
     const history = await api(`/api/v1/staff/quotes/${encodeURIComponent(quoteId)}/history`);
-    const revisionRows = (history.revisions || []).map((item) => `<li><strong>版本 ${escapeHtml(item.revision_number)}</strong><small>${escapeHtml(formatDateTime(item.created_at))} · ${escapeHtml(item.created_by_name || "—")}</small></li>`).join("") || '<li class="empty">暂无已发送版本</li>';
+    const revisionRows = (history.revisions || []).map((item) => `<li><strong>快照 R${escapeHtml(item.revision_number)}${item.record_version ? ` · 记录 V${escapeHtml(item.record_version)}` : ""}</strong><small>${escapeHtml({created: "首次保存", saved: "编辑保存", baseline: "编辑前留存", sent: "发送时留存"}[item.event] || "发送时留存")} · ${escapeHtml(formatDateTime(item.created_at))} · ${escapeHtml(item.created_by_name || "—")}</small><button type="button" class="table-action" data-preview-revision="${escapeHtml(item.id)}">预览与应用</button></li>`).join("") || '<li class="empty">暂无留存快照，保存后开始记录</li>';
     const deliveryRows = (history.deliveries || []).map((item) => {
       const state = item.status === "withdrawn" ? "已撤回" : item.notification_state === "read" ? "客户已查看" : "已发送未查看";
-      const revision = item.revision_number ? `版本 ${item.revision_number}` : "旧版报价";
+      const revision = item.revision_number ? `快照 R${item.revision_number}` : "旧版报价";
       return `<li><strong>${escapeHtml(item.recipient_name || "—")}</strong><small>${escapeHtml([revision, state, formatDateTime(item.delivered_at)].join(" · "))}</small></li>`;
     }).join("") || '<li class="empty">尚未发送给客户</li>';
     const dialog = document.createElement("dialog");
     dialog.className = "product-dialog quote-history-dialog";
-    dialog.innerHTML = `<form method="dialog" class="dialog-card quote-history-card"><header><div><span class="eyebrow">QUOTATION HISTORY</span><h2>${escapeHtml(history.quote?.title || "报价历史")}</h2><p>${escapeHtml(history.quote?.quote_number || quoteId.slice(0, 8))}</p></div><button class="icon-button" value="close" aria-label="关闭">×</button></header><div class="quote-history-body"><section><h3>版本记录</h3><ul>${revisionRows}</ul></section><section><h3>发送记录</h3><ul>${deliveryRows}</ul></section></div><footer><button class="button button-secondary" value="close">关闭</button></footer></form>`;
+    dialog.innerHTML = `<form method="dialog" class="dialog-card quote-history-card"><header><div><span class="eyebrow">QUOTATION HISTORY</span><h2>${escapeHtml(history.quote?.title || "报价历史")}</h2><p>${escapeHtml(history.quote?.quote_number || quoteId.slice(0, 8))}</p></div><button class="icon-button" value="close" aria-label="关闭">×</button></header><div class="quote-history-body"><section><h3>版本记录</h3><p class="business-cell-meta">V 为记录更新版本，R 为留存快照。只记录保存后的内容，未保存的编辑及历史未留存内容无法追溯。</p><ul>${revisionRows}</ul></section><section><h3>发送记录</h3><ul>${deliveryRows}</ul></section></div><footer><button class="button button-secondary" value="close">关闭</button></footer></form>`;
+    dialog.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-preview-revision]");
+      if (button) void previewQuoteRevision(quoteId, button.dataset.previewRevision, dialog, button);
+    });
     document.body.appendChild(dialog);
     dialog.addEventListener("close", () => dialog.remove(), { once: true });
     dialog.showModal();
   } catch (failure) { showToast(failure.message, "error"); }
+}
+
+async function previewQuoteRevision(quoteId, revisionId, historyDialog, button) {
+  try {
+    await runButtonAction(button, "加载中…", async () => {
+      const result = await api(`/api/v1/staff/quotes/${encodeURIComponent(quoteId)}/history/${encodeURIComponent(revisionId)}`);
+      const quote = result.quote;
+      const dialog = document.createElement("dialog");
+      dialog.className = "product-dialog quote-history-preview";
+      const rows = (quote.items || []).map((item) => `<tr><td>${escapeHtml(item.device_label || item.category_name || item.kind || "—")}</td><td>${escapeHtml(item.code || "—")}</td><td>${escapeHtml(item.name || item.display_name || "—")}${item.device_specifications ? `<pre>${escapeHtml(typeof item.device_specifications === "string" ? item.device_specifications : JSON.stringify(item.device_specifications, null, 2))}</pre>` : ""}</td><td>${escapeHtml(item.quantity)}</td><td>${formatNumber(item.price, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td><td>${formatNumber(Number(item.price) * Number(item.quantity), {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td></tr>`).join("");
+      dialog.innerHTML = `<form method="dialog" class="dialog-card"><header><div><span class="eyebrow">QUOTATION SNAPSHOT</span><h2>快照 R${escapeHtml(quote.revision?.revision_number)} · ${escapeHtml(quote.title)}</h2><p>${escapeHtml(quote.quote_number || "")} · ${escapeHtml(quote.currency)} · ${escapeHtml(formatDateTime(quote.revision?.created_at))}</p></div><button class="icon-button" value="close" aria-label="关闭">×</button></header><div class="quote-history-preview-body"><p>客户：${escapeHtml(quote.customer_name || "—")} · ${escapeHtml(quote.customer_email || "")} · ${escapeHtml(quote.customer_phone || "")}</p><p>地址：${escapeHtml(quote.customer_address || "—")}</p><div class="table-wrap"><table><thead><tr><th>设备 / 分类</th><th>编号</th><th>项目与配置</th><th>数量</th><th>单价</th><th>小计</th></tr></thead><tbody>${rows}</tbody></table></div><p class="quote-history-total">合计：${escapeHtml(quote.currency)} ${formatNumber(quote.total_price, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p><p class="business-cell-meta">应用将历史标题、客户资料、币种和报价项目载入当前报价编辑器，点击保存后才生效。不会撤回或替换客户已收到的版本。</p>${result.can_apply ? "" : '<p class="business-cell-meta">此报价已归档，仅可预览；需先恢复报价再应用。</p>'}</div><footer><button class="button button-secondary" value="close">关闭</button><button type="button" class="button button-primary" data-apply-revision ${result.can_apply ? "" : "disabled"}>应用到编辑器</button></footer></form>`;
+      document.body.appendChild(dialog);
+      dialog.addEventListener("close", () => { dialog.remove(); button?.focus(); }, {once: true});
+      dialog.querySelector("[data-apply-revision]").addEventListener("click", async (event) => {
+        try {
+          await runButtonAction(event.currentTarget, "打开中…", async () => {
+            const current = await api(`/api/v1/quotes/${encodeURIComponent(quoteId)}`);
+            if (current.lifecycle_status === "archived") throw new Error("报价已归档，请先恢复后再应用");
+            if (Number(current.version) !== Number(result.current_version)) throw new Error("报价已被更新，请关闭预览并重新打开历史快照后再应用");
+            const applied = {...current};
+            for (const key of ["title", "items", "currency", "customer_name", "customer_email", "customer_phone", "customer_address", "language"]) applied[key] = quote[key];
+            dialog.close(); historyDialog.close();
+            await editQuote(applied);
+            showToast("历史内容已载入，请检查后保存");
+          });
+        } catch (failure) { showToast(failure.message, "error"); }
+      });
+      dialog.showModal();
+    });
+  } catch (failure) { showToast(failure.status === 404 ? "未找到快照；若连接旧 API，请先更新后端以支持历史预览" : failure.message, "error"); }
 }
 
 async function exportQuote(quote) {

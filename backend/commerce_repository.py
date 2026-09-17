@@ -627,11 +627,11 @@ def list_customer_shares(user_id: str, page: int = 1, page_size: int = 20, query
     safe_page_size = min(max(int(page_size), 1), 50)
     offset = (safe_page - 1) * safe_page_size
     union = """
-        SELECT id, code, title, item_count, view_count, last_viewed_at,
+        SELECT id, code, title, note, item_count, view_count, last_viewed_at,
                expires_at, active, created_at, owner_closed, customer_version, 1 AS document_version
         FROM config_shares WHERE created_by = ?
         UNION ALL
-        SELECT id, code, title, item_count, view_count, last_viewed_at,
+        SELECT id, code, title, note, item_count, view_count, last_viewed_at,
                expires_at, active, created_at, owner_closed, customer_version, 2 AS document_version
         FROM commerce_shares WHERE created_by = ?
     """

@@ -1,7 +1,7 @@
 """Customer-facing payload sanitizers.
 
-Prices remain in the database and immutable commerce snapshots for staff
-quoting, but must never be serialized by customer-facing endpoints.
+Prices and internal catalog notes remain in stored snapshots for staff use,
+but must not be serialized by customer catalog/cart/share endpoints.
 """
 
 from copy import deepcopy
@@ -30,16 +30,30 @@ PRICE_KEYS = {
 }
 
 
-def without_prices(value: Any) -> Any:
-    """Return a deep customer-safe copy without price-bearing fields."""
+CATALOG_NOTE_KEYS = {
+    "note", "notes", "note_zh", "note_en", "special_note", "specialNote",
+    "description_override", "description_override_en",
+}
+
+
+def without_prices(value: Any, *, _catalog: bool = False) -> Any:
+    """Remove prices and catalog notes; preserve customer-authored share notes."""
     if isinstance(value, dict):
+        # Keep customer-authored share notes, but remove internal catalog notes
+        # from both current records and historical cart/share/inquiry snapshots.
+        catalog = (
+            _catalog or "option_id" in value
+            or ("category_id" in value and "code" in value)
+            or value.get("catalog_type") in ("optional", "tools", "accessories")
+            or value.get("item_type") in ("tool", "accessory")
+        )
         return {
-            key: without_prices(item)
+            key: without_prices(item, _catalog=catalog or key == "options")
             for key, item in value.items()
-            if key not in PRICE_KEYS
+            if key not in PRICE_KEYS and not (catalog and key in CATALOG_NOTE_KEYS)
         }
     if isinstance(value, list):
-        return [without_prices(item) for item in value]
+        return [without_prices(item, _catalog=_catalog) for item in value]
     if isinstance(value, tuple):
-        return tuple(without_prices(item) for item in value)
+        return tuple(without_prices(item, _catalog=_catalog) for item in value)
     return deepcopy(value)

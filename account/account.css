@@ -76,6 +76,9 @@
 .profile-business-card-main span, .profile-business-card-meta { color: var(--color-text-secondary); font-size: .75rem; }
 .profile-business-card-main .profile-share-heading { font-size: 18px; font-weight: 700; }
 .profile-business-card-main .profile-share-heading span { font-size: inherit; font-weight: inherit; color: var(--color-accent-dark); white-space: nowrap; }
+.profile-business-card-note { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--space-sm); grid-column: 1 / -1; padding: var(--space-sm) 0; border-block: 1px solid var(--color-border); font-size: .8125rem; line-height: 1.5; }
+.profile-business-card-note strong { white-space: nowrap; }
+.profile-business-card-note span { min-width: 0; color: var(--color-text-secondary); white-space: pre-wrap; overflow-wrap: anywhere; }
 .profile-business-card-meta { display: flex; flex-wrap: wrap; gap: var(--space-xs) var(--space-md); grid-column: 1 / -1; }
 .profile-business-card-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-sm); }
 .profile-business-card-actions .btn { min-height: 36px; }

@@ -182,7 +182,7 @@ def _decode_revision(row) -> Optional[Dict[str, Any]]:
     return quote
 
 
-def _create_quote_revision(db, quote_id: str, created_by: str) -> Dict[str, Any]:
+def _create_quote_revision(db, quote_id: str, created_by: str, event: str = "sent") -> Dict[str, Any]:
     quote_row = db.execute("SELECT * FROM commerce_quotes WHERE id = ?", (quote_id,)).fetchone()
     if quote_row is None:
         raise ValueError("Quote not found")
@@ -191,6 +191,7 @@ def _create_quote_revision(db, quote_id: str, created_by: str) -> Dict[str, Any]
         db.execute("SELECT COALESCE(MAX(revision_number), 0) + 1 FROM quote_revisions WHERE quote_id = ?", (quote_id,)).fetchone()[0]
     )
     revision_id = uuid.uuid4().hex
+    quote["history_event"] = event
     quote["revision_number"] = next_number
     quote["revision_created_at"] = to_iso(utc_now())
     db.execute(
@@ -291,6 +292,9 @@ def save_quote(
                     raise ValueError("Quote archived")
                 if expected_version is None or int(new_row["version"] or 1) != int(expected_version):
                     raise ValueError("Quote version conflict")
+                latest = db.execute("SELECT snapshot_json FROM quote_revisions WHERE quote_id = ? ORDER BY revision_number DESC LIMIT 1", (quote_id,)).fetchone()
+                if latest is None or (json.loads(latest["snapshot_json"]).get("quote") or {}).get("version") != new_row["version"]:
+                    _create_quote_revision(db, quote_id, user_id, "baseline")
                 quote_number = new_row["quote_number"] or _allocate_quote_number(db)
                 try:
                     cursor = db.execute(
@@ -331,6 +335,7 @@ def save_quote(
                     raise
                 if not cursor.rowcount:
                     raise ValueError("Quote version conflict")
+                _create_quote_revision(db, quote_id, user_id, "saved")
                 row = db.execute("SELECT * FROM commerce_quotes WHERE id = ?", (quote_id,)).fetchone()
                 return _decode(row, document_version=2)
 
@@ -399,6 +404,7 @@ def save_quote(
             if clean_source_type in ("share", "inquiry") and clean_source_document_id:
                 raise ValueError("Quote source already exists") from error
             raise
+        _create_quote_revision(db, new_quote_id, user_id, "created")
         row = db.execute("SELECT * FROM commerce_quotes WHERE id = ?", (new_quote_id,)).fetchone()
     return _decode(row, document_version=2)
 
@@ -823,6 +829,8 @@ def quote_history(quote_id: str, user_id: Optional[str] = None) -> Optional[Dict
         revisions = db.execute(
             """
             SELECT r.id, r.revision_number, r.created_at,
+                   json_extract(r.snapshot_json, '$.quote.version') AS record_version,
+                   COALESCE(json_extract(r.snapshot_json, '$.quote.history_event'), 'sent') AS event,
                    COALESCE(NULLIF(u.display_name, ''), u.email, u.phone, r.created_by) AS created_by_name
             FROM quote_revisions r LEFT JOIN users u ON u.id = r.created_by
             WHERE r.quote_id = ? ORDER BY r.revision_number DESC

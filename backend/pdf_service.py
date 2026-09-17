@@ -315,10 +315,6 @@ def _status_label(value: Any, language: str) -> str:
 def _intro_story(context: PdfDocumentContext, styles: Dict[str, ParagraphStyle]) -> List[Any]:
     copy = PDF_COPY[context.language]
     story: List[Any] = [_paragraph(_title_for(context), styles["title"])]
-    if context.kind in ("inquiry", "quote") and context.created_at:
-        label = ({"inquiry": "询价时间", "quote": "报价时间"} if context.language == "zh" else
-                 {"inquiry": "Inquiry Date", "quote": "Quotation Date"})[context.kind]
-        story.extend([_paragraph(f"{label}: {_business_timestamp(context.created_at)}", styles["body"]), Spacer(1, 3 * mm)])
     customer_values = _party_values(context.customer or {}, copy)
     if context.kind == "quote":
         party = context.customer or {}
@@ -329,7 +325,13 @@ def _intro_story(context: PdfDocumentContext, styles: Dict[str, ParagraphStyle])
     customer_heading = ("分享人" if context.language == "zh" else "Shared by") if context.kind == "configuration" and context.is_share else copy["customer_info"]
     customer_card = _info_card(customer_heading, customer_values, styles, 82 * mm)
     salesperson_card = _info_card(copy["salesperson_info"], _party_values(context.salesperson or {}, copy), styles, 82 * mm) if context.kind == "quote" else None
-    party_row = _card_row(customer_card, salesperson_card)
+    configuration_note_card = _note_card(
+        "配置备注" if context.language == "zh" else "Configuration Note",
+        context.note or copy["no_note"],
+        styles,
+        82 * mm,
+    ) if context.kind == "configuration" and context.is_share else None
+    party_row = _card_row(customer_card, salesperson_card or configuration_note_card)
     if party_row:
         story.extend([party_row, Spacer(1, 3 * mm)])
     details: List[Tuple[str, Any]] = []
@@ -416,7 +418,10 @@ class _UnifiedDocument(BaseDocTemplate):
         canvas.setFont(FONT_NAME, code_size)
         canvas.drawString(self.leftMargin, 7.2 * mm, code)
         canvas.setFont(FONT_NAME, 7.1)
-        canvas.drawRightString(A4[0] - self.rightMargin, 7.2 * mm, self.context.generated_at)
+        created_label, exported_label = ("创建时间", "PDF导出时间") if self.context.language == "zh" else ("Created", "PDF exported")
+        created_time = _business_timestamp(self.context.created_at) if self.context.created_at else "-"
+        canvas.drawRightString(A4[0] - self.rightMargin, 10 * mm, f"{created_label}: {created_time}")
+        canvas.drawRightString(A4[0] - self.rightMargin, 6 * mm, f"{exported_label}: {self.context.generated_at}")
         canvas.restoreState()
 
 

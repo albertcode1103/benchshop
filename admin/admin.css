@@ -1136,6 +1136,8 @@ dialog:not(.product-dialog):not(.catalog-editor-dialog) .dialog-card .form-grid 
 .business-customer-lines > span { display: block; min-width: 0; overflow-wrap: anywhere; white-space: normal; }
 .business-customer-lines .customer-name { color: var(--ink); font-size: 13px; font-weight: 700; }
 .business-cell-empty { color: var(--muted); font-size: 12px; }
+.inquiry-business-status { display: grid; justify-items: start; gap: 4px; min-width: 0; }
+.inquiry-business-status > small { display: block; max-width: 100%; color: var(--muted); font-size: 11px; line-height: 1.45; white-space: normal; overflow-wrap: anywhere; }
 .business-number-cell { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .business-table .table-actions { justify-content: flex-end; }
 .shares-business-table { min-width: 1040px; }
@@ -1342,7 +1344,13 @@ dialog:not(.product-dialog):not(.catalog-editor-dialog) .dialog-card .form-grid 
 .catalog-item-copy small { margin-top: 4px; }
 .catalog-price-cell { vertical-align: middle; white-space: nowrap; }
 .catalog-price-values { display: inline-grid; min-width: 104px; gap: 3px; }
-.catalog-price-values > span { display: grid; grid-template-columns: 18px minmax(72px, 1fr); align-items: baseline; gap: 4px; }
+.catalog-price-values > span { display: grid; grid-template-columns: minmax(72px, 1fr) 18px; align-items: baseline; gap: 4px; }
+.catalog-price-with-note { display: inline-flex; align-items: center; gap: 6px; }
+.catalog-note-button { display: inline-grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 1px solid var(--line); border-radius: 50%; color: var(--muted); background: white; font: inherit; font-size: 13px; cursor: help; }
+.catalog-note-button:hover, .catalog-note-button:focus-visible { color: #a34309; border-color: #a34309; }
+.catalog-note-button:focus-visible { outline: 2px solid #a34309; outline-offset: 2px; }
+.catalog-note-tooltip { position: fixed; z-index: 10000; width: max-content; max-width: min(360px, calc(100vw - 16px)); max-height: min(320px, calc(100dvh - 16px)); overflow: auto; padding: 12px 14px; border: 1px solid var(--line); border-radius: 8px; background: #fff; color: #24313b; box-shadow: 0 5px 20px #18202826; font-size: 13px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.catalog-note-tooltip[hidden] { display: none; }
 .catalog-currency-mark { color: var(--muted); text-align: center; }
 .catalog-price-values strong { font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; }
 .translation-reviewed { color: #0d6d49; background: #e8f8f1; }
@@ -1632,3 +1640,23 @@ dialog.catalog-v2-dialog.catalog-category-editor-dialog { width: min(720px, calc
   .quote-editor-body { scroll-padding-top:36px; }
   .quote-editor-card .quote-numeric-field > span { display:block; }
 }
+
+/* Inquiry filters include an additional queue selector and a separate scope hint. */
+#inquiry-filter-form { grid-template-columns: minmax(240px, 1fr) 160px 210px auto; align-items: end; }
+#inquiry-filter-form .share-filter-actions { grid-column: auto; }
+#inquiry-filter-form .inquiry-scope-hint { grid-column: 1 / -1; margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+#inquiry-filter-form .inquiry-scope-hint:empty { display: none; }
+@media (max-width: 1200px) {
+  #inquiry-filter-form { grid-template-columns: minmax(140px, 1fr) minmax(210px, 1fr) auto; }
+  #inquiry-filter-form .share-query-field { grid-column: 1 / -1; }
+}
+@media (max-width: 720px) {
+  #inquiry-filter-form { grid-template-columns: minmax(0, 1fr); }
+  #inquiry-filter-form .share-filter-actions { justify-content: flex-start; }
+}
+
+.quote-history-preview { width: min(1100px, calc(100vw - 24px)); }
+.quote-history-preview-body { overflow: auto; padding: 16px 24px; min-height: 0; }
+.quote-history-preview-body table { min-width: 700px; }
+.quote-history-preview-body pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; font-size: 12px; max-width: 360px; }
+.quote-history-total { text-align: right; font-weight: 700; }

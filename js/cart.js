@@ -49,7 +49,7 @@ function savedConfigToCartItem(saved) {
   const groups = [{ id: "color", type: "single", category: cartText("appearance", "外观颜色", "Appearance"), value: colorName }];
   snapshot.categories.forEach((category) => {
     const detailItems = category.options.map((option) => {
-      const details = [option.description, option.special_note].map(descriptionText).filter(Boolean);
+      const details = [option.description].map(descriptionText).filter(Boolean);
       return {
         code: window.normalizeCatalogCode?.(option.code) || String(option.code || "").trim(),
         name: details.length ? `${option.name} | ${details.join(" | ")}` : getSpecLabel(category.id, option.name),
@@ -79,7 +79,6 @@ function savedCatalogToCartItem(saved) {
     code: saved.code || "",
     name: saved.name || "",
     description: saved.description || "",
-    note: saved.note || "",
     imagePath: saved.image_path || "",
     quantity: Number(saved.quantity || 1),
     categorySortOrder: Number.isFinite(Number(saved.catalog_category_sort_order)) ? Number(saved.catalog_category_sort_order) : Number.MAX_SAFE_INTEGER,
@@ -347,7 +346,7 @@ function showCartDetails(id, categoryId = null) {
     const typeLabel = item.itemType === "tool" ? cartText("serviceTools", "维修工具", "Service Tools") : cartText("accessories", "设备附件", "Accessories");
     dialog.className = "share-dialog cart-detail-dialog";
     dialog.setAttribute("aria-labelledby", "cart-detail-title");
-    dialog.innerHTML = `<div class="share-dialog-card"><header class="share-dialog-header"><div><span class="auth-kicker">${escapeCartHtml(typeLabel)}</span><h2 id="cart-detail-title">${escapeCartHtml(item.name)}</h2><p class="cart-detail-model">${escapeCartHtml(item.code || "--")}</p></div><button class="btn btn-text btn-sm" type="button" aria-label="${cartText("close", "关闭", "Close")}">✕</button></header><div class="cart-detail-content"><section class="cart-item-group"><div class="cart-item-group-header"><span>${cartText("quantity", "数量", "Quantity")}</span><strong>${item.quantity}</strong></div>${item.description ? `<p>${escapeCartHtml(item.description)}</p>` : ""}${item.note ? `<p>${escapeCartHtml(item.note)}</p>` : ""}</section></div></div>`;
+    dialog.innerHTML = `<div class="share-dialog-card"><header class="share-dialog-header"><div><span class="auth-kicker">${escapeCartHtml(typeLabel)}</span><h2 id="cart-detail-title">${escapeCartHtml(item.name)}</h2><p class="cart-detail-model">${escapeCartHtml(item.code || "--")}</p></div><button class="btn btn-text btn-sm" type="button" aria-label="${cartText("close", "关闭", "Close")}">✕</button></header><div class="cart-detail-content"><section class="cart-item-group"><div class="cart-item-group-header"><span>${cartText("quantity", "数量", "Quantity")}</span><strong>${item.quantity}</strong></div>${item.description ? `<p>${escapeCartHtml(item.description)}</p>` : ""}</section></div></div>`;
     document.body.appendChild(dialog);
     dialog.querySelector("button")?.addEventListener("click", () => dialog.close());
     dialog.addEventListener("close", () => dialog.remove(), { once: true });

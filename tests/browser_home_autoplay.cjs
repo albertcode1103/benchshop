@@ -22,7 +22,7 @@ const assert=require('node:assert/strict');
     await page.locator('.home-carousel').dispatchEvent('mouseleave');
     await page.clock.runFor(4999); assert.equal(await name(),'one');
     await page.clock.runFor(1); assert.equal(await name(),'two');
-    const img=await page.locator('#home-device-image').boundingBox();
+    const img=await page.locator('.home-device-viewport').boundingBox();
     for(const side of ['prev','next']) {
       const box=await page.locator('#home-device-'+side).boundingBox();
       assert(Math.abs(box.y+box.height/2-img.y-img.height/2)<2,'arrow must center on image');

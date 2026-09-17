@@ -1613,6 +1613,8 @@ class BackendWorkflowTests(unittest.TestCase):
                 staff_pdf_text = "\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(exported.content)).pages)
                 self.assertNotIn("Reference Price", staff_pdf_text)
                 self.assertNotIn("Device Base Price", staff_pdf_text)
+                self.assertIn("Configuration Note", staff_pdf_text)
+                self.assertIn("请优先查看设备配置", staff_pdf_text)
 
                 quote = client.post(
                     "/api/v1/quotes", headers=staff_headers,
@@ -1638,6 +1640,7 @@ class BackendWorkflowTests(unittest.TestCase):
                 own_shares = client.get("/api/v1/customer/me/shares", headers=customer_headers)
                 self.assertEqual(200, own_shares.status_code, own_shares.text)
                 self.assertIn(share_id, {item["id"] for item in own_shares.json()["items"]})
+                self.assertEqual("请优先查看设备配置", next(item for item in own_shares.json()["items"] if item["id"] == share_id)["note"])
                 own_share = client.get(
                     "/api/v1/customer/me/shares/{}?lang=en".format(share_id),
                     headers=customer_headers,
@@ -2143,7 +2146,7 @@ class BackendWorkflowTests(unittest.TestCase):
                 self.assertEqual(409, blocked.status_code, blocked.text)
                 history = client.get("/api/v1/staff/quotes/{}/history".format(quote_id), headers=sales_headers)
                 self.assertEqual(200, history.status_code, history.text)
-                self.assertEqual(1, len(history.json()["revisions"]))
+                self.assertEqual(3, len(history.json()["revisions"]))
                 self.assertEqual(1, len(history.json()["deliveries"]))
 
                 restored = client.post(
